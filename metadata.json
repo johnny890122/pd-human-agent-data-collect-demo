@@ -1,0 +1,5 @@
+{
+  "name": "Prisoner's Dilemma Experiment Configurator",
+  "description": "A research tool for configuring and running 2^k Factorial Design surveys for Prisoner's Dilemma interactions within a 4-agent network.",
+  "requestFramePermissions": []
+}

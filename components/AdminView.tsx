@@ -44,10 +44,10 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
   const isHighLoad = k > 4;
 
   return (
-    <div className="flex flex-col lg:flex-row h-screen bg-gray-50 overflow-hidden">
+    <div className="flex flex-col xl:flex-row min-h-screen xl:h-screen bg-gray-50 xl:overflow-hidden">
       {/* Sidebar Controls */}
-      <div className="w-full lg:w-1/3 p-6 bg-white shadow-xl overflow-y-auto z-10 flex flex-col">
-        <h1 className="text-2xl font-bold text-gray-800 mb-6">Experiment Setup</h1>
+      <div className="w-full xl:w-1/3 p-4 md:p-6 bg-white shadow-xl xl:overflow-y-auto z-10 flex flex-col border-b xl:border-b-0 xl:border-r border-gray-200">
+        <h1 className="text-xl md:text-2xl font-bold text-gray-800 mb-6">Experiment Setup</h1>
 
         <div className="space-y-6 flex-1">
           {/* Role Assignment */}
@@ -55,7 +55,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
               Role Assignment
             </h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Decision Maker (Subject)</label>
                 <select
@@ -73,7 +73,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Opponent</label>
+                <label className="block text-xs text-gray-500 mb-1">Partner</label>
                 <select
                   value={setup.opponent}
                   onChange={(e) =>
@@ -136,7 +136,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
                     className="w-full p-2 border border-amber-200 rounded text-sm"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="block text-xs text-red-600 mb-1">Low (0) Meaning</label>
                     <input
@@ -162,36 +162,35 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
         </div>
 
         {/* Action Button */}
-        <div className="pt-6 mt-6 border-t border-gray-100">
-            <button
+        <div className="py-6 mt-6 border-t border-gray-100">
+          <button
             onClick={onStart}
             disabled={k === 0}
-            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
-                k === 0
-                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
-            }`}
-            >
+            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${k === 0
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+              }`}
+          >
             Generate & Start Survey
-            </button>
-            {k === 0 && <p className="text-center text-xs text-gray-400 mt-2">Select at least one edge on the graph to begin.</p>}
+          </button>
+          {k === 0 && <p className="text-center text-xs text-gray-400 mt-2">Select at least one edge on the graph to begin.</p>}
         </div>
       </div>
 
       {/* Main Graph Area */}
-      <div className="flex-1 bg-gray-100 relative flex items-center justify-center p-8">
-        <div className="absolute top-6 left-6 right-6 flex justify-between pointer-events-none">
-             <div className="bg-white/80 backdrop-blur px-4 py-2 rounded-lg shadow text-xs font-medium text-gray-600 pointer-events-auto">
-                Select edges to include them as factors.
-             </div>
+      <div className="flex-1 bg-gray-100 relative flex items-center justify-center p-4 md:p-8 overflow-hidden">
+        <div className="absolute top-4 left-4 right-4 flex justify-between pointer-events-none z-10">
+          <div className="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm text-[10px] md:text-xs font-medium text-gray-600 pointer-events-auto border border-gray-200">
+            Select edges to include them as factors.
+          </div>
         </div>
-        
-        <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-8 aspect-square flex items-center justify-center">
-             <NetworkGraph 
-                mode="admin" 
-                setup={setup} 
-                onEdgeClick={toggleEdge}
-             />
+
+        <div className="w-full max-w-full md:max-w-2xl bg-white rounded-2xl shadow-2xl p-4 md:p-8 aspect-square flex items-center justify-center overflow-hidden">
+          <NetworkGraph
+            mode="admin"
+            setup={setup}
+            onEdgeClick={toggleEdge}
+          />
         </div>
       </div>
     </div>

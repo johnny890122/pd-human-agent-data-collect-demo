@@ -30,6 +30,10 @@ export const DEFAULT_EDGE_CONFIG = {
 };
 
 export const COLORS = {
+  // Political colors (for Named mode)
+  kmt: '#000099', // KMT dark blue
+  dpp: '#1B9431', // DPP green
+  // Generic colors (for Color mode)
   groupA: '#60a5fa', // blue-400
   groupB: '#f87171', // red-400
   neutral: '#9ca3af', // gray-400

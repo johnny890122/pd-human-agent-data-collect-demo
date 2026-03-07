@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import * as d3 from 'd3';
 import { AGENTS, ALL_EDGES, COLORS } from '../constants';
 import { AgentId, ExperimentSetup, Scenario } from '../types';
 
@@ -22,6 +23,14 @@ interface NetworkGraphProps {
   decision?: number;
   /** Callback for when the decision value is changed via interaction */
   onDecisionChange?: (value: number) => void;
+  /** Gradual reveal: set of edge IDs the user has already clicked to reveal */
+  revealedEdgeIds?: Set<string>;
+  /** Gradual reveal: called when user clicks an unrevealed edge */
+  onEdgeReveal?: (edgeId: string) => void;
+  /** If true, suppresses the decision edge rendering entirely */
+  hideDecisionEdge?: boolean;
+  /** Called when user finishes interacting with the decision slider/bubble */
+  onInteraction?: () => void;
 }
 
 /** Flat-top hexagon polygon points for radius r */
@@ -34,6 +43,12 @@ const hexPoints = (r: number): string =>
 /** Diamond (rotated square) polygon points for radius r */
 const diamondPoints = (r: number): string =>
   `0,${-r} ${r},0 0,${r} ${-r},0`;
+
+/** Quadratic Bezier B(t) helper */
+const getBezierPoint = (t: number, p0: { x: number, y: number }, p1: { x: number, y: number }, p2: { x: number, y: number }) => ({
+  x: (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x,
+  y: (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y
+});
 
 const NetworkGraph: React.FC<NetworkGraphProps> = ({
   mode,
@@ -48,6 +63,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   roleIdentity = 'badge',
   decision = 50,
   onDecisionChange,
+  revealedEdgeIds,
+  onEdgeReveal,
+  hideDecisionEdge = false,
+  onInteraction,
 }) => {
   const [hoveredNode, setHoveredNode] = useState<AgentId | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -105,6 +124,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (isDragging && onInteraction) onInteraction();
     setIsDragging(false);
     setLocalDecision(null);
     setDragDirection('idle');
@@ -135,42 +155,98 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     return setup.activeEdgeIds.includes(edgeId) ? 1 : 0;
   };
 
-  // Helper to calculate arrow points for a Quadratic Bezier
-  const getManualArrowPoints = (start: { x: number; y: number }, control: { x: number; y: number }, end: { x: number; y: number }, r: number) => {
-    // For a quadratic bezier B(t), the derivative is B'(t) = 2(1-t)(P1-P0) + 2t(P2-P1)
-    // At t=1 (the end), the tangent vector is 2(P2-P1), which is simply the direction from control to end.
-    const dx = end.x - control.x;
-    const dy = end.y - control.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const ux = dx / dist; // unit tangent x
-    const uy = dy / dist; // unit tangent y
-
-    // The tip should be exactly at the node perimeter
-    // end - unitT * r
-    const tipX = end.x - ux * r;
-    const tipY = end.y - uy * r;
-
-    // Arrow dimensions
-    const headLen = 12;
-    const headWidth = 10;
-
-    // Normal vector for width
-    const nx = -uy;
-    const ny = ux;
-
-    const p1 = `${tipX},${tipY}`;
-    const p2 = `${tipX - ux * headLen + nx * (headWidth / 2)},${tipY - uy * headLen + ny * (headWidth / 2)}`;
-    const p3 = `${tipX - ux * headLen - nx * (headWidth / 2)},${tipY - uy * headLen - ny * (headWidth / 2)}`;
-
-    return `${p1} ${p2} ${p3}`;
-  };
-
   const RADIUS = mode === 'survey' ? 28 : 24; // Larger nodes in survey/mobile mode
 
   // Determine group colors based on mode
   const isNamed = groupLabel === 'named';
   const groupAColor = isNamed ? COLORS.kmt : COLORS.groupA;
   const groupBColor = isNamed ? COLORS.dpp : COLORS.groupB;
+
+  // Precompute uncollided control points for edges
+  const edgeControlPoints = React.useMemo(() => {
+    // 1. Define nodes for simulation (one for each possible edge, plus fixed nodes)
+    const simNodes = ALL_EDGES.map(edge => {
+      const start = positions[edge.source];
+      const end = positions[edge.target];
+      const mx = (start.x + end.x) / 2;
+      const my = (start.y + end.y) / 2;
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      // Starting "Label center" position (midpoint of a default arc)
+      // If control point offset is 45, curve midpoint offset is 22.5
+      const offset = 22.5;
+      const initLx = mx - (dy / dist) * offset;
+      const initLy = my + (dx / dist) * offset;
+
+      return {
+        id: edge.id,
+        isControl: true,
+        x: initLx,
+        y: initLy,
+        initLx, initLy,
+        mx, my, // store midpoint for back-calculation
+        vx: 0, vy: 0,
+      };
+    });
+
+    if (setup.decisionMaker && setup.opponent) {
+      const start = positions[setup.decisionMaker];
+      const end = positions[setup.opponent];
+      if (start && end) {
+        const mx = (start.x + end.x) / 2;
+        const my = (start.y + end.y) / 2;
+        simNodes.push({
+          id: 'decision-edge',
+          isControl: true,
+          x: mx,
+          y: my,
+          initLx: mx,
+          initLy: my,
+          mx, my,
+          vx: 0, vy: 0,
+        });
+      }
+    }
+
+    const fixedNodes = Object.entries(positions).map(([id, pos]) => ({
+      id,
+      isControl: false,
+      x: pos.x,
+      y: pos.y,
+      fx: pos.x,
+      fy: pos.y,
+      initLx: pos.x,
+      initLy: pos.y
+    }));
+
+    const allNodes = [...simNodes, ...fixedNodes] as any[];
+
+    // 2. Setup simulation
+    // - Force labels to stay relatively close to their default (initLx, initLy)
+    // - Force them to repel each other heavily to avoid overlap
+    const simulation = d3.forceSimulation(allNodes)
+      .force("x", d3.forceX((d: any) => d.initLx).strength((d: any) => d.isControl ? 0.3 : 1))
+      .force("y", d3.forceY((d: any) => d.initLy).strength((d: any) => d.isControl ? 0.3 : 1))
+      .force("collide", d3.forceCollide((d: any) => d.isControl ? 35 : RADIUS + 25).iterations(3))
+      .stop();
+
+    // 3. Fast-forward the simulation to final steady state
+    simulation.tick(300);
+
+    // 4. Extract results
+    const results: Record<string, { x: number, y: number }> = {};
+    simNodes.forEach((node: any) => {
+      // P1 = 2*Label - Midpoint
+      results[node.id] = {
+        x: 2 * node.x - node.mx,
+        y: 2 * node.y - node.my
+      };
+    });
+
+    return results;
+  }, [positions, RADIUS]);
 
   return (
     <svg
@@ -203,6 +279,23 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             <circle cx={positions[agent.id].x} cy={positions[agent.id].y} r={RADIUS} />
           </clipPath>
         ))}
+
+        {/* ── Arrow Markers ──────────────────────────────────────────────── */}
+        {['#e5e7eb', COLORS.highlight, COLORS.coop, COLORS.defect, '#9ca3af', 'transparent'].map((color, i) => (
+          <marker
+            key={`marker-${color.replace('#', '')}`}
+            id={`arrow-${color.replace('#', '')}`}
+            viewBox="0 -5 10 10"
+            refX="0"
+            refY="0"
+            markerUnits="userSpaceOnUse"
+            markerWidth="10"
+            markerHeight="10"
+            orient="auto"
+          >
+            <path d="M0,-5L10,0L0,5" fill={color} />
+          </marker>
+        ))}
       </defs>
 
       {/* ── Edges ─────────────────────────────────────────────────────── */}
@@ -213,27 +306,44 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const color = getEdgeColor(edge.id);
         const opacity = getEdgeOpacity(edge.id);
 
-        const mx = (start.x + end.x) / 2;
-        const my = (start.y + end.y) / 2;
+        const cp = edgeControlPoints[edge.id];
+        const cx = cp.x;
+        const cy = cp.y;
+
         const dx = end.x - start.x;
         const dy = end.y - start.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const offset = 40;
-        const cx = mx - (dy / dist) * offset;
-        const cy = my + (dx / dist) * offset;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        const pathData = `M ${start.x} ${start.y} Q ${cx} ${cy} ${end.x} ${end.y}`;
-        const t = 0.5;
-        const midX = (1 - t) * (1 - t) * start.x + 2 * (1 - t) * t * cx + t * t * end.x;
-        const midY = (1 - t) * (1 - t) * start.y + 2 * (1 - t) * t * cy + t * t * end.y;
+        // Accurate t-values for clipping (starting at radius, ending at radius + arrowhead length + tiny gap)
+        const tStart = RADIUS / (dist * 1.15);
+        const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
 
-        // Bubble implementation
+        const pStart = getBezierPoint(Math.max(0, tStart), start, { x: cx, y: cy }, end);
+        const pEnd = getBezierPoint(Math.min(1, tEnd), start, { x: cx, y: cy }, end);
+
+        const pathData = `M ${pStart.x} ${pStart.y} Q ${cx} ${cy} ${pEnd.x} ${pEnd.y}`;
+
+        // Midpoint of the VISIBLE segment
+        const tMid = (tStart + tEnd) / 2;
+        const midPoint = getBezierPoint(tMid, start, { x: cx, y: cy }, end);
+        const midX = midPoint.x;
+        const midY = midPoint.y;
+
+        // ── Gradual reveal logic ──────────────────────────────────────────────
+        const isGradualMode = revealedEdgeIds !== undefined;
+        const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
+        const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
+
+        // Stroke: gray for unrevealed active, normal for everything else
+        const edgeStroke = isUnrevealedActive ? '#9ca3af' : color;
+        const arrowFill = isUnrevealedActive ? '#9ca3af' : color;
+
+        // Bubble: only for revealed (or instant-mode) active edges in survey
         let showBubble = false;
         let bubbleLabel = '';
         let bubbleColor = 'transparent';
-        if (isActive && mode === 'survey' && scenario) {
+        if (isActive && mode === 'survey' && scenario && isRevealed) {
           const state = scenario.edgeStates[edge.id];
-          const config = setup.edgeConfigs[edge.id];
           showBubble = true;
           bubbleLabel = state === 1 ? 'COOP' : 'DEFECT';
           bubbleColor = state === 1 ? COLORS.coop : COLORS.defect;
@@ -242,32 +352,54 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         return (
           <g
             key={edge.id}
-            onClick={() => mode === 'admin' && onEdgeClick?.(edge.id)}
-            className={`${mode === 'admin' ? 'cursor-pointer hover:opacity-80' : ''} transition-all duration-300`}
+            onClick={() => {
+              if (mode === 'admin') {
+                onEdgeClick?.(edge.id);
+              } else if (isUnrevealedActive && onEdgeReveal) {
+                onEdgeReveal(edge.id);
+              }
+            }}
+            className={`${mode === 'admin'
+              ? 'cursor-pointer hover:opacity-80'
+              : isUnrevealedActive
+                ? 'cursor-pointer'
+                : ''
+              } transition-all duration-300`}
             style={{ opacity }}
           >
+            {/* Wide transparent hit area for easier clicking */}
             <path d={pathData} stroke="transparent" strokeWidth="20" fill="none" />
-            <path d={pathData} stroke={color} strokeWidth={isActive ? 3 : 2} fill="none" />
-            <polygon points={getManualArrowPoints(start, { x: cx, y: cy }, end, RADIUS)} fill={color} />
+            <path
+              d={pathData}
+              stroke={edgeStroke}
+              strokeWidth={isActive ? 3 : 2}
+              strokeDasharray={isUnrevealedActive ? '6 3' : undefined}
+              fill="none"
+              markerEnd={opacity > 0 && arrowFill !== 'transparent' ? `url(#arrow-${arrowFill.replace('#', '')})` : undefined}
+            />
+
+            {/* Revealed: COOP/DEFECT bubble */}
             {showBubble && (
               <g transform={`translate(${midX}, ${midY})`}>
-                <rect
-                  x="-22"
-                  y="-8"
-                  width="44"
-                  height="16"
-                  rx="8"
-                  fill={bubbleColor}
-                  stroke="white"
-                  strokeWidth="1.5"
-                />
-                <text
-                  textAnchor="middle"
-                  y="4"
-                  className="text-[8px] font-black fill-white uppercase tracking-tighter"
-                >
+                <rect x="-22" y="-8" width="44" height="16" rx="8" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
+                <text textAnchor="middle" y="4" className="text-[8px] font-black fill-white uppercase tracking-tighter">
                   {bubbleLabel}
                 </text>
+              </g>
+            )}
+
+            {/* Unrevealed active edge: pulsing '?' prompt */}
+            {isUnrevealedActive && (
+              <g transform={`translate(${midX}, ${midY})`}>
+                {/* Outer Glow */}
+                <circle r="16" fill="#3b82f6" fillOpacity="0.2">
+                  <animate attributeName="r" values="14;18;14" dur="2s" repeatCount="indefinite" />
+                  <animate attributeName="fill-opacity" values="0.2;0.4;0.2" dur="2s" repeatCount="indefinite" />
+                </circle>
+                <circle r="12" fill="white" stroke="#3b82f6" strokeWidth="2" className="shadow-lg">
+                  <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
+                </circle>
+                <text textAnchor="middle" y="4" className="text-[12px] font-black fill-blue-600" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.1))' }}>?</text>
               </g>
             )}
           </g>
@@ -275,7 +407,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       })}
 
       {/* ── Decision Edge (Live) ────────────────────────────────────────── */}
-      {mode === 'survey' && setup.decisionMaker && setup.opponent && (() => {
+      {!hideDecisionEdge && mode === 'survey' && setup.decisionMaker && setup.opponent && (() => {
         const startNode = setup.decisionMaker;
         const endNode = setup.opponent;
         const start = positions[startNode];
@@ -289,20 +421,26 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         // Match decision edge color to the subject node (YOU)
         const decisionColor = COLORS.highlight;
 
-        // Simple straight-ish line with slight curve for the decision
         const mx = (start.x + end.x) / 2;
         const my = (start.y + end.y) / 2;
-        const ox = -(dy / dist) * 15;
-        const oy = (dx / dist) * 15;
-        const ctrlX = mx + ox;
-        const ctrlY = my + oy;
 
-        const path = `M ${start.x} ${start.y} Q ${ctrlX} ${ctrlY} ${end.x} ${end.y}`;
+        const cp = edgeControlPoints['decision-edge'];
+        const ctrlX = cp ? cp.x : mx;
+        const ctrlY = cp ? cp.y : my;
 
-        // Fixed position at the midpoint (t = 0.5)
-        const tMid = 0.5;
-        const bx = Math.pow(1 - tMid, 2) * start.x + 2 * (1 - tMid) * tMid * ctrlX + Math.pow(tMid, 2) * end.x;
-        const by = Math.pow(1 - tMid, 2) * start.y + 2 * (1 - tMid) * tMid * ctrlY + Math.pow(tMid, 2) * end.y;
+        // Shorten the decision edge path too
+        const tStartDecision = RADIUS / (dist * 1.15);
+        const tEndDecision = 1 - (RADIUS + 13) / (dist * 1.15);
+        const pStartDecision = getBezierPoint(Math.max(0, tStartDecision), start, { x: ctrlX, y: ctrlY }, end);
+        const pEndDecision = getBezierPoint(Math.min(1, tEndDecision), start, { x: ctrlX, y: ctrlY }, end);
+
+        const path = `M ${pStartDecision.x} ${pStartDecision.y} Q ${ctrlX} ${ctrlY} ${pEndDecision.x} ${pEndDecision.y}`;
+
+        // Midpoint of the VISIBLE segment
+        const tMidDecision = (tStartDecision + tEndDecision) / 2;
+        const midPoint = getBezierPoint(tMidDecision, start, { x: ctrlX, y: ctrlY }, end);
+        const bx = midPoint.x;
+        const by = midPoint.y;
 
         // Use localDecision for visual rendering during drag to ensure smoothness
         const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
@@ -321,13 +459,13 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               strokeWidth="4"
               strokeDasharray="8 4"
               className="animate-[dash_var(--dash-speed)_linear_infinite]"
+              markerEnd={`url(#arrow-${decisionColor.replace('#', '')})`}
               style={{
                 transition: 'stroke 0.3s ease',
                 // @ts-ignore
                 '--dash-speed': `${dashSpeed}s`
               }}
             />
-            <polygon points={getManualArrowPoints(start, { x: ctrlX, y: ctrlY }, end, RADIUS)} fill={decisionColor} style={{ transition: 'fill 0.3s ease' }} />
 
             <g
               transform={`translate(${bx}, ${by})`}
@@ -411,20 +549,29 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               {/* Large transparent hit area for easier grabbing */}
               <circle r="35" fill="transparent" className="cursor-pointer" />
 
-              <circle
-                r={isDragging ? 22 : isHoveringDecision ? 20 : 18}
+              <rect
+                x={isDragging ? -26 : isHoveringDecision ? -24 : -22}
+                y={isDragging ? -12 : isHoveringDecision ? -11 : -10}
+                width={isDragging ? 52 : isHoveringDecision ? 48 : 44}
+                height={isDragging ? 24 : isHoveringDecision ? 22 : 20}
+                rx={isDragging ? 12 : isHoveringDecision ? 11 : 10}
                 fill="white"
                 stroke={decisionColor}
-                strokeWidth={isDragging ? 4 : isHoveringDecision ? 3.5 : 2.5}
+                strokeWidth={isDragging ? 3 : isHoveringDecision ? 2.5 : 2}
                 className="shadow-md"
                 style={{ transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}
               />
-              <text textAnchor="middle" y="4" className={`${isDragging ? 'text-[12px]' : isHoveringDecision ? 'text-[11px]' : 'text-[10px]'} font-black fill-gray-900 pointer-events-none`}>
+              <text
+                textAnchor="middle"
+                y="1"
+                className={`${isDragging ? 'text-[11px]' : isHoveringDecision ? 'text-[10px]' : 'text-[9px]'} font-black fill-gray-900 pointer-events-none uppercase`}
+                style={{ transition: 'all 0.2s ease' }}
+              >
                 {visualDecision}%
               </text>
 
-              {/* "Your Decision" label with background for better contrast against dash lines */}
-              <g transform={`translate(0, ${isDragging ? -30 : isHoveringDecision ? -27 : -24})`}>
+              {/* Added back the descriptive label */}
+              <g transform={`translate(0, ${isDragging ? -26 : isHoveringDecision ? -22 : -20})`}>
                 <rect
                   x="-35"
                   y="-7"
@@ -444,7 +591,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                     opacity: isDragging || isHoveringDecision ? 1 : 0.8
                   }}
                 >
-                  {isDragging ? 'Adjusting...' : 'Cooperate Probability'}
+                  {isDragging ? 'Adjusting...' : 'Probability'}
                 </text>
               </g>
             </g>
@@ -570,45 +717,78 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             )}
 
             {/* ── Center Label ── */}
-            {nodeIdentity !== 'avatar' && (
+            {nodeIdentity !== 'avatar' && groupLabel !== 'named' && (
               <text dy="5" textAnchor="middle" className="text-xs font-bold fill-white pointer-events-none uppercase" style={{ textShadow: '0px 1px 2px rgba(0,0,0,0.4)' }}>
                 {agent.label}
               </text>
             )}
 
-            {/* ── Avatar mode: ID label below node ── */}
-            {nodeIdentity === 'avatar' && (
-              <text y={r + 13} textAnchor="middle" fontSize="9" fontWeight="700" fill="#555" className="pointer-events-none uppercase">
-                {agent.label}
-              </text>
-            )}
-
-            {/* ── YOU / OPPONENT indicator ── */}
-            {isDecisionMaker && mode === 'survey' && (
-              <g transform="translate(0, -38)">
-                <rect x="-24" y="-10" width="48" height="20" rx={4} fill={COLORS.highlight} stroke="white" strokeWidth="2" />
-                <text y="4" textAnchor="middle" className="text-[10px] font-bold fill-white uppercase tracking-wider">YOU</text>
-                <path d="M -5 10 L 0 15 L 5 10 Z" fill={COLORS.highlight} />
-              </g>
-            )}
-
-            {isOpponent && mode === 'survey' && (
-              <g transform="translate(0, -38)">
-                <rect x="-35" y="-10" width="70" height="20" rx={4} fill="#374151" stroke="white" strokeWidth="2" />
-                <text y="4" textAnchor="middle" className="text-[10px] font-bold fill-white uppercase tracking-wider">Partner</text>
-                <path d="M -5 10 L 0 15 L 5 10 Z" fill="#374151" />
-              </g>
-            )}
-
-            {/* ── Named Group Badge ── */}
-            {groupLabel === 'named' && (
-              <g transform="translate(0, 34)">
-                <rect x="-22" y="-9" width="44" height="18" rx="9" fill={groupColor} stroke="white" strokeWidth="1.5" opacity="0.92" />
-                <text y="4" textAnchor="middle" fontSize="9" fontWeight="800" fill="white" className="pointer-events-none uppercase tracking-widest">
-                  {agent.group === 'A' ? groupNames.A : groupNames.B}
+            {/* ── Avatar mode: ID label inside node ── */}
+            {nodeIdentity === 'avatar' && groupLabel !== 'named' && (
+              <g transform={`translate(0, ${r - 8})`}>
+                <rect x="-14" y="-6" width="28" height="12" rx="4" fill="rgba(255,255,255,0.85)" />
+                <text y="3" textAnchor="middle" fontSize="8" fontWeight="800" fill="#333" className="pointer-events-none uppercase">
+                  {agent.label}
                 </text>
               </g>
             )}
+
+            {/* ── YOU / OPPONENT indicator (when not named) ── */}
+            {isDecisionMaker && mode === 'survey' && groupLabel !== 'named' && (
+              <g transform={`translate(0, ${-r + 8})`}>
+                <rect x="-18" y="-7" width="36" height="14" rx="7" fill={COLORS.highlight} stroke="white" strokeWidth="1.5" />
+                <text y="3" textAnchor="middle" className="text-[8px] font-bold fill-white uppercase tracking-wider">YOU</text>
+              </g>
+            )}
+
+            {isOpponent && mode === 'survey' && groupLabel !== 'named' && (
+              <g transform={`translate(0, ${-r + 8})`}>
+                <rect x="-26" y="-7" width="52" height="14" rx="7" fill="#374151" stroke="white" strokeWidth="1.5" />
+                <text y="3" textAnchor="middle" className="text-[8px] font-bold fill-white uppercase tracking-wider">Partner</text>
+              </g>
+            )}
+
+            {/* ── Named Group Badge (with Role if applicable) ── */}
+            {groupLabel === 'named' && (() => {
+              const baseName = agent.group === 'A' ? groupNames.A : groupNames.B;
+
+              let roleTag = null;
+              let roleFill = '';
+              let badgeWidth = 44; // base width for just the group name
+
+              if (mode === 'survey') {
+                if (isDecisionMaker) {
+                  roleTag = 'YOU';
+                  roleFill = COLORS.highlight; // yellow/amber
+                  badgeWidth = 75; // wider to accommodate 'YOU - GROUPNAME'
+                } else if (isOpponent) {
+                  roleTag = 'Partner';
+                  roleFill = '#6b7280'; // gray-500
+                  badgeWidth = 90; // wider to accommodate 'Partner - GROUPNAME'
+                }
+              }
+
+              // Use white pill with colored text
+              const badgeFill = 'white';
+              const strokeColor = roleTag ? roleFill : groupColor; // Match border to role color if role exists
+
+              return (
+                <g transform={`translate(0, ${r - 2})`}>
+                  <rect x={-badgeWidth / 2} y="-14" width={badgeWidth} height="16" rx="8" fill={badgeFill} stroke={strokeColor} strokeWidth="1.5" opacity="0.95" />
+                  <text y="-2" textAnchor="middle" fontSize="8" fontWeight="800" className="pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
+                    {roleTag ? (
+                      <>
+                        <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag}</tspan>
+                        <tspan className="opacity-50 font-normal mx-1" fill="#9ca3af"> · </tspan>
+                        <tspan className="uppercase tracking-widest" fill={groupColor}>{baseName}</tspan>
+                      </>
+                    ) : (
+                      <tspan className="tracking-widest" fill={groupColor}>{baseName}</tspan>
+                    )}
+                  </text>
+                </g>
+              );
+            })()}
 
             {/* ── Hover Tooltip ── */}
             {groupLabel === 'named' && hoveredNode === agent.id && (

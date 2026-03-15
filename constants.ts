@@ -25,8 +25,8 @@ export const ALL_EDGES: EdgeDef[] = [
 
 export const DEFAULT_EDGE_CONFIG = {
   label: 'Relationship',
-  low: 'Defected',
-  high: 'Cooperated',
+  low: 'Not Given',
+  high: 'Given',
 };
 
 export const COLORS = {

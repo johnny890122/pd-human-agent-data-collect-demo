@@ -130,15 +130,17 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     setDragDirection('idle');
   };
 
-  const defaultPositions: Record<AgentId, { x: number; y: number }> = {
-    HA: { x: 100, y: 100 },
-    RA: { x: 300, y: 100 },
-    HB: { x: 100, y: 300 },
-    RB: { x: 300, y: 300 },
-  };
-  const positions: Record<AgentId, { x: number; y: number }> = positionOverrides
-    ? { ...defaultPositions, ...positionOverrides }
-    : defaultPositions;
+  const positions = React.useMemo(() => {
+    const defaultPositions: Record<AgentId, { x: number; y: number }> = {
+      HA: { x: 100, y: 100 },
+      RA: { x: 300, y: 100 },
+      HB: { x: 100, y: 300 },
+      RB: { x: 300, y: 300 },
+    };
+    return positionOverrides
+      ? { ...defaultPositions, ...positionOverrides }
+      : defaultPositions;
+  }, [positionOverrides]);
 
   const getEdgeColor = (edgeId: string) => {
     if (mode === 'admin') {
@@ -155,7 +157,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     return setup.activeEdgeIds.includes(edgeId) ? 1 : 0;
   };
 
-  const RADIUS = mode === 'survey' ? 28 : 24; // Larger nodes in survey/mobile mode
+  const RADIUS = mode === 'survey' ? 42 : 24; // Much larger nodes in survey/mobile mode
 
   // Determine group colors based on mode
   const isNamed = groupLabel === 'named';
@@ -252,7 +254,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     <svg
       ref={svgRef}
       className={`w-full h-full max-w-full lg:max-w-[440px] mx-auto ${className} touch-none select-none overflow-visible`}
-      viewBox="-20 -40 440 480"
+      viewBox={mode === 'survey' ? "-20 -20 460 480" : "-20 -40 440 480"}
       preserveAspectRatio="xMidYMid meet"
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -298,7 +300,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         ))}
       </defs>
 
-      {/* ── Edges ─────────────────────────────────────────────────────── */}
+      {/* ── Edges (Layer 1: Paths) ────────────────────────────────────── */}
       {ALL_EDGES.map(edge => {
         const start = positions[edge.source];
         const end = positions[edge.target];
@@ -314,7 +316,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const dy = end.y - start.y;
         const dist = Math.sqrt(dx * dx + dy * dy) || 1;
 
-        // Accurate t-values for clipping (starting at radius, ending at radius + arrowhead length + tiny gap)
         const tStart = RADIUS / (dist * 1.15);
         const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
 
@@ -323,35 +324,16 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
         const pathData = `M ${pStart.x} ${pStart.y} Q ${cx} ${cy} ${pEnd.x} ${pEnd.y}`;
 
-        // Midpoint of the VISIBLE segment
-        const tMid = (tStart + tEnd) / 2;
-        const midPoint = getBezierPoint(tMid, start, { x: cx, y: cy }, end);
-        const midX = midPoint.x;
-        const midY = midPoint.y;
-
-        // ── Gradual reveal logic ──────────────────────────────────────────────
         const isGradualMode = revealedEdgeIds !== undefined;
         const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
         const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
 
-        // Stroke: gray for unrevealed active, normal for everything else
         const edgeStroke = isUnrevealedActive ? '#9ca3af' : color;
         const arrowFill = isUnrevealedActive ? '#9ca3af' : color;
 
-        // Bubble: only for revealed (or instant-mode) active edges in survey
-        let showBubble = false;
-        let bubbleLabel = '';
-        let bubbleColor = 'transparent';
-        if (isActive && mode === 'survey' && scenario && isRevealed) {
-          const state = scenario.edgeStates[edge.id];
-          showBubble = true;
-          bubbleLabel = state === 1 ? 'COOP' : 'DEFECT';
-          bubbleColor = state === 1 ? COLORS.coop : COLORS.defect;
-        }
-
         return (
           <g
-            key={edge.id}
+            key={`path-${edge.id}`}
             onClick={() => {
               if (mode === 'admin') {
                 onEdgeClick?.(edge.id);
@@ -377,12 +359,142 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               fill="none"
               markerEnd={opacity > 0 && arrowFill !== 'transparent' ? `url(#arrow-${arrowFill.replace('#', '')})` : undefined}
             />
+          </g>
+        );
+      })}
 
+      {/* ── Decision Edge (Layer 2: Path) ──────────────────────────────── */}
+      {!hideDecisionEdge && mode === 'survey' && setup.decisionMaker && setup.opponent && (() => {
+        const startNode = setup.decisionMaker;
+        const endNode = setup.opponent;
+        const start = positions[startNode];
+        const end = positions[endNode];
+        if (!start || !end) return null;
+
+        const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
+
+        let decisionColor: string;
+        let edgeOpacity = 1;
+
+        if (visualDecision > 50) {
+          decisionColor = COLORS.coop;
+          edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
+        } else if (visualDecision < 50) {
+          decisionColor = COLORS.defect;
+          edgeOpacity = 0.4 + (0.6 * (50 - visualDecision) / 50);
+        } else {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        }
+
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        const mx = (start.x + end.x) / 2;
+        const my = (start.y + end.y) / 2;
+
+        const cp = edgeControlPoints['decision-edge'];
+        const ctrlX = cp ? cp.x : mx;
+        const ctrlY = cp ? cp.y : my;
+
+        const tStartDecision = RADIUS / (dist * 1.15);
+        const tEndDecision = 1 - (RADIUS + 13) / (dist * 1.15);
+        const pStartDecision = getBezierPoint(Math.max(0, tStartDecision), start, { x: ctrlX, y: ctrlY }, end);
+        const pEndDecision = getBezierPoint(Math.min(1, tEndDecision), start, { x: ctrlX, y: ctrlY }, end);
+
+        const path = `M ${pStartDecision.x} ${pStartDecision.y} Q ${ctrlX} ${ctrlY} ${pEndDecision.x} ${pEndDecision.y}`;
+
+        const dashSpeed = 1 - (decision / 100) * 0.6;
+
+        return (
+          <g style={{ transition: 'all 0.3s ease' }}>
+            <path
+              d={path}
+              fill="none"
+              stroke={decisionColor}
+              strokeWidth="4"
+              strokeDasharray="8 4"
+              strokeOpacity={edgeOpacity}
+              className="animate-[dash_var(--dash-speed)_linear_infinite]"
+              markerEnd={`url(#arrow-${decisionColor.replace('#', '')})`}
+              style={{
+                transition: 'stroke 0.3s ease, stroke-opacity 0.3s ease',
+                // @ts-ignore
+                '--dash-speed': `${dashSpeed}s`
+              }}
+            />
+            <style>{`
+              @keyframes dash {
+                to { stroke-dashoffset: -12; }
+              }
+            `}</style>
+          </g>
+        );
+      })()}
+
+      {/* ── Edges (Layer 3: Bubbles) ──────────────────────────────────── */}
+      {ALL_EDGES.map(edge => {
+        const start = positions[edge.source];
+        const end = positions[edge.target];
+        const isActive = setup.activeEdgeIds.includes(edge.id);
+        const opacity = getEdgeOpacity(edge.id);
+
+        const cp = edgeControlPoints[edge.id];
+        const cx = cp.x;
+        const cy = cp.y;
+
+        const dx = end.x - start.x;
+        const dy = end.y - start.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        const tStart = RADIUS / (dist * 1.15);
+        const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
+
+        const tMid = (tStart + tEnd) / 2;
+        const midPoint = getBezierPoint(tMid, start, { x: cx, y: cy }, end);
+        const midX = midPoint.x;
+        const midY = midPoint.y;
+
+        const isGradualMode = revealedEdgeIds !== undefined;
+        const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
+        const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
+
+        let showBubble = false;
+        let bubbleLabel = '';
+        let bubbleColor = 'transparent';
+        if (isActive && mode === 'survey' && scenario && isRevealed) {
+          const state = scenario.edgeStates[edge.id];
+          showBubble = true;
+          bubbleLabel = state === 1 ? 'GIVE' : 'NOT GIVE';
+          bubbleColor = state === 1 ? COLORS.coop : COLORS.defect;
+        }
+
+        if (!showBubble && !isUnrevealedActive) return null;
+
+        return (
+          <g
+            key={`bubble-${edge.id}`}
+            onClick={() => {
+              if (mode === 'admin') {
+                onEdgeClick?.(edge.id);
+              } else if (isUnrevealedActive && onEdgeReveal) {
+                onEdgeReveal(edge.id);
+              }
+            }}
+            className={`${mode === 'admin'
+              ? 'cursor-pointer hover:opacity-80'
+              : isUnrevealedActive
+                ? 'cursor-pointer'
+                : ''
+              } transition-all duration-300`}
+            style={{ opacity }}
+          >
             {/* Revealed: COOP/DEFECT bubble */}
             {showBubble && (
               <g transform={`translate(${midX}, ${midY})`}>
-                <rect x="-22" y="-8" width="44" height="16" rx="8" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
-                <text textAnchor="middle" y="4" className="text-[8px] font-black fill-white uppercase tracking-tighter">
+                <rect x="-30" y="-12" width="60" height="24" rx="12" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
+                <text textAnchor="middle" y="5" className="text-[12px] md:text-[10px] font-black fill-black uppercase tracking-tighter">
                   {bubbleLabel}
                 </text>
               </g>
@@ -399,14 +511,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                 <circle r="12" fill="white" stroke="#3b82f6" strokeWidth="2" className="shadow-lg">
                   <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
                 </circle>
-                <text textAnchor="middle" y="4" className="text-[12px] font-black fill-blue-600" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.1))' }}>?</text>
+                <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.1))' }}>?</text>
               </g>
             )}
           </g>
         );
       })}
 
-      {/* ── Decision Edge (Live) ────────────────────────────────────────── */}
+      {/* ── Decision Edge (Layer 4: Bubble) ────────────────────────────── */}
       {!hideDecisionEdge && mode === 'survey' && setup.decisionMaker && setup.opponent && (() => {
         const startNode = setup.decisionMaker;
         const endNode = setup.opponent;
@@ -414,12 +526,24 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const end = positions[endNode];
         if (!start || !end) return null;
 
+        const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
+        let decisionColor: string;
+        let edgeOpacity = 1;
+
+        if (visualDecision > 50) {
+          decisionColor = COLORS.coop;
+          edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
+        } else if (visualDecision < 50) {
+          decisionColor = COLORS.defect;
+          edgeOpacity = 0.4 + (0.6 * (50 - visualDecision) / 50);
+        } else {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        }
+
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-
-        // Match decision edge color to the subject node (YOU)
-        const decisionColor = COLORS.highlight;
 
         const mx = (start.x + end.x) / 2;
         const my = (start.y + end.y) / 2;
@@ -428,45 +552,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const ctrlX = cp ? cp.x : mx;
         const ctrlY = cp ? cp.y : my;
 
-        // Shorten the decision edge path too
         const tStartDecision = RADIUS / (dist * 1.15);
         const tEndDecision = 1 - (RADIUS + 13) / (dist * 1.15);
-        const pStartDecision = getBezierPoint(Math.max(0, tStartDecision), start, { x: ctrlX, y: ctrlY }, end);
-        const pEndDecision = getBezierPoint(Math.min(1, tEndDecision), start, { x: ctrlX, y: ctrlY }, end);
-
-        const path = `M ${pStartDecision.x} ${pStartDecision.y} Q ${ctrlX} ${ctrlY} ${pEndDecision.x} ${pEndDecision.y}`;
-
-        // Midpoint of the VISIBLE segment
         const tMidDecision = (tStartDecision + tEndDecision) / 2;
         const midPoint = getBezierPoint(tMidDecision, start, { x: ctrlX, y: ctrlY }, end);
         const bx = midPoint.x;
         const by = midPoint.y;
 
-        // Use localDecision for visual rendering during drag to ensure smoothness
-        const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
-
-        // Directional prompts logic
-        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-        // Animation speed based on decision: 1s (0%) to 0.4s (100%)
-        const dashSpeed = 1 - (decision / 100) * 0.6;
-
         return (
           <g style={{ transition: 'all 0.3s ease' }}>
-            <path
-              d={path}
-              fill="none"
-              stroke={decisionColor}
-              strokeWidth="4"
-              strokeDasharray="8 4"
-              className="animate-[dash_var(--dash-speed)_linear_infinite]"
-              markerEnd={`url(#arrow-${decisionColor.replace('#', '')})`}
-              style={{
-                transition: 'stroke 0.3s ease',
-                // @ts-ignore
-                '--dash-speed': `${dashSpeed}s`
-              }}
-            />
-
             <g
               transform={`translate(${bx}, ${by})`}
               style={{
@@ -477,7 +571,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               onMouseEnter={() => onDecisionChange && setIsHoveringDecision(true)}
               onMouseLeave={() => setIsHoveringDecision(false)}
             >
-              {/* Directional pulsing arrows and labels - moved to the bubble for better focus */}
+              {/* Directional pulsing arrows */}
               {onDecisionChange && (
                 <g>
                   {/* To Defect (-) */}
@@ -489,19 +583,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                           <animate attributeName="transform" values="translate(0,0); translate(-4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
                         </>
                       )}
-                      <path
-                        d="M -30 0 L -24 -4 L -24 4 Z"
-                        fill={decisionColor}
-                      />
-                      <text
-                        x="-34"
-                        y="0"
-                        textAnchor="end"
-                        dominantBaseline="central"
-                        className="text-[12px] font-black fill-red-600"
-                      >
-                        -
-                      </text>
+                      <path d="M -30 0 L -24 -4 L -24 4 Z" fill={decisionColor} />
                     </g>
                   )}
                   {/* To Cooperate (+) */}
@@ -513,19 +595,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                           <animate attributeName="transform" values="translate(0,0); translate(4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
                         </>
                       )}
-                      <path
-                        d="M 30 0 L 24 -4 L 24 4 Z"
-                        fill={decisionColor}
-                      />
-                      <text
-                        x="34"
-                        y="0"
-                        textAnchor="start"
-                        dominantBaseline="central"
-                        className="text-[12px] font-black fill-green-600"
-                      >
-                        +
-                      </text>
+                      <path d="M 30 0 L 24 -4 L 24 4 Z" fill={decisionColor} />
                     </g>
                   )}
                 </g>
@@ -547,59 +617,33 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               )}
 
               {/* Large transparent hit area for easier grabbing */}
-              <circle r="35" fill="transparent" className="cursor-pointer" />
+              <circle r="40" fill="transparent" className="cursor-pointer" />
 
+              {/* Main Bubble - Matches standard edge style */}
               <rect
-                x={isDragging ? -26 : isHoveringDecision ? -24 : -22}
-                y={isDragging ? -12 : isHoveringDecision ? -11 : -10}
-                width={isDragging ? 52 : isHoveringDecision ? 48 : 44}
-                height={isDragging ? 24 : isHoveringDecision ? 22 : 20}
-                rx={isDragging ? 12 : isHoveringDecision ? 11 : 10}
-                fill="white"
-                stroke={decisionColor}
-                strokeWidth={isDragging ? 3 : isHoveringDecision ? 2.5 : 2}
+                x="-35"
+                y="-12"
+                width="70"
+                height="24"
+                rx="12"
+                fill={decisionColor} // Use solid color
+                fillOpacity={edgeOpacity}
+                stroke="white"
+                strokeOpacity={edgeOpacity}
+                strokeWidth={isDragging ? 3 : 2}
                 className="shadow-md"
-                style={{ transition: 'all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)' }}
+                style={{ transition: 'fill 0.3s ease, stroke-width 0.2s ease, fill-opacity 0.3s ease, stroke-opacity 0.3s ease' }}
               />
+
               <text
                 textAnchor="middle"
-                y="1"
-                className={`${isDragging ? 'text-[11px]' : isHoveringDecision ? 'text-[10px]' : 'text-[9px]'} font-black fill-gray-900 pointer-events-none uppercase`}
+                y="5"
+                className="text-[12px] md:text-[10px] font-black fill-black pointer-events-none uppercase tracking-tighter"
                 style={{ transition: 'all 0.2s ease' }}
               >
-                {visualDecision}%
+                {visualDecision > 50 ? 'GIVE' : visualDecision < 50 ? 'NOT GIVE' : '?'}
               </text>
-
-              {/* Added back the descriptive label */}
-              <g transform={`translate(0, ${isDragging ? -26 : isHoveringDecision ? -22 : -20})`}>
-                <rect
-                  x="-35"
-                  y="-7"
-                  width="70"
-                  height="12"
-                  rx="4"
-                  fill="white"
-                  style={{ transition: 'all 0.2s ease' }}
-                />
-                <text
-                  textAnchor="middle"
-                  y="2"
-                  className={`${isDragging ? 'text-[10px]' : 'text-[8px]'} font-black uppercase tracking-tighter pointer-events-none`}
-                  style={{
-                    fill: decisionColor,
-                    transition: 'all 0.2s ease',
-                    opacity: isDragging || isHoveringDecision ? 1 : 0.8
-                  }}
-                >
-                  {isDragging ? 'Adjusting...' : 'Probability'}
-                </text>
-              </g>
             </g>
-            <style>{`
-              @keyframes dash {
-                to { stroke-dashoffset: -12; }
-              }
-            `}</style>
           </g>
         );
       })()}
@@ -718,7 +762,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
             {/* ── Center Label ── */}
             {nodeIdentity !== 'avatar' && groupLabel !== 'named' && (
-              <text dy="5" textAnchor="middle" className="text-xs font-bold fill-white pointer-events-none uppercase" style={{ textShadow: '0px 1px 2px rgba(0,0,0,0.4)' }}>
+              <text dy="5" textAnchor="middle" className="text-sm md:text-xs font-bold fill-white pointer-events-none uppercase" style={{ textShadow: '0px 1px 2px rgba(0,0,0,0.4)' }}>
                 {agent.label}
               </text>
             )}
@@ -727,7 +771,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {nodeIdentity === 'avatar' && groupLabel !== 'named' && (
               <g transform={`translate(0, ${r - 8})`}>
                 <rect x="-14" y="-6" width="28" height="12" rx="4" fill="rgba(255,255,255,0.85)" />
-                <text y="3" textAnchor="middle" fontSize="8" fontWeight="800" fill="#333" className="pointer-events-none uppercase">
+                <text y="3" textAnchor="middle" fontSize="10" className="md:text-[8px] font-[800] fill-[#333] pointer-events-none uppercase">
                   {agent.label}
                 </text>
               </g>
@@ -737,14 +781,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {isDecisionMaker && mode === 'survey' && groupLabel !== 'named' && (
               <g transform={`translate(0, ${-r + 8})`}>
                 <rect x="-18" y="-7" width="36" height="14" rx="7" fill={COLORS.highlight} stroke="white" strokeWidth="1.5" />
-                <text y="3" textAnchor="middle" className="text-[8px] font-bold fill-white uppercase tracking-wider">YOU</text>
+                <text y="3" textAnchor="middle" className="text-[10px] md:text-[8px] font-bold fill-white uppercase tracking-wider">YOU</text>
               </g>
             )}
 
             {isOpponent && mode === 'survey' && groupLabel !== 'named' && (
               <g transform={`translate(0, ${-r + 8})`}>
                 <rect x="-26" y="-7" width="52" height="14" rx="7" fill="#374151" stroke="white" strokeWidth="1.5" />
-                <text y="3" textAnchor="middle" className="text-[8px] font-bold fill-white uppercase tracking-wider">Partner</text>
+                <text y="3" textAnchor="middle" className="text-[10px] md:text-[8px] font-bold fill-white uppercase tracking-wider">Partner</text>
               </g>
             )}
 
@@ -775,7 +819,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               return (
                 <g transform={`translate(0, ${r - 2})`}>
                   <rect x={-badgeWidth / 2} y="-14" width={badgeWidth} height="16" rx="8" fill={badgeFill} stroke={strokeColor} strokeWidth="1.5" opacity="0.95" />
-                  <text y="-2" textAnchor="middle" fontSize="8" fontWeight="800" className="pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
+                  <text y="-2" textAnchor="middle" fontSize="10" className="font-[800] md:text-[8px] pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
                     {roleTag ? (
                       <>
                         <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag}</tspan>

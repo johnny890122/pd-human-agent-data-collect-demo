@@ -8,15 +8,22 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:server": "node server.js",
     "build": "vite build",
     "start": "node server.js",
     "preview": "vite preview",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "smoke:e2e": "node scripts/smoke-e2e.mjs"
   },
   "dependencies": {
+    "@apollo/server": "^5.4.0",
+    "@as-integrations/express5": "^1.1.2",
     "d3": "^7.9.0",
+    "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "graphql": "^16.13.1",
+    "mongoose": "^8.23.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },

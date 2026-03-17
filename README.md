@@ -10,11 +10,19 @@ View your app in AI Studio: https://ai.studio/apps/drive/1Mo0KYmUbtggjpVpGE1zTpy
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js 20+
 
 1. Install dependencies:
    `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+2. Create `.env.local` from `.env.example` and set credentials:
+   - `GEMINI_API_KEY`
+   - `MONGODB_URI`
+3. Start backend (GraphQL + Express):
+   `npm run dev:server`
+4. Start frontend (Vite):
    `npm run dev`
+
+## GraphQL Endpoint
+
+- Local endpoint: `http://localhost:3001/graphql`
+- Vite proxies `/graphql` to backend during frontend development.

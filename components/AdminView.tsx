@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ExperimentSetup, EdgeConfig, AgentId } from '../types';
 import { AGENTS, DEFAULT_EDGE_CONFIG } from '../constants';
 import NetworkGraph from './NetworkGraph';
@@ -11,6 +11,33 @@ interface AdminViewProps {
 
 const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (setup.decisionMaker === setup.opponent) {
+      const fallbackOpponent = (Object.keys(AGENTS) as AgentId[]).find(
+        id => id !== setup.decisionMaker
+      );
+      if (fallbackOpponent) {
+        setSetup(prev => ({ ...prev, opponent: fallbackOpponent }));
+      }
+    }
+  }, [setup.decisionMaker, setup.opponent, setSetup]);
+
+  const handleDecisionMakerChange = (decisionMaker: AgentId) => {
+    let opponent = setup.opponent;
+    if (decisionMaker === opponent) {
+      opponent = (Object.keys(AGENTS) as AgentId[]).find(id => id !== decisionMaker) ?? opponent;
+    }
+    setSetup({ ...setup, decisionMaker, opponent });
+  };
+
+  const handleOpponentChange = (opponent: AgentId) => {
+    let decisionMaker = setup.decisionMaker;
+    if (opponent === decisionMaker) {
+      decisionMaker = (Object.keys(AGENTS) as AgentId[]).find(id => id !== opponent) ?? decisionMaker;
+    }
+    setSetup({ ...setup, decisionMaker, opponent });
+  };
 
   const toggleEdge = (edgeId: string) => {
     const isActive = setup.activeEdgeIds.includes(edgeId);
@@ -60,13 +87,11 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
                 <label className="block text-xs text-gray-500 mb-1">Decision Maker (Subject)</label>
                 <select
                   value={setup.decisionMaker}
-                  onChange={(e) =>
-                    setSetup({ ...setup, decisionMaker: e.target.value as AgentId })
-                  }
+                  onChange={(e) => handleDecisionMakerChange(e.target.value as AgentId)}
                   className="w-full p-2 border rounded-md bg-white text-sm"
                 >
                   {Object.values(AGENTS).map((a) => (
-                    <option key={a.id} value={a.id}>
+                    <option key={a.id} value={a.id} disabled={a.id === setup.opponent}>
                       {a.label} ({a.id})
                     </option>
                   ))}
@@ -76,13 +101,11 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
                 <label className="block text-xs text-gray-500 mb-1">Partner</label>
                 <select
                   value={setup.opponent}
-                  onChange={(e) =>
-                    setSetup({ ...setup, opponent: e.target.value as AgentId })
-                  }
+                  onChange={(e) => handleOpponentChange(e.target.value as AgentId)}
                   className="w-full p-2 border rounded-md bg-white text-sm"
                 >
                   {Object.values(AGENTS).map((a) => (
-                    <option key={a.id} value={a.id}>
+                    <option key={a.id} value={a.id} disabled={a.id === setup.decisionMaker}>
                       {a.label} ({a.id})
                     </option>
                   ))}

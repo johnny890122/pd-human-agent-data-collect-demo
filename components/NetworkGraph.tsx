@@ -17,7 +17,7 @@ interface NetworkGraphProps {
   groupNames?: { A: string; B: string };
   /** Node visual style: circle (default), shape (hexagon/diamond), avatar (SVG face) */
   nodeIdentity?: 'circle' | 'shape' | 'avatar';
-  /** How to indicate focal/opponent players: badge (large label), glow (pulsing aura + badge) */
+  /** How to indicate focal/opponent players */
   roleIdentity?: 'badge' | 'glow';
   /** The probability (0-100) of cooperating with the opponent */
   decision?: number;
@@ -212,16 +212,19 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       }
     }
 
-    const fixedNodes = Object.entries(positions).map(([id, pos]) => ({
-      id,
-      isControl: false,
-      x: pos.x,
-      y: pos.y,
-      fx: pos.x,
-      fy: pos.y,
-      initLx: pos.x,
-      initLy: pos.y
-    }));
+    const fixedNodes = (Object.keys(positions) as AgentId[]).map(id => {
+      const pos = positions[id];
+      return {
+        id,
+        isControl: false,
+        x: pos.x,
+        y: pos.y,
+        fx: pos.x,
+        fy: pos.y,
+        initLx: pos.x,
+        initLy: pos.y,
+      };
+    });
 
     const allNodes = [...simNodes, ...fixedNodes] as any[];
 
@@ -390,6 +393,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        if (!Number.isFinite(dist) || dist <= 1e-6) return null;
 
         const mx = (start.x + end.x) / 2;
         const my = (start.y + end.y) / 2;
@@ -544,6 +548,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const dx = end.x - start.x;
         const dy = end.y - start.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
+        if (!Number.isFinite(dist) || dist <= 1e-6) return null;
 
         const mx = (start.x + end.x) / 2;
         const my = (start.y + end.y) / 2;
@@ -666,9 +671,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           if (roleIdentity === 'badge' || roleIdentity === 'glow') {
             if (isDecisionMaker) { strokeColor = COLORS.highlight; strokeWidth = 4; }
             else if (isOpponent) { strokeColor = '#374151'; strokeWidth = 4; }
-          } else if (roleIdentity === 'circle') {
-            if (isDecisionMaker) { strokeColor = '#fbbf24'; strokeWidth = 5; }
-            else if (isOpponent) { strokeColor = '#374151'; strokeWidth = 5; }
           }
         }
 

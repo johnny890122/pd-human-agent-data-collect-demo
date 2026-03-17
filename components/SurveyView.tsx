@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ExperimentSetup, SurveyResult } from '../types';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
@@ -15,8 +16,29 @@ interface SurveyViewProps {
 
 // ─── Main Survey View ─────────────────────────────────────────────────────────
 const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) => {
-  const [step, setStep] = useState<'intro' | 'scenarios' | 'outro'>('intro');
-  const [currentScenarioIdx, setCurrentScenarioIdx] = useState(0);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams();
+
+  // Keep users in the survey flow by ignoring browser Back navigation.
+  useEffect(() => {
+    const blockBackNavigation = () => {
+      window.history.pushState(null, '', window.location.href);
+    };
+
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('popstate', blockBackNavigation);
+
+    return () => {
+      window.removeEventListener('popstate', blockBackNavigation);
+    };
+  }, [location.pathname]);
+  
+  // Get intro step and scenario index from URL params
+  const introStep = params.introStep ? parseInt(params.introStep, 10) : 0;
+  const scenarioIdx = params.scenarioIdx ? parseInt(params.scenarioIdx, 10) : 0;
+  
+  // State for survey progression
   const [sliderValue, setSliderValue] = useState(50);
   const [results, setResults] = useState<SurveyResult[]>([]);
   const [hasInteracted, setHasInteracted] = useState(false);
@@ -32,7 +54,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
     setRevealedEdgeIds(new Set());
     setIsDecisionPhase(false);
     setHasInteracted(false);
-  }, [currentScenarioIdx]);
+    setSliderValue(50);
+  }, [scenarioIdx]);
 
   const handleEdgeReveal = (edgeId: string) => {
     setRevealedEdgeIds(prev => new Set([...prev, edgeId]));
@@ -43,10 +66,10 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
 
   useEffect(() => {
     setRandomPositions(generateTrianglePositions(setup.decisionMaker));
-  }, [currentScenarioIdx, setup.decisionMaker]);
+  }, [scenarioIdx, setup.decisionMaker]);
 
   const scenarios = useMemo(() => generateDesignMatrix(setup.activeEdgeIds), [setup.activeEdgeIds]);
-  const currentScenario = scenarios[currentScenarioIdx];
+  const currentScenario = scenarios[scenarioIdx];
   const surveyGraphStyleProps = {
     mode: 'survey' as const,
     groupLabel: 'named' as const,
@@ -56,29 +79,43 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
 
   const handleNext = () => {
     const newResults = [...results];
-    newResults[currentScenarioIdx] = {
+    newResults[scenarioIdx] = {
       scenarioId: currentScenario.id,
       cooperationProbability: sliderValue / 100,
     };
     setResults(newResults);
-    if (currentScenarioIdx < scenarios.length - 1) {
-      setCurrentScenarioIdx(prev => prev + 1);
-      setSliderValue(50);
-      setHasInteracted(false);
+    if (scenarioIdx < scenarios.length - 1) {
+      navigate(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      setStep('outro');
       onComplete(newResults);
     }
   };
 
+  // Determine which step we're on based on the URL path
+  const isIntroStep = location.pathname.startsWith('/survey/intro/');
+  const isScenariosStep = location.pathname.startsWith('/survey/scenarios/');
+  const isOutroStep = location.pathname === '/survey/outro';
+
   // ── Intro ──────────────────────────────────────────────────────────────────
-  if (step === 'intro') {
-    return <SurveyIntro setup={setup} onFinish={() => setStep('scenarios')} />;
+  if (isIntroStep) {
+    return (
+      <SurveyIntro 
+        setup={setup} 
+        currentStep={introStep}
+        onNavigateIntro={(step) => navigate(`/survey/intro/${step}`)}
+        onFinish={() => navigate('/survey/scenarios/0')} 
+      />
+    );
   }
 
   // ── Outro ──────────────────────────────────────────────────────────────────
-  if (step === 'outro') {
+  if (isOutroStep) {
     return <SurveyOutro results={results} onBack={onBack} />;
+  }
+
+  // ── Scenarios ──────────────────────────────────────────────────────────────
+  if (!isScenariosStep || !currentScenario) {
+    return null;
   }
 
   return (
@@ -106,13 +143,13 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
       {/* ── Block 1: Progress Bar ──────────────────────────────────────────── */}
       <div className="w-full max-w-5xl mb-6 mt-12 lg:mt-0">
         <div className="flex justify-between text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-          <span>Scenario {currentScenarioIdx + 1} of {scenarios.length}</span>
-          <span>Progress: {Math.round(((currentScenarioIdx + 1) / scenarios.length) * 100)}%</span>
+          <span>Scenario {scenarioIdx + 1} of {scenarios.length}</span>
+          <span>Progress: {Math.round(((scenarioIdx + 1) / scenarios.length) * 100)}%</span>
         </div>
         <div className="w-full bg-gray-300 rounded-full h-2 overflow-hidden">
           <div
             className="bg-indigo-600 h-2 rounded-full transition-all duration-500 ease-out"
-            style={{ width: `${((currentScenarioIdx + 1) / scenarios.length) * 100}%` }}
+            style={{ width: `${((scenarioIdx + 1) / scenarios.length) * 100}%` }}
           />
         </div>
       </div>
@@ -231,7 +268,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
                   ? 'Enter decision phase first'
                   : !hasInteracted
                     ? 'Interact with Slider first'
-                    : currentScenarioIdx === scenarios.length - 1 ? 'Submit Results' : 'Confirm & Next'
+                    : scenarioIdx === scenarios.length - 1 ? 'Submit Results' : 'Confirm & Next'
               }
             </button>
           </div>

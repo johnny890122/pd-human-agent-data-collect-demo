@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import AdminView from './components/AdminView';
 import SurveyView from './components/SurveyView';
 import { ExperimentSetup, SurveyResult } from './types';
@@ -9,10 +10,19 @@ import {
 } from './utils/graphqlClient';
 
 const App: React.FC = () => {
-  const [mode, setMode] = useState<'admin' | 'survey'>('admin');
+  const navigate = useNavigate();
   const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const surveySessionId = useMemo(() => crypto.randomUUID(), []);
+  const surveySessionId = useMemo(() => {
+    if (import.meta.env.MODE === 'test') {
+      return crypto.randomUUID();
+    }
+    const saved = sessionStorage.getItem('survey-session-id');
+    if (saved) return saved;
+    const id = crypto.randomUUID();
+    sessionStorage.setItem('survey-session-id', id);
+    return id;
+  }, []);
   
   // Initial Setup State
   const [setup, setSetup] = useState<ExperimentSetup>({
@@ -49,9 +59,10 @@ const App: React.FC = () => {
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         setBackendNotice(`Could not persist setup: ${message}`);
+        return;
       }
     }
-    setMode('survey');
+    navigate('/survey/intro/0');
   };
 
   const handleSurveyComplete = async (results: SurveyResult[]) => {
@@ -69,10 +80,11 @@ const App: React.FC = () => {
     }
 
     setIsSubmitting(false);
+    navigate('/survey/outro');
   };
 
   const handleBackToAdmin = () => {
-      setMode('admin');
+      navigate('/');
   };
 
   return (
@@ -91,11 +103,42 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {mode === 'admin' ? (
-        <AdminView setup={setup} setSetup={setSetup} onStart={handleStartSurvey} />
-      ) : (
-        <SurveyView setup={setup} onComplete={handleSurveyComplete} onBack={handleBackToAdmin} />
-      )}
+      <Routes>
+        <Route 
+          path="/" 
+          element={<AdminView setup={setup} setSetup={setSetup} onStart={handleStartSurvey} />} 
+        />
+        <Route 
+          path="/survey/intro/:introStep" 
+          element={
+            <SurveyView 
+              setup={setup} 
+              onComplete={handleSurveyComplete} 
+              onBack={handleBackToAdmin}
+            />
+          } 
+        />
+        <Route 
+          path="/survey/scenarios/:scenarioIdx" 
+          element={
+            <SurveyView 
+              setup={setup} 
+              onComplete={handleSurveyComplete} 
+              onBack={handleBackToAdmin}
+            />
+          } 
+        />
+        <Route 
+          path="/survey/outro" 
+          element={
+            <SurveyView 
+              setup={setup} 
+              onComplete={handleSurveyComplete} 
+              onBack={handleBackToAdmin}
+            />
+          } 
+        />
+      </Routes>
     </div>
   );
 };

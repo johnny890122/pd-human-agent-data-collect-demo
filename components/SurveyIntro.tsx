@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { ExperimentSetup } from '../types';
 import { AGENTS, COLORS } from '../constants';
 import { AgentId } from '../types';
@@ -7,19 +7,26 @@ import { AGENT_IDS, generateTrianglePositions, PayoffMatrix, DecisionSlider } fr
 
 export interface SurveyIntroProps {
   setup: ExperimentSetup;
+  currentStep?: number;
+  onNavigateIntro?: (step: number) => void;
   onFinish: () => void;
 }
 
-const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, onFinish }) => {
-  const agentMe = AGENTS[setup.decisionMaker];
-  const agentOpponent = AGENTS[setup.opponent];
-
-  const [introStep, setIntroStep] = useState(0);
+const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNavigateIntro, onFinish }) => {
+  const [introStep, setIntroStep] = useState(currentStep);
   const [introEdgeRevealed, setIntroEdgeRevealed] = useState(false);
   const [introSliderValue, setIntroSliderValue] = useState(50);
   const [introSliderInteracted, setIntroSliderInteracted] = useState(false);
 
   const [introGraphRevealed, setIntroGraphRevealed] = useState<Set<string>>(new Set());
+
+  // Sync introStep with URL param
+  useEffect(() => {
+    setIntroStep(currentStep);
+  }, [currentStep]);
+
+  const agentMe = AGENTS[setup.decisionMaker];
+  const agentOpponent = AGENTS[setup.opponent];
 
   const networkDemoSetup = useMemo(() => {
     const others = AGENT_IDS.filter(id => id !== setup.decisionMaker && id !== setup.opponent);
@@ -508,7 +515,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, onFinish }) => {
             <div className="flex gap-4">
               {introStep > 0 ? (
                 <button
-                  onClick={() => setIntroStep(prev => prev - 1)}
+                  onClick={() => {
+                    setIntroStep(prev => prev - 1);
+                    onNavigateIntro?.(introStep - 1);
+                  }}
                   className="flex-1 py-4 text-base font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-2xl transition-colors"
                 >
                   Back
@@ -519,7 +529,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, onFinish }) => {
 
               {introStep < introSteps.length - 1 ? (
                 <button
-                  onClick={() => setIntroStep(prev => prev + 1)}
+                  onClick={() => {
+                    setIntroStep(prev => prev + 1);
+                    onNavigateIntro?.(introStep + 1);
+                  }}
                   disabled={isNextDisabled}
                   className={`flex-[2] py-4 text-base font-bold rounded-2xl shadow-lg transition-all active:scale-95 ${isNextDisabled
                     ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none transform-none'

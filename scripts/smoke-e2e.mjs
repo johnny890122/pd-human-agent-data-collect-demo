@@ -42,8 +42,8 @@ async function run() {
         high: 'HighState',
       },
     ],
-    decisionMaker: 'HB',
-    opponent: 'RA',
+    decisionMaker: '3',
+    opponent: '2',
   };
 
   const saveSetupData = await graphQL(

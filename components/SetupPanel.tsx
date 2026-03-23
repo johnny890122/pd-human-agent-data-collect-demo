@@ -1,6 +1,7 @@
 import React from 'react';
 import { toast } from 'react-hot-toast';
 import { ExperimentSetup, AgentId } from '../types';
+import { AGENTS } from '../constants';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
 
@@ -34,6 +35,28 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const k = setup.activeEdgeIds.length;
   const scenariosCount = Math.pow(2, k);
   const isHighLoad = k > 4;
+  const agentOptions = Object.values(AGENTS);
+
+  const getFallbackAgent = (excludeId: string): string => {
+    const fallback = agentOptions.find((agent) => agent.id !== excludeId);
+    return fallback ? fallback.id : excludeId;
+  };
+
+  const handleFocalNodeChange = (value: string) => {
+    setSetup((prev) => ({
+      ...prev,
+      focalNode: value,
+      opponentNode: prev.opponentNode === value ? getFallbackAgent(value) : prev.opponentNode,
+    }));
+  };
+
+  const handleOpponentNodeChange = (value: string) => {
+    setSetup((prev) => ({
+      ...prev,
+      opponentNode: value,
+      focalNode: prev.focalNode === value ? getFallbackAgent(value) : prev.focalNode,
+    }));
+  };
 
   const handleGenerateUrl = async () => {
     setIsSaving(true);
@@ -56,7 +79,48 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
               Session Configuration
             </h3>
-            <div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">YOU Node</label>
+                  <select
+                    value={setup.focalNode}
+                    onChange={(e) => handleFocalNodeChange(e.target.value)}
+                    disabled={readOnly}
+                    className={`w-full p-2 border rounded-md bg-white text-sm ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                  >
+                    {agentOptions.map((agent) => (
+                      <option
+                        key={`focal-${agent.id}`}
+                        value={agent.id}
+                        disabled={agent.id === setup.opponentNode}
+                      >
+                        {agent.id} ({agent.label})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Partner Node</label>
+                  <select
+                    value={setup.opponentNode}
+                    onChange={(e) => handleOpponentNodeChange(e.target.value)}
+                    disabled={readOnly}
+                    className={`w-full p-2 border rounded-md bg-white text-sm ${readOnly ? 'bg-gray-100 text-gray-500 cursor-not-allowed' : ''}`}
+                  >
+                    {agentOptions.map((agent) => (
+                      <option
+                        key={`opponent-${agent.id}`}
+                        value={agent.id}
+                        disabled={agent.id === setup.focalNode}
+                      >
+                        {agent.id} ({agent.label})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <label className="block text-xs text-gray-500 mb-1">Target Sample Size</label>
               <input
                 type="number"
@@ -159,8 +223,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             setup={setup}
             onEdgeClick={readOnly ? () => {} : onEdgeToggle}
             onNodeClick={readOnly ? () => {} : onNodeInteraction}
-            nodeIdentity="avatar"
-            roleIdentity="badge"
           />
         </div>
       </div>

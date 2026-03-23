@@ -5,8 +5,9 @@ const edgeConfigEntrySchema = new mongoose.Schema(
   {
     sessionId: { type: String, required: true }, // point to experimentSetupSchema
     edgeId: { type: String, required: true },
-    results: { type: [Object], required: true }, // {scenarioId: number, cooperationProbability: number}
-    demographics: { type: Object, required: true }, // {age: number, gender: string, education: string}
+    results: { type: [Object], required: false, default: [] }, // {scenarioId: number, cooperationProbability: number}
+    demographics: { type: Object, required: false, default: null }, // {age: number, gender: string, education: string}
+    isCompleted: { type: Boolean, required: true, default: false },
   },
   { timestamps: true }
 );

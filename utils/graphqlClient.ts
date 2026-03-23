@@ -1,7 +1,6 @@
 import { ExperimentSetup, SurveyResult } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
-const isTestMode = import.meta.env.MODE === 'test';
 
 interface GraphQLResponse<TData> {
   data?: TData;
@@ -19,6 +18,47 @@ interface GraphExperimentSetup {
   updatedAt?: string;
 }
 
+const CANONICAL_AGENT_IDS = new Set(['1', '2', '3', '4']);
+
+function normalizeAgentId(id: string | undefined): string {
+  if (!id) return '1';
+  if (CANONICAL_AGENT_IDS.has(id)) return id;
+  return '1';
+}
+
+function normalizeEdgeId(edgeId: string): string {
+  const [sourceRaw, targetRaw] = edgeId.split('-');
+  if (!sourceRaw || !targetRaw) {
+    return edgeId;
+  }
+  const source = normalizeAgentId(sourceRaw.trim());
+  const target = normalizeAgentId(targetRaw.trim());
+  return `${source}-${target}`;
+}
+
+function normalizeScenarios(
+  scenarios: any[]
+): any[] {
+  if (!Array.isArray(scenarios)) return [];
+
+  return scenarios.map((scenario) => {
+    if (!scenario || typeof scenario !== 'object') return scenario;
+    const edgeStates = scenario.edgeStates;
+    if (!edgeStates || typeof edgeStates !== 'object') {
+      return scenario;
+    }
+
+    const normalizedEdgeStates = Object.fromEntries(
+      Object.entries(edgeStates).map(([edgeId, state]) => [normalizeEdgeId(edgeId), state])
+    );
+
+    return {
+      ...scenario,
+      edgeStates: normalizedEdgeStates,
+    };
+  });
+}
+
 function setupToGraphInput(setup: ExperimentSetup): GraphExperimentSetup {
   return {
     activeEdgeIds: setup.activeEdgeIds,
@@ -30,12 +70,18 @@ function setupToGraphInput(setup: ExperimentSetup): GraphExperimentSetup {
 }
 
 function setupFromGraph(graph: GraphExperimentSetup): ExperimentSetup {
+  const focalNode = normalizeAgentId(graph.focalNode);
+  let opponentNode = normalizeAgentId(graph.opponentNode);
+  if (opponentNode === focalNode) {
+    opponentNode = focalNode === '1' ? '2' : '1';
+  }
+
   return {
     id: graph.id,
-    activeEdgeIds: graph.activeEdgeIds,
-    scenarios: graph.scenarios,
-    focalNode: graph.focalNode,
-    opponentNode: graph.opponentNode,
+    activeEdgeIds: (graph.activeEdgeIds || []).map(normalizeEdgeId),
+    scenarios: normalizeScenarios(graph.scenarios),
+    focalNode,
+    opponentNode,
     sampleSize: graph.sampleSize,
     submissionCount: graph.submissionCount,
     updatedAt: graph.updatedAt,
@@ -44,10 +90,6 @@ function setupFromGraph(graph: GraphExperimentSetup): ExperimentSetup {
 
 
 async function runGraphQL<TData>(query: string, variables?: Record<string, unknown>): Promise<TData> {
-  if (isTestMode) {
-    throw new Error('GraphQL calls are disabled in test mode.');
-  }
-
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: 'POST',
     headers: {
@@ -173,6 +215,56 @@ export async function submitSurvey(
     sessionId,
     edgeId,
     results,
+    demographics,
+  });
+}
+
+export async function startSurveyEntry(sessionId: string, edgeId: string): Promise<string> {
+  const mutation = `
+    mutation StartSurveyEntry($sessionId: String!, $edgeId: String!) {
+      startSurveyEntry(sessionId: $sessionId, edgeId: $edgeId) {
+        id
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ startSurveyEntry: { id: string } }>(mutation, {
+    sessionId,
+    edgeId,
+  });
+
+  return data.startSurveyEntry.id;
+}
+
+export async function saveSurveyAnswer(entryId: string, answer: SurveyResult): Promise<void> {
+  const mutation = `
+    mutation SaveSurveyAnswer($entryId: ID!, $answer: SurveyAnswerInput!) {
+      saveSurveyAnswer(entryId: $entryId, answer: $answer) {
+        id
+      }
+    }
+  `;
+
+  await runGraphQL(mutation, {
+    entryId,
+    answer,
+  });
+}
+
+export async function completeSurveyEntry(
+  entryId: string,
+  demographics: { age: number; gender: string; education: string }
+): Promise<void> {
+  const mutation = `
+    mutation CompleteSurveyEntry($entryId: ID!, $demographics: DemographicInput!) {
+      completeSurveyEntry(entryId: $entryId, demographics: $demographics) {
+        id
+      }
+    }
+  `;
+
+  await runGraphQL(mutation, {
+    entryId,
     demographics,
   });
 }

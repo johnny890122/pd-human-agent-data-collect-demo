@@ -6,10 +6,10 @@ import { ExperimentSetup } from '../../types';
 
 describe('SurveyIntro', () => {
   const setup: ExperimentSetup = {
-    activeEdgeIds: ['HA-HB'],
+    activeEdgeIds: ['1-3'],
     edgeConfigs: {},
-    decisionMaker: 'HA',
-    opponent: 'HB',
+    decisionMaker: '1',
+    opponent: '3',
   };
 
   it('uses static class names for role cards', () => {

@@ -12,7 +12,13 @@ function requireDb() {
 
 async function toSetupGraph(doc) {
   if (!doc) return null;
-  const submissionCount = await EdgeConfigEntryModel.countDocuments({ sessionId: String(doc._id) });
+  const submissionCount = await EdgeConfigEntryModel.countDocuments({
+    sessionId: String(doc._id),
+    $or: [
+      { isCompleted: true },
+      { isCompleted: { $exists: false } },
+    ],
+  });
   return {
     id: String(doc._id),
     activeEdgeIds: doc.activeEdgeIds,
@@ -32,6 +38,18 @@ function validateResults(results) {
       throw new Error('cooperationProbability must be between 0 and 1');
     }
   }
+}
+
+function mapEntry(doc) {
+  return {
+    id: String(doc._id),
+    sessionId: doc.sessionId,
+    edgeId: doc.edgeId,
+    results: doc.results || [],
+    demographics: doc.demographics || null,
+    isCompleted: doc.isCompleted === true,
+    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+  };
 }
 
 export const resolvers = {
@@ -86,12 +104,8 @@ export const resolvers = {
         .limit(limit)
         .lean();
       return docs.map((doc) => ({
-        id: String(doc._id),
-        sessionId: doc.sessionId,
-        edgeId: doc.edgeId,
-        results: doc.results,
-        demographics: doc.demographics,
-        createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+        ...mapEntry(doc),
+        isCompleted: doc.isCompleted === true,
       }));
 
     },
@@ -116,6 +130,64 @@ export const resolvers = {
 
       return await toSetupGraph(doc.toObject());
     },
+    startSurveyEntry: async (_, { sessionId, edgeId }) => {
+      requireDb();
+      await connectToDatabase();
+
+      const doc = await EdgeConfigEntryModel.create({
+        sessionId,
+        edgeId,
+        results: [],
+        demographics: null,
+        isCompleted: false,
+      });
+
+      return mapEntry(doc);
+    },
+    saveSurveyAnswer: async (_, { entryId, answer }) => {
+      requireDb();
+      validateResults([answer]);
+      await connectToDatabase();
+
+      const existing = await EdgeConfigEntryModel.findById(entryId);
+      if (!existing) {
+        throw new Error('Survey entry not found.');
+      }
+
+      const results = Array.isArray(existing.results) ? [...existing.results] : [];
+      const idx = results.findIndex((item) => item.scenarioId === answer.scenarioId);
+      if (idx >= 0) {
+        results[idx] = answer;
+      } else {
+        results.push(answer);
+      }
+      results.sort((a, b) => a.scenarioId - b.scenarioId);
+
+      existing.results = results;
+      await existing.save();
+      return mapEntry(existing);
+    },
+    completeSurveyEntry: async (_, { entryId, demographics }) => {
+      requireDb();
+      await connectToDatabase();
+
+      const doc = await EdgeConfigEntryModel.findByIdAndUpdate(
+        entryId,
+        {
+          $set: {
+            demographics,
+            isCompleted: true,
+          },
+        },
+        { new: true }
+      );
+
+      if (!doc) {
+        throw new Error('Survey entry not found.');
+      }
+
+      return mapEntry(doc);
+    },
     submitSurvey: async (_, { sessionId, edgeId, results, demographics }) => {
       try {
         requireDb();
@@ -127,6 +199,7 @@ export const resolvers = {
           edgeId,
           results,
           demographics,
+          isCompleted: true,
         });
 
         // Use a 100% safe way to get ISO string
@@ -149,6 +222,7 @@ export const resolvers = {
           edgeId: doc.edgeId || edgeId,
           results: doc.results || results,
           demographics: doc.demographics || demographics,
+          isCompleted: true,
           createdAt: createdAtStr,
         };
       } catch (error) {

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import * as d3 from 'd3';
 import { AGENTS, ALL_EDGES, COLORS } from '../constants';
 import { AgentId, ExperimentSetup, Scenario } from '../types';
+import { clamp, distance, getBezierPoint, projectPointToSegmentT } from '../utils/math';
 
 interface NetworkGraphProps {
   mode: 'admin' | 'survey';
@@ -12,14 +13,8 @@ interface NetworkGraphProps {
   className?: string;
   /** Optional override for node positions (randomized layout) */
   positionOverrides?: Record<AgentId, { x: number; y: number }>;
-  /** 'color' = circles only; 'named' = show semantic group name badges */
-  groupLabel?: 'color' | 'named';
-  /** Custom group names shown when groupLabel='named' */
+  /** Custom group names shown in node badges */
   groupNames?: { A: string; B: string };
-  /** Node visual style: circle (default), shape (hexagon/diamond), avatar (SVG face) */
-  nodeIdentity?: 'circle' | 'shape' | 'avatar';
-  /** How to indicate focal/opponent players */
-  roleIdentity?: 'badge' | 'glow';
   /** The probability (0-100) of cooperating with the opponent */
   decision?: number;
   /** Callback for when the decision value is changed via interaction */
@@ -34,23 +29,6 @@ interface NetworkGraphProps {
   onInteraction?: () => void;
 }
 
-/** Flat-top hexagon polygon points for radius r */
-const hexPoints = (r: number): string =>
-  Array.from({ length: 6 }, (_, i) => {
-    const a = (i * 60 - 30) * Math.PI / 180;
-    return `${(r * Math.cos(a)).toFixed(1)},${(r * Math.sin(a)).toFixed(1)}`;
-  }).join(' ');
-
-/** Diamond (rotated square) polygon points for radius r */
-const diamondPoints = (r: number): string =>
-  `0,${-r} ${r},0 0,${r} ${-r},0`;
-
-/** Quadratic Bezier B(t) helper */
-const getBezierPoint = (t: number, p0: { x: number, y: number }, p1: { x: number, y: number }, p2: { x: number, y: number }) => ({
-  x: (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x,
-  y: (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y
-});
-
 const NetworkGraph: React.FC<NetworkGraphProps> = ({
   mode,
   setup,
@@ -59,10 +37,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   onNodeClick,
   className = '',
   positionOverrides,
-  groupLabel = 'color',
   groupNames = { A: 'KMT', B: 'DPP' },
-  nodeIdentity = 'circle',
-  roleIdentity = 'badge',
   decision = 50,
   onDecisionChange,
   revealedEdgeIds,
@@ -102,19 +77,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     pt.y = e.clientY;
     const loc = pt.matrixTransform(svg.getScreenCTM()?.inverse());
 
-    // Better Scrubbing logic: 
-    // We calculate the projection of the pointer onto the line between start and end nodes.
-    // This makes the scrubbing feel natural along the axis of the edge.
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const d2 = dx * dx + dy * dy;
-
-    if (d2 === 0) return;
-
-    // t is the projection factor on the infinite line
-    let t = ((loc.x - start.x) * dx + (loc.y - start.y) * dy) / d2;
-    // Clamp to 0-1
-    t = Math.max(0, Math.min(1, t));
+    // Project pointer to the decision segment to get a stable 0-100 scrub value.
+    const t = projectPointToSegmentT(loc, start, end);
+    if (t === null) return;
 
     const newDecision = Math.round(t * 100);
 
@@ -135,10 +100,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const positions = React.useMemo(() => {
     const defaultPositions: Record<AgentId, { x: number; y: number }> = {
-      HA: { x: 100, y: 100 },
-      RA: { x: 300, y: 100 },
-      HB: { x: 100, y: 300 },
-      RB: { x: 300, y: 300 },
+      '1': { x: 100, y: 100 },
+      '2': { x: 300, y: 100 },
+      '3': { x: 100, y: 300 },
+      '4': { x: 300, y: 300 },
     };
     return positionOverrides
       ? { ...defaultPositions, ...positionOverrides }
@@ -147,7 +112,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const getEdgeColor = (edgeId: string) => {
     if (mode === 'admin') {
-      return setup.activeEdgeIds.includes(edgeId) ? COLORS.highlight : '#e5e7eb';
+      return setup.activeEdgeIds.includes(edgeId) ? COLORS.highlight : COLORS.edgeInactive;
     }
     if (setup.activeEdgeIds.includes(edgeId) && scenario) {
       return scenario.edgeStates[edgeId] === 1 ? COLORS.coop : COLORS.defect;
@@ -162,10 +127,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const RADIUS = 42; // Larger nodes for better visibility
 
-  // Determine group colors based on mode
-  const isNamed = groupLabel === 'named';
-  const groupAColor = isNamed ? COLORS.kmt : COLORS.groupA;
-  const groupBColor = isNamed ? COLORS.dpp : COLORS.groupB;
+  const groupAColor = COLORS.kmt;
+  const groupBColor = COLORS.dpp;
 
   // Precompute uncollided control points for edges
   const edgeControlPoints = React.useMemo(() => {
@@ -177,7 +140,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       const my = (start.y + end.y) / 2;
       const dx = end.x - start.x;
       const dy = end.y - start.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const dist = distance(start, end) || 1;
 
       // Starting "Label center" position (midpoint of a default arc)
       // If control point offset is 45, curve midpoint offset is 22.5
@@ -283,14 +246,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         </filter>
 
         {/* Clip paths for avatar mode — positioned at actual node coordinates */}
-        {nodeIdentity === 'avatar' && Object.values(AGENTS).map(agent => (
+        {Object.values(AGENTS).map(agent => (
           <clipPath key={`aclip-${agent.id}`} id={`aclip-${agent.id}`}>
             <circle cx={positions[agent.id].x} cy={positions[agent.id].y} r={RADIUS} />
           </clipPath>
         ))}
 
         {/* ── Arrow Markers ──────────────────────────────────────────────── */}
-        {['#e5e7eb', COLORS.highlight, COLORS.coop, COLORS.defect, '#9ca3af', 'transparent'].map((color, i) => (
+        {[COLORS.edgeInactive, COLORS.highlight, COLORS.coop, COLORS.defect, COLORS.neutral, 'transparent'].map((color, i) => (
           <marker
             key={`marker-${color.replace('#', '')}`}
             id={`arrow-${color.replace('#', '')}`}
@@ -319,15 +282,13 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const cx = cp.x;
         const cy = cp.y;
 
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const dist = distance(start, end) || 1;
 
         const tStart = RADIUS / (dist * 1.15);
         const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
 
-        const pStart = getBezierPoint(Math.max(0, tStart), start, { x: cx, y: cy }, end);
-        const pEnd = getBezierPoint(Math.min(1, tEnd), start, { x: cx, y: cy }, end);
+        const pStart = getBezierPoint(clamp(tStart, 0, 1), start, { x: cx, y: cy }, end);
+        const pEnd = getBezierPoint(clamp(tEnd, 0, 1), start, { x: cx, y: cy }, end);
 
         const pathData = `M ${pStart.x} ${pStart.y} Q ${cx} ${cy} ${pEnd.x} ${pEnd.y}`;
 
@@ -335,8 +296,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
         const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
 
-        const edgeStroke = isUnrevealedActive ? '#9ca3af' : color;
-        const arrowFill = isUnrevealedActive ? '#9ca3af' : color;
+        const edgeStroke = isUnrevealedActive ? COLORS.neutral : color;
+        const arrowFill = isUnrevealedActive ? COLORS.neutral : color;
 
         return (
           <g
@@ -395,9 +356,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           edgeOpacity = 0.5;
         }
 
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const dist = distance(start, end);
         if (!Number.isFinite(dist) || dist <= 1e-6) return null;
 
         const mx = (start.x + end.x) / 2;
@@ -409,8 +368,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
         const tStartDecision = RADIUS / (dist * 1.15);
         const tEndDecision = 1 - (RADIUS + 13) / (dist * 1.15);
-        const pStartDecision = getBezierPoint(Math.max(0, tStartDecision), start, { x: ctrlX, y: ctrlY }, end);
-        const pEndDecision = getBezierPoint(Math.min(1, tEndDecision), start, { x: ctrlX, y: ctrlY }, end);
+        const pStartDecision = getBezierPoint(clamp(tStartDecision, 0, 1), start, { x: ctrlX, y: ctrlY }, end);
+        const pEndDecision = getBezierPoint(clamp(tEndDecision, 0, 1), start, { x: ctrlX, y: ctrlY }, end);
 
         const path = `M ${pStartDecision.x} ${pStartDecision.y} Q ${ctrlX} ${ctrlY} ${pEndDecision.x} ${pEndDecision.y}`;
 
@@ -453,9 +412,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const cx = cp.x;
         const cy = cp.y;
 
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const dist = distance(start, end) || 1;
 
         const tStart = RADIUS / (dist * 1.15);
         const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
@@ -513,14 +470,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {isUnrevealedActive && (
               <g transform={`translate(${midX}, ${midY})`}>
                 {/* Outer Glow */}
-                <circle r="16" fill="#3b82f6" fillOpacity="0.2">
+                <circle r="16" fill={COLORS.blue} fillOpacity="0.2">
                   <animate attributeName="r" values="14;18;14" dur="2s" repeatCount="indefinite" />
                   <animate attributeName="fill-opacity" values="0.2;0.4;0.2" dur="2s" repeatCount="indefinite" />
                 </circle>
-                <circle r="12" fill="white" stroke="#3b82f6" strokeWidth="2" className="shadow-lg">
+                <circle r="12" fill="white" stroke={COLORS.blue} strokeWidth="2" className="shadow-lg">
                   <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
                 </circle>
-                <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.1))' }}>?</text>
+                <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})` }}>?</text>
               </g>
             )}
           </g>
@@ -551,9 +508,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           edgeOpacity = 0.5;
         }
 
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+        const dist = distance(start, end);
         if (!Number.isFinite(dist) || dist <= 1e-6) return null;
 
         const mx = (start.x + end.x) / 2;
@@ -668,12 +623,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const groupColor = agent.group === 'A' ? groupAColor : groupBColor;
         const r = RADIUS;
 
-        let strokeColor = nodeIdentity === 'avatar' ? groupColor : 'white';
+        let strokeColor = groupColor;
         let strokeWidth = 2;
 
-        if (roleIdentity === 'badge' || roleIdentity === 'glow') {
-          if (isDecisionMaker) { strokeColor = COLORS.highlight; strokeWidth = 4; }
-          else if (isOpponent) { strokeColor = '#374151'; strokeWidth = 4; }
+
+        if (isDecisionMaker) { 
+          strokeColor = COLORS.highlight; strokeWidth = 4; 
+        }
+        else if (isOpponent) {
+          strokeColor = COLORS.roleOpponent; strokeWidth = 4; 
         }
 
         // ── Avatar body ──────────────────────────
@@ -685,47 +643,47 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         // Derive darker accent colors for avatar based on groupColor
         const getDarkerColor = (color: string): string => {
           // Predefined dark variants for better avatar appearance
-          if (color === COLORS.kmt) return '#1a1a6e';      // KMT dark blue
-          if (color === COLORS.dpp) return '#0d5a1f';      // DPP darker green
-          if (color === COLORS.groupA) return '#1e3a8a';   // Darker variant of bright blue
-          if (color === COLORS.groupB) return '#7c2d12';   // Darker variant of red
-          return '#1a1a1a'; // fallback
+          if (color === COLORS.kmt) return COLORS.avatarHairKmt;      // KMT dark blue
+          if (color === COLORS.dpp) return COLORS.avatarHairDpp;      // DPP darker green
+          if (color === COLORS.groupA) return COLORS.avatarHairGroupA;   // Darker variant of bright blue
+          if (color === COLORS.groupB) return COLORS.avatarHairGroupB;   // Darker variant of red
+          return COLORS.avatarHairFallback; // fallback
         };
         const getClothColor = (color: string): string => {
-          if (color === COLORS.kmt) return '#00004d';
-          if (color === COLORS.dpp) return '#0a3a10';
-          if (color === COLORS.groupA) return '#001a4d';
-          if (color === COLORS.groupB) return '#4c1010';
-          return '#1a1a1a';
+          if (color === COLORS.kmt) return COLORS.avatarClothKmt;
+          if (color === COLORS.dpp) return COLORS.avatarClothDpp;
+          if (color === COLORS.groupA) return COLORS.avatarClothGroupA;
+          if (color === COLORS.groupB) return COLORS.avatarClothGroupB;
+          return COLORS.avatarClothFallback;
         };
         const getGlassesColor = (color: string): string => {
-          if ([COLORS.kmt, COLORS.groupA].includes(color)) return '#5566aa';
-          return '#8b6b47';
+          if ([COLORS.kmt, COLORS.groupA].includes(color)) return COLORS.avatarGlassesBlue;
+          return COLORS.avatarGlassesBrown;
         };
 
         const avatarHairColor = getDarkerColor(groupColor);
         const avatarClothColor = getClothColor(groupColor);
         const avatarGlassesColor = getGlassesColor(groupColor);
 
-        const avatarBody = nodeIdentity === 'avatar' && (
+        const avatarBody = (
           <g>
             <circle cx={ax} cy={ay} r={r} fill={groupColor} clipPath={clip} />
             <rect x={ax - r} y={ay + 9} width={r * 2} height={r} fill={avatarClothColor} clipPath={clip} />
             <path d={`M ${ax - 6} ${ay + 9} L ${ax - 2} ${ay + 5} L ${ax} ${ay + 7} L ${ax + 2} ${ay + 5} L ${ax + 6} ${ay + 9} Z`} fill="white" clipPath={clip} />
-            <rect x={ax - 3} y={ay + 4} width={6} height={6} fill="#FDDCB5" clipPath={clip} />
-            <circle cx={ax} cy={ay - 4} r={13} fill="#FDDCB5" clipPath={clip} />
-            <circle cx={ax - 13} cy={ay - 3} r={2.5} fill="#F0C090" clipPath={clip} />
-            <circle cx={ax + 13} cy={ay - 3} r={2.5} fill="#F0C090" clipPath={clip} />
+            <rect x={ax - 3} y={ay + 4} width={6} height={6} fill={COLORS.avatarSkin} clipPath={clip} />
+            <circle cx={ax} cy={ay - 4} r={13} fill={COLORS.avatarSkin} clipPath={clip} />
+            <circle cx={ax - 13} cy={ay - 3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={clip} />
+            <circle cx={ax + 13} cy={ay - 3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={clip} />
             {isGroupA ? (
               <path d={`M ${ax - 13} ${ay - 8} Q ${ax - 8} ${ay - 22} ${ax} ${ay - 21} Q ${ax + 8} ${ay - 22} ${ax + 13} ${ay - 8} Q ${ax + 6} ${ay - 14} ${ax} ${ay - 16} Q ${ax - 6} ${ay - 14} ${ax - 13} ${ay - 8} Z`} fill={avatarHairColor} clipPath={clip} />
             ) : (
               <path d={`M ${ax - 13} ${ay - 8} Q ${ax - 11} ${ay - 23} ${ax - 4} ${ay - 22} Q ${ax} ${ay - 25} ${ax + 4} ${ay - 22} Q ${ax + 11} ${ay - 23} ${ax + 13} ${ay - 8} Q ${ax + 5} ${ay - 15} ${ax} ${ay - 17} Q ${ax - 5} ${ay - 15} ${ax - 13} ${ay - 8} Z`} fill={avatarHairColor} clipPath={clip} />
             )}
-            <circle cx={ax - 4.5} cy={ay - 4.5} r={2} fill="#1a1a1a" clipPath={clip} />
-            <circle cx={ax + 4.5} cy={ay - 4.5} r={2} fill="#1a1a1a" clipPath={clip} />
+            <circle cx={ax - 4.5} cy={ay - 4.5} r={2} fill={COLORS.avatarFeature} clipPath={clip} />
+            <circle cx={ax + 4.5} cy={ay - 4.5} r={2} fill={COLORS.avatarFeature} clipPath={clip} />
             <circle cx={ax - 3.8} cy={ay - 5.2} r={0.7} fill="white" clipPath={clip} />
             <circle cx={ax + 5.2} cy={ay - 5.2} r={0.7} fill="white" clipPath={clip} />
-            <path d={`M ${ax - 3.5} ${ay - 0.5} Q ${ax} ${ay + 2} ${ax + 3.5} ${ay - 0.5}`} stroke="#aa6655" strokeWidth="1.2" fill="none" clipPath={clip} />
+            <path d={`M ${ax - 3.5} ${ay - 0.5} Q ${ax} ${ay + 2} ${ax + 3.5} ${ay - 0.5}`} stroke={COLORS.avatarMouth} strokeWidth="1.2" fill="none" clipPath={clip} />
             {isGroupA && (
               <g clipPath={clip}>
                 <rect x={ax - 8.5} y={ay - 7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={avatarGlassesColor} strokeWidth="0.85" />
@@ -742,12 +700,12 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             key={agent.id}
             transform={`translate(${pos.x}, ${pos.y})`}
             className="transition-all duration-300"
-            onMouseEnter={() => groupLabel === 'named' && setHoveredNode(agent.id)}
+            onMouseEnter={() => setHoveredNode(agent.id)}
             onMouseLeave={() => setHoveredNode(null)}
             onClick={() => onNodeClick?.(agent.id)}
           >
             {/* Glow Aura */}
-            {roleIdentity === 'glow' && isDecisionMaker && (
+            {isDecisionMaker && (
               <circle
                 r={r + 4}
                 fill="none"
@@ -761,11 +719,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               </circle>
             )}
 
-            {roleIdentity === 'glow' && isOpponent && (
+            {isOpponent && (
               <circle
                 r={r + 4}
                 fill="none"
-                stroke="#374151"
+                stroke={COLORS.roleOpponent}
                 strokeWidth="4"
                 strokeOpacity="0.6"
                 filter="url(#glow)"
@@ -776,54 +734,12 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             )}
 
             {/* ── Node Body ── */}
-            {nodeIdentity === 'avatar' ? (
-              <g transform={`translate(${-pos.x}, ${-pos.y})`}>
-                {avatarBody}
-              </g>
-            ) : nodeIdentity === 'shape' ? (
-              agent.group === 'A' ? (
-                <polygon points={hexPoints(r)} fill={groupColor} stroke={strokeColor} strokeWidth={strokeWidth} filter={roleIdentity === 'glow' && (isDecisionMaker || isOpponent) ? 'url(#soft-glow)' : ''} />
-              ) : (
-                <polygon points={diamondPoints(r)} fill={groupColor} stroke={strokeColor} strokeWidth={strokeWidth} filter={roleIdentity === 'glow' && (isDecisionMaker || isOpponent) ? 'url(#soft-glow)' : ''} />
-              )
-            ) : (
-              <circle r={r} fill={groupColor} stroke={strokeColor} strokeWidth={strokeWidth} className="shadow-xl" filter={roleIdentity === 'glow' && (isDecisionMaker || isOpponent) ? 'url(#soft-glow)' : ''} />
-            )}
+            <g transform={`translate(${-pos.x}, ${-pos.y})`}>
+              {avatarBody}
+            </g>
 
-            {/* ── Center Label ── */}
-            {nodeIdentity !== 'avatar' && groupLabel !== 'named' && (
-              <text dy="5" textAnchor="middle" className="text-sm md:text-xs font-bold fill-white pointer-events-none uppercase" style={{ textShadow: '0px 1px 2px rgba(0,0,0,0.4)' }}>
-                {agent.label}
-              </text>
-            )}
-
-            {/* ── Avatar mode: ID label inside node ── */}
-            {nodeIdentity === 'avatar' && groupLabel !== 'named' && (
-              <g transform={`translate(0, ${r - 8})`}>
-                <rect x="-14" y="-6" width="28" height="12" rx="4" fill="rgba(255,255,255,0.85)" />
-                <text y="3" textAnchor="middle" fontSize="10" className="md:text-[8px] font-[800] fill-[#333] pointer-events-none uppercase">
-                  {agent.label}
-                </text>
-              </g>
-            )}
-
-            {/* ── YOU / OPPONENT indicator (when not named) ── */}
-            {isDecisionMaker && groupLabel !== 'named' && (
-              <g transform={`translate(0, ${-r + 8})`}>
-                <rect x="-18" y="-7" width="36" height="14" rx="7" fill={COLORS.highlight} stroke="white" strokeWidth="1.5" />
-                <text y="3" textAnchor="middle" className="text-[10px] md:text-[8px] font-bold fill-white uppercase tracking-wider">YOU</text>
-              </g>
-            )}
-
-            {isOpponent && groupLabel !== 'named' && (
-              <g transform={`translate(0, ${-r + 8})`}>
-                <rect x="-26" y="-7" width="52" height="14" rx="7" fill="#374151" stroke="white" strokeWidth="1.5" />
-                <text y="3" textAnchor="middle" className="text-[10px] md:text-[8px] font-bold fill-white uppercase tracking-wider">Partner</text>
-              </g>
-            )}
-
-            {/* ── Named Group Badge (with Role if applicable) ── */}
-            {groupLabel === 'named' && (() => {
+            {/* ── Group Badge (with Role if applicable) ── */}
+            {(() => {
               const baseName = agent.group === 'A' ? groupNames.A : groupNames.B;
 
               let roleTag = null;
@@ -836,7 +752,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                 badgeWidth = 75; // wider to accommodate 'YOU - GROUPNAME'
               } else if (isOpponent) {
                 roleTag = 'Partner';
-                roleFill = '#6b7280'; // gray-500
+                roleFill = COLORS.rolePartner; // gray-500
                 badgeWidth = 90; // wider to accommodate 'Partner - GROUPNAME'
               }
 
@@ -851,7 +767,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                     {roleTag ? (
                       <>
                         <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag}</tspan>
-                        <tspan className="opacity-50 font-normal mx-1" fill="#9ca3af"> · </tspan>
+                        <tspan className="opacity-50 font-normal mx-1" fill={COLORS.neutral}> · </tspan>
                         <tspan className="uppercase tracking-widest" fill={groupColor}>{baseName}</tspan>
                       </>
                     ) : (
@@ -863,10 +779,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             })()}
 
             {/* ── Hover Tooltip ── */}
-            {groupLabel === 'named' && hoveredNode === agent.id && (
+            {hoveredNode === agent.id && (
               <foreignObject x="-60" y="-90" width="120" height="52" className="pointer-events-none overflow-visible">
-                <div style={{ background: 'white', border: `2px solid ${groupColor}`, borderRadius: '10px', padding: '5px 8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)', textAlign: 'center', fontSize: '11px', fontWeight: 700, color: groupColor, whiteSpace: 'nowrap', lineHeight: 1.4 }}>
-                  <div style={{ fontSize: '9px', fontWeight: 600, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Group</div>
+                <div style={{ background: 'white', border: `2px solid ${groupColor}`, borderRadius: '10px', padding: '5px 8px', boxShadow: `0 4px 12px ${COLORS.blackShadow15}`, textAlign: 'center', fontSize: '11px', fontWeight: 700, color: groupColor, whiteSpace: 'nowrap', lineHeight: 1.4 }}>
+                  <div style={{ fontSize: '9px', fontWeight: 600, color: COLORS.neutral, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Group</div>
                   <div>{agent.group === 'A' ? groupNames.A : groupNames.B}</div>
                 </div>
                 <svg style={{ position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)' }} width="12" height="6">

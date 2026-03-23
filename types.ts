@@ -1,11 +1,10 @@
-export type AgentId = 'HA' | 'RA' | 'HB' | 'RB';
+export type AgentId = '1' | '2' | '3' | '4';
 export type GroupId = 'A' | 'B';
 
 export interface Agent {
   id: AgentId;
   label: string;
   group: GroupId;
-  isRobot: boolean;
 }
 
 export interface EdgeDef {
@@ -29,11 +28,12 @@ export interface EdgeConfigEntry {
   sessionId: string;
   edgeId: string;
   results: SurveyResult[];
-  demographics: {
+  demographics?: {
     age: number;
     gender: string;
     education: string;
   };
+  isCompleted?: boolean;
 }
 
 

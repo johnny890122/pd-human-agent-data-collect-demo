@@ -1,15 +1,18 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Navigate, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import AdminView from './components/AdminView';
 import SurveyView from './components/SurveyView';
 import { ExperimentSetup, SurveyResult } from './types';
 import {
+  completeSurveyEntry,
   fetchActiveExperimentSetup,
   fetchExperimentSetup,
+  saveSurveyAnswer,
   saveExperimentSetup,
-  submitSurvey,
+  startSurveyEntry,
 } from './utils/graphqlClient';
+import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -20,20 +23,10 @@ const App: React.FC = () => {
   const [activeSetupId, setActiveSetupId] = useState<string | null>(null);
   
   // Initial Setup State
-  const [setup, setSetup] = useState<ExperimentSetup>({
-    activeEdgeIds: [],
-    scenarios: [],
-    focalNode: 'HB',
-    opponentNode: 'RA',
-    sampleSize: 20,
-  });
+  const [setup, setSetup] = useState<ExperimentSetup>(INITIAL_SETUP);
 
 
   useEffect(() => {
-    if (import.meta.env.MODE === 'test') {
-      return;
-    }
-
     const hydrateSetup = async () => {
       try {
         let persistedSetup;
@@ -56,42 +49,60 @@ const App: React.FC = () => {
   }, [setupIdFromUrl]);
 
   const handleSaveSetup = async (setupToSave: ExperimentSetup) => {
-    if (import.meta.env.MODE !== 'test') {
-      try {
-        const savedSetup = await saveExperimentSetup(setupToSave);
-        // @ts-ignore - Assuming saveExperimentSetup returns the setup with ID now
-        const id = savedSetup?.id;
-        setActiveSetupId(id);
-        return id;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        setBackendNotice(`Could not persist setup: ${message}`);
-        return undefined;
-      }
+    try {
+      const savedSetup = await saveExperimentSetup(setupToSave);
+      const id = savedSetup.id;
+      setActiveSetupId(id ?? null);
+      return id;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setBackendNotice(`Could not persist setup: ${message}`);
+      return undefined;
     }
-    return 'test-id';
   };
 
-  const handleSurveyComplete = async (results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => {
-    setIsSubmitting(true);
-    console.log('Survey Completed:', results);
+  const handleSurveyStart = async (): Promise<string | undefined> => {
+    try {
+      const edgeId = `${setup.focalNode}-${setup.opponentNode}`;
+      const setupSessionId = setupIdFromUrl || activeSetupId || setup.id;
 
-    if (import.meta.env.MODE !== 'test') {
-      try {
-        const edgeId = `${setup.focalNode}-${setup.opponentNode}`;
-        const setupSessionId = setupIdFromUrl || activeSetupId || setup.id;
-
-        if (!setupSessionId) {
-          throw new Error('Missing setupId. Please start from an admin-generated survey URL.');
-        }
-
-        await submitSurvey(setupSessionId, edgeId, results, demographics);
-        setBackendNotice(null);
-
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown error';
-        setBackendNotice(`Could not persist survey results: ${message}`);
+      if (!setupSessionId) {
+        throw new Error('Missing setupId. Please start from an admin-generated survey URL.');
       }
+
+      const entryId = await startSurveyEntry(setupSessionId, edgeId);
+      setBackendNotice(null);
+      return entryId;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setBackendNotice(`Could not start survey session: ${message}`);
+      return undefined;
+    }
+  };
+
+  const handleSaveAnswer = async (entryId: string, answer: SurveyResult): Promise<boolean> => {
+    try {
+      await saveSurveyAnswer(entryId, answer);
+      setBackendNotice(null);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setBackendNotice(`Could not save answer: ${message}`);
+      return false;
+    }
+  };
+
+  const handleSurveyComplete = async (entryId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => {
+    setIsSubmitting(true);
+    console.log('Survey Completed');
+
+    try {
+      await completeSurveyEntry(entryId, demographics);
+      setBackendNotice(null);
+
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      setBackendNotice(`Could not persist survey results: ${message}`);
     }
 
     setIsSubmitting(false);
@@ -104,7 +115,7 @@ const App: React.FC = () => {
 
   return (
     <div className="antialiased text-gray-900">
-      <Toaster position="top-center" toastOptions={{ duration: 2000 }} />
+      <Toaster position="top-center" toastOptions={{ duration: TOAST_DURATION_MS }} />
       {backendNotice && (
         <div className="mx-auto max-w-5xl mt-4 px-4">
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -134,6 +145,8 @@ const App: React.FC = () => {
           element={
             <SurveyView 
               setup={setup} 
+              onStartSurvey={handleSurveyStart}
+              onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
             />
@@ -144,6 +157,8 @@ const App: React.FC = () => {
           element={
             <SurveyView 
               setup={setup} 
+              onStartSurvey={handleSurveyStart}
+              onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
             />
@@ -154,6 +169,8 @@ const App: React.FC = () => {
           element={
             <SurveyView 
               setup={setup} 
+              onStartSurvey={handleSurveyStart}
+              onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
             />

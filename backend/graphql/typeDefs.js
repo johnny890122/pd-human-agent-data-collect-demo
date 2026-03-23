@@ -6,7 +6,8 @@ export const typeDefs = `#graphql
     sessionId: String!
     edgeId: String!
     results: [SurveyAnswer!]!
-    demographics: Demographic!
+    demographics: Demographic
+    isCompleted: Boolean!
     createdAt: String!
   }
 
@@ -64,6 +65,9 @@ export const typeDefs = `#graphql
 
   type Mutation {
     saveExperimentSetup(setup: ExperimentSetupInput!): ExperimentSetup!
+    startSurveyEntry(sessionId: String!, edgeId: String!): EdgeConfigEntry!
+    saveSurveyAnswer(entryId: ID!, answer: SurveyAnswerInput!): EdgeConfigEntry!
+    completeSurveyEntry(entryId: ID!, demographics: DemographicInput!): EdgeConfigEntry!
     submitSurvey(sessionId: String!, edgeId: String!, results: [SurveyAnswerInput!]!, demographics: DemographicInput!): EdgeConfigEntry!
   }
 `;

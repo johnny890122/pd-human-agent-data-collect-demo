@@ -1,5 +1,37 @@
 import { Scenario } from '../types';
 
+export type Point = { x: number; y: number };
+
+export const clamp = (value: number, min: number, max: number): number =>
+  Math.min(max, Math.max(min, value));
+
+export const distanceSquared = (a: Point, b: Point): number => {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return dx * dx + dy * dy;
+};
+
+export const distance = (a: Point, b: Point): number =>
+  Math.sqrt(distanceSquared(a, b));
+
+/** Returns segment projection factor t in [0, 1], or null for degenerate segment. */
+export const projectPointToSegmentT = (point: Point, start: Point, end: Point): number | null => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const d2 = dx * dx + dy * dy;
+
+  if (d2 === 0) return null;
+
+  const t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / d2;
+  return clamp(t, 0, 1);
+};
+
+/** Quadratic Bezier B(t) helper */
+export const getBezierPoint = (t: number, p0: Point, p1: Point, p2: Point): Point => ({
+  x: (1 - t) * (1 - t) * p0.x + 2 * (1 - t) * t * p1.x + t * t * p2.x,
+  y: (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y,
+});
+
 /**
  * Generates a Full Factorial Design Matrix (2^k)
  * @param activeEdgeIds List of edge IDs that are active factors

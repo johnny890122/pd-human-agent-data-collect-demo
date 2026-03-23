@@ -11,10 +11,10 @@ vi.mock('../../utils/graphqlClient', () => ({
 }));
 
 const baseSetup: ExperimentSetup = {
-  activeEdgeIds: ['HA-RA'],
+  activeEdgeIds: ['1-2'],
   scenarios: [],
-  focalNode: 'HA',
-  opponentNode: 'RA',
+  focalNode: '1',
+  opponentNode: '2',
   sampleSize: 20,
   submissionCount: 0,
 };
@@ -54,10 +54,10 @@ describe('AdminView', () => {
     const setSetup = vi.fn();
     const historySetup: ExperimentSetup = {
       id: 'setup-123',
-      activeEdgeIds: ['HA-RA', 'HB-RB'],
+      activeEdgeIds: ['1-2', '3-4'],
       scenarios: [],
-      focalNode: 'HB',
-      opponentNode: 'RA',
+      focalNode: '3',
+      opponentNode: '2',
       sampleSize: 30,
       submissionCount: 7,
       updatedAt: '2026-03-23T00:00:00.000Z',

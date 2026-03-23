@@ -81,13 +81,6 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
   const scenarios = setup.scenarios || [];
   const currentScenario = scenarios[scenarioIdx];
 
-  const surveyGraphStyleProps = {
-    mode: 'survey' as const,
-    groupLabel: 'named' as const,
-    nodeIdentity: 'avatar' as const,
-    roleIdentity: 'glow' as const,
-  };
-
   const handleNext = () => {
     const newResults = [...results];
     newResults[scenarioIdx] = {
@@ -267,7 +260,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
 
               <div className="flex-1 flex items-center justify-center min-h-[350px] md:min-h-[400px]">
                 <NetworkGraph
-                  {...surveyGraphStyleProps}
+                  mode="survey"
                   setup={setup}
                   scenario={currentScenario}
                   positionOverrides={randomPositions ?? undefined}

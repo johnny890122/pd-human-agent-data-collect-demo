@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ExperimentSetup, SurveyResult } from '../types';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
@@ -10,15 +10,22 @@ import SurveyOutro from './SurveyOutro';
 
 interface SurveyViewProps {
   setup: ExperimentSetup;
-  onComplete: (results: SurveyResult[]) => void;
+  onComplete: (results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
   onBack: () => void;
 }
+
 
 // ─── Main Survey View ─────────────────────────────────────────────────────────
 const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
+  const [searchParams] = useSearchParams();
+  const setupId = searchParams.get('setupId');
+
+  const navigateWithSetup = (path: string) => {
+    navigate(setupId ? `${path}?setupId=${setupId}` : path);
+  };
 
   // Keep users in the survey flow by ignoring browser Back navigation.
   useEffect(() => {
@@ -42,6 +49,9 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
   const [sliderValue, setSliderValue] = useState(50);
   const [results, setResults] = useState<SurveyResult[]>([]);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const [demographics, setDemographics] = useState({ age: 25, gender: 'other', education: 'university' });
+  const [showDemographics, setShowDemographics] = useState(false);
+
 
   // Gradual reveal state — which active edges the user has clicked to reveal
   const [revealedEdgeIds, setRevealedEdgeIds] = useState<Set<string>>(new Set());
@@ -65,11 +75,12 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
   const [randomPositions, setRandomPositions] = useState<Record<AgentId, { x: number; y: number }> | null>(null);
 
   useEffect(() => {
-    setRandomPositions(generateTrianglePositions(setup.decisionMaker));
-  }, [scenarioIdx, setup.decisionMaker]);
+    setRandomPositions(generateTrianglePositions(setup.focalNode));
+  }, [scenarioIdx, setup.focalNode]);
 
-  const scenarios = useMemo(() => generateDesignMatrix(setup.activeEdgeIds), [setup.activeEdgeIds]);
+  const scenarios = setup.scenarios || [];
   const currentScenario = scenarios[scenarioIdx];
+
   const surveyGraphStyleProps = {
     mode: 'survey' as const,
     groupLabel: 'named' as const,
@@ -85,11 +96,12 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
     };
     setResults(newResults);
     if (scenarioIdx < scenarios.length - 1) {
-      navigate(`/survey/scenarios/${scenarioIdx + 1}`);
+      navigateWithSetup(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      onComplete(newResults);
+      setShowDemographics(true);
     }
   };
+
 
   // Determine which step we're on based on the URL path
   const isIntroStep = location.pathname.startsWith('/survey/intro/');
@@ -102,8 +114,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
       <SurveyIntro 
         setup={setup} 
         currentStep={introStep}
-        onNavigateIntro={(step) => navigate(`/survey/intro/${step}`)}
-        onFinish={() => navigate('/survey/scenarios/0')} 
+        onNavigateIntro={(step) => navigateWithSetup(`/survey/intro/${step}`)}
+        onFinish={() => navigateWithSetup('/survey/scenarios/0')} 
       />
     );
   }
@@ -113,7 +125,63 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
     return <SurveyOutro results={results} onBack={onBack} />;
   }
 
+  // ── Demographics ──────────────────────────────────────────────────────────
+
+  if (showDemographics) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8">
+        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full space-y-6">
+          <h2 className="text-2xl font-bold text-center">About You</h2>
+          <p className="text-gray-500 text-sm text-center">Please provide some basic info to help our research.</p>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Age</label>
+              <input 
+                type="number" 
+                value={demographics.age} 
+                onChange={e => setDemographics({...demographics, age: parseInt(e.target.value)})}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Gender</label>
+              <select 
+                value={demographics.gender} 
+                onChange={e => setDemographics({...demographics, gender: e.target.value})}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+                <option value="prefer_not_to_say">Prefer not to say</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Education</label>
+              <input 
+                type="text" 
+                value={demographics.education} 
+                onChange={e => setDemographics({...demographics, education: e.target.value})}
+                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+                placeholder="e.g. University"
+              />
+            </div>
+          </div>
+          
+          <button
+            onClick={() => onComplete(results, demographics)}
+            className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
+          >
+            Submit & Finish
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Scenarios ──────────────────────────────────────────────────────────────
+
   if (!isScenariosStep || !currentScenario) {
     return null;
   }

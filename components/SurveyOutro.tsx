@@ -20,9 +20,6 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack }) => {
         <div className="bg-gray-100 p-4 rounded-lg text-left text-xs font-mono overflow-auto max-h-60">
           {JSON.stringify(results, null, 2)}
         </div>
-        <button onClick={onBack} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">
-          Start New Session
-        </button>
       </div>
     </div>
   );

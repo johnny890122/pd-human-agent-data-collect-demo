@@ -1,22 +1,24 @@
 import mongoose from 'mongoose';
+import { randomUUID } from 'crypto';
 
 const edgeConfigEntrySchema = new mongoose.Schema(
   {
+    sessionId: { type: String, required: true }, // point to experimentSetupSchema
     edgeId: { type: String, required: true },
-    label: { type: String, required: true },
-    low: { type: String, required: true },
-    high: { type: String, required: true },
+    results: { type: [Object], required: true }, // {scenarioId: number, cooperationProbability: number}
+    demographics: { type: Object, required: true }, // {age: number, gender: string, education: string}
   },
-  { _id: false }
+  { timestamps: true }
 );
 
 const experimentSetupSchema = new mongoose.Schema(
   {
-    key: { type: String, required: true, unique: true, default: 'active' },
+    _id: { type: String, default: () => randomUUID() },
     activeEdgeIds: { type: [String], required: true, default: [] },
-    edgeConfigs: { type: [edgeConfigEntrySchema], required: true, default: [] },
-    decisionMaker: { type: String, required: true },
-    opponent: { type: String, required: true },
+    scenarios: { type: [Object], required: true },
+    focalNode: { type: String, required: true },
+    opponentNode: { type: String, required: true },
+    sampleSize: { type: Number, required: true, default: 20 },
   },
   { timestamps: true }
 );
@@ -24,3 +26,9 @@ const experimentSetupSchema = new mongoose.Schema(
 export const ExperimentSetupModel =
   mongoose.models.ExperimentSetup ||
   mongoose.model('ExperimentSetup', experimentSetupSchema);
+
+export const EdgeConfigEntryModel =
+  mongoose.models.EdgeConfigEntry ||
+  mongoose.model('EdgeConfigEntry', edgeConfigEntrySchema);
+
+

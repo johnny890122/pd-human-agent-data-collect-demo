@@ -1,36 +1,33 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Navigate, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 import AdminView from './components/AdminView';
 import SurveyView from './components/SurveyView';
 import { ExperimentSetup, SurveyResult } from './types';
 import {
   fetchActiveExperimentSetup,
+  fetchExperimentSetup,
   saveExperimentSetup,
   submitSurvey,
 } from './utils/graphqlClient';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const setupIdFromUrl = searchParams.get('setupId');
   const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const surveySessionId = useMemo(() => {
-    if (import.meta.env.MODE === 'test') {
-      return crypto.randomUUID();
-    }
-    const saved = sessionStorage.getItem('survey-session-id');
-    if (saved) return saved;
-    const id = crypto.randomUUID();
-    sessionStorage.setItem('survey-session-id', id);
-    return id;
-  }, []);
+  const [activeSetupId, setActiveSetupId] = useState<string | null>(null);
   
   // Initial Setup State
   const [setup, setSetup] = useState<ExperimentSetup>({
     activeEdgeIds: [],
-    edgeConfigs: {}, // Populated as edges are selected
-    decisionMaker: 'HB',
-    opponent: 'RA',
+    scenarios: [],
+    focalNode: 'HB',
+    opponentNode: 'RA',
+    sampleSize: 20,
   });
+
 
   useEffect(() => {
     if (import.meta.env.MODE === 'test') {
@@ -39,7 +36,13 @@ const App: React.FC = () => {
 
     const hydrateSetup = async () => {
       try {
-        const persistedSetup = await fetchActiveExperimentSetup();
+        let persistedSetup;
+        if (setupIdFromUrl) {
+          persistedSetup = await fetchExperimentSetup(setupIdFromUrl);
+        } else {
+          persistedSetup = await fetchActiveExperimentSetup();
+        }
+
         if (persistedSetup) {
           setSetup(persistedSetup);
         }
@@ -50,29 +53,41 @@ const App: React.FC = () => {
     };
 
     hydrateSetup();
-  }, []);
+  }, [setupIdFromUrl]);
 
-  const handleStartSurvey = async () => {
+  const handleSaveSetup = async (setupToSave: ExperimentSetup) => {
     if (import.meta.env.MODE !== 'test') {
       try {
-        await saveExperimentSetup(setup);
+        const savedSetup = await saveExperimentSetup(setupToSave);
+        // @ts-ignore - Assuming saveExperimentSetup returns the setup with ID now
+        const id = savedSetup?.id;
+        setActiveSetupId(id);
+        return id;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         setBackendNotice(`Could not persist setup: ${message}`);
-        return;
+        return undefined;
       }
     }
-    navigate('/survey/intro/0');
+    return 'test-id';
   };
 
-  const handleSurveyComplete = async (results: SurveyResult[]) => {
+  const handleSurveyComplete = async (results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => {
     setIsSubmitting(true);
     console.log('Survey Completed:', results);
 
     if (import.meta.env.MODE !== 'test') {
       try {
-        await submitSurvey(surveySessionId, setup, results);
+        const edgeId = `${setup.focalNode}-${setup.opponentNode}`;
+        const setupSessionId = setupIdFromUrl || activeSetupId || setup.id;
+
+        if (!setupSessionId) {
+          throw new Error('Missing setupId. Please start from an admin-generated survey URL.');
+        }
+
+        await submitSurvey(setupSessionId, edgeId, results, demographics);
         setBackendNotice(null);
+
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         setBackendNotice(`Could not persist survey results: ${message}`);
@@ -80,15 +95,16 @@ const App: React.FC = () => {
     }
 
     setIsSubmitting(false);
-    navigate('/survey/outro');
+    navigate(setupIdFromUrl ? `/survey/outro?setupId=${setupIdFromUrl}` : '/survey/outro');
   };
 
   const handleBackToAdmin = () => {
-      navigate('/');
+      navigate('/admin/setup');
   };
 
   return (
     <div className="antialiased text-gray-900">
+      <Toaster position="top-center" toastOptions={{ duration: 2000 }} />
       {backendNotice && (
         <div className="mx-auto max-w-5xl mt-4 px-4">
           <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -104,9 +120,14 @@ const App: React.FC = () => {
         </div>
       )}
       <Routes>
-        <Route 
-          path="/" 
-          element={<AdminView setup={setup} setSetup={setSetup} onStart={handleStartSurvey} />} 
+        <Route path="/" element={<Navigate to="/admin/setup" replace />} />
+        <Route
+          path="/admin/setup"
+          element={<AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />}
+        />
+        <Route
+          path="/admin/history"
+          element={<AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />}
         />
         <Route 
           path="/survey/intro/:introStep" 

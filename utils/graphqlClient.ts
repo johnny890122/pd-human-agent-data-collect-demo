@@ -1,4 +1,4 @@
-import { EdgeConfig, ExperimentSetup, SurveyResult } from '../types';
+import { ExperimentSetup, SurveyResult } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 const isTestMode = import.meta.env.MODE === 'test';
@@ -8,50 +8,40 @@ interface GraphQLResponse<TData> {
   errors?: Array<{ message: string }>;
 }
 
-interface EdgeConfigEntry {
-  edgeId: string;
-  label: string;
-  low: string;
-  high: string;
-}
-
 interface GraphExperimentSetup {
+  id?: string;
   activeEdgeIds: string[];
-  edgeConfigs: EdgeConfigEntry[];
-  decisionMaker: string;
-  opponent: string;
+  scenarios: any[];
+  focalNode: string;
+  opponentNode: string;
+  sampleSize: number;
+  submissionCount?: number;
+  updatedAt?: string;
 }
 
 function setupToGraphInput(setup: ExperimentSetup): GraphExperimentSetup {
   return {
     activeEdgeIds: setup.activeEdgeIds,
-    edgeConfigs: Object.entries(setup.edgeConfigs).map(([edgeId, cfg]) => ({
-      edgeId,
-      label: cfg.label,
-      low: cfg.low,
-      high: cfg.high,
-    })),
-    decisionMaker: setup.decisionMaker,
-    opponent: setup.opponent,
+    scenarios: setup.scenarios,
+    focalNode: setup.focalNode,
+    opponentNode: setup.opponentNode,
+    sampleSize: setup.sampleSize,
   };
 }
 
 function setupFromGraph(graph: GraphExperimentSetup): ExperimentSetup {
-  const edgeConfigs: Record<string, EdgeConfig> = {};
-  for (const entry of graph.edgeConfigs) {
-    edgeConfigs[entry.edgeId] = {
-      label: entry.label,
-      low: entry.low,
-      high: entry.high,
-    };
-  }
   return {
+    id: graph.id,
     activeEdgeIds: graph.activeEdgeIds,
-    edgeConfigs,
-    decisionMaker: graph.decisionMaker as ExperimentSetup['decisionMaker'],
-    opponent: graph.opponent as ExperimentSetup['opponent'],
+    scenarios: graph.scenarios,
+    focalNode: graph.focalNode,
+    opponentNode: graph.opponentNode,
+    sampleSize: graph.sampleSize,
+    submissionCount: graph.submissionCount,
+    updatedAt: graph.updatedAt,
   };
 }
+
 
 async function runGraphQL<TData>(query: string, variables?: Record<string, unknown>): Promise<TData> {
   if (isTestMode) {
@@ -86,17 +76,15 @@ export async function fetchActiveExperimentSetup(): Promise<ExperimentSetup | nu
   const query = `
     query ActiveExperimentSetup {
       activeExperimentSetup {
+        id
         activeEdgeIds
-        edgeConfigs {
-          edgeId
-          label
-          low
-          high
-        }
-        decisionMaker
-        opponent
+        scenarios
+        focalNode
+        opponentNode
+        sampleSize
       }
     }
+
   `;
 
   const data = await runGraphQL<{ activeExperimentSetup: GraphExperimentSetup | null }>(query);
@@ -105,33 +93,87 @@ export async function fetchActiveExperimentSetup(): Promise<ExperimentSetup | nu
   }
   return setupFromGraph(data.activeExperimentSetup);
 }
+ 
+export async function fetchExperimentSetup(id: string): Promise<ExperimentSetup | null> {
+  const query = `
+    query ExperimentSetup($id: ID!) {
+      experimentSetup(id: $id) {
+        id
+        activeEdgeIds
+        scenarios
+        focalNode
+        opponentNode
+        sampleSize
+        submissionCount
+      }
+    }
+  `;
+ 
+  const data = await runGraphQL<{ experimentSetup: GraphExperimentSetup | null }>(query, { id });
+  if (!data.experimentSetup) {
+    return null;
+  }
+  return setupFromGraph(data.experimentSetup);
+}
+ 
+export async function fetchAllExperimentSetups(): Promise<ExperimentSetup[]> {
+  const query = `
+    query AllExperimentSetups {
+      allExperimentSetups {
+        id
+        activeEdgeIds
+        scenarios
+        focalNode
+        opponentNode
+        sampleSize
+        submissionCount
+        updatedAt
+      }
+    }
+  `;
+ 
+  const data = await runGraphQL<{ allExperimentSetups: GraphExperimentSetup[] }>(query);
+  return data.allExperimentSetups.map(setupFromGraph);
+}
 
-export async function saveExperimentSetup(setup: ExperimentSetup): Promise<void> {
+export async function saveExperimentSetup(setup: ExperimentSetup): Promise<ExperimentSetup> {
   const mutation = `
     mutation SaveExperimentSetup($setup: ExperimentSetupInput!) {
       saveExperimentSetup(setup: $setup) {
-        decisionMaker
+        id
+        focalNode
+        opponentNode
+        sampleSize
+        submissionCount
       }
     }
   `;
 
-  await runGraphQL(mutation, {
+  const data = await runGraphQL<{ saveExperimentSetup: GraphExperimentSetup }>(mutation, {
     setup: setupToGraphInput(setup),
   });
+  return setupFromGraph(data.saveExperimentSetup);
 }
 
-export async function submitSurvey(sessionId: string, setup: ExperimentSetup, results: SurveyResult[]): Promise<void> {
+export async function submitSurvey(
+  sessionId: string,
+  edgeId: string,
+  results: SurveyResult[],
+  demographics: { age: number; gender: string; education: string }
+): Promise<void> {
   const mutation = `
-    mutation SubmitSurvey($sessionId: String!, $setup: ExperimentSetupInput!, $results: [SurveyAnswerInput!]!) {
-      submitSurvey(sessionId: $sessionId, setup: $setup, results: $results) {
-        id
+    mutation SubmitSurvey($sessionId: String!, $edgeId: String!, $results: [SurveyAnswerInput!]!, $demographics: DemographicInput!) {
+      submitSurvey(sessionId: $sessionId, edgeId: $edgeId, results: $results, demographics: $demographics) {
+        sessionId
       }
     }
   `;
 
   await runGraphQL(mutation, {
     sessionId,
-    setup: setupToGraphInput(setup),
+    edgeId,
     results,
+    demographics,
   });
 }
+

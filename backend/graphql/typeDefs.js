@@ -1,32 +1,47 @@
 export const typeDefs = `#graphql
+  scalar JSON
+
   type EdgeConfigEntry {
+    id: ID!
+    sessionId: String!
     edgeId: String!
-    label: String!
-    low: String!
-    high: String!
+    results: [SurveyAnswer!]!
+    demographics: Demographic!
+    createdAt: String!
   }
 
-  input EdgeConfigEntryInput {
-    edgeId: String!
-    label: String!
-    low: String!
-    high: String!
+
+  type Demographic {
+    age: Int!
+    gender: String!
+    education: String!
+  }
+
+  input DemographicInput {
+    age: Int!
+    gender: String!
+    education: String!
   }
 
   type ExperimentSetup {
+    id: ID!
     activeEdgeIds: [String!]!
-    edgeConfigs: [EdgeConfigEntry!]!
-    decisionMaker: String!
-    opponent: String!
+    scenarios: [JSON!]!
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
+    submissionCount: Int!
     updatedAt: String
   }
 
   input ExperimentSetupInput {
     activeEdgeIds: [String!]!
-    edgeConfigs: [EdgeConfigEntryInput!]!
-    decisionMaker: String!
-    opponent: String!
+    scenarios: [JSON!]!
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
   }
+
 
   type SurveyAnswer {
     scenarioId: Int!
@@ -38,22 +53,17 @@ export const typeDefs = `#graphql
     cooperationProbability: Float!
   }
 
-  type SurveySubmission {
-    id: ID!
-    sessionId: String!
-    results: [SurveyAnswer!]!
-    setup: ExperimentSetup!
-    createdAt: String!
-  }
-
   type Query {
     health: String!
     activeExperimentSetup: ExperimentSetup
-    recentSubmissions(limit: Int = 20): [SurveySubmission!]!
+    experimentSetup(id: ID!): ExperimentSetup
+    allExperimentSetups: [ExperimentSetup!]!
+    recentSubmissions(limit: Int = 20): [EdgeConfigEntry!]!
   }
+
 
   type Mutation {
     saveExperimentSetup(setup: ExperimentSetupInput!): ExperimentSetup!
-    submitSurvey(sessionId: String!, setup: ExperimentSetupInput!, results: [SurveyAnswerInput!]!): SurveySubmission!
+    submitSurvey(sessionId: String!, edgeId: String!, results: [SurveyAnswerInput!]!, demographics: DemographicInput!): EdgeConfigEntry!
   }
 `;

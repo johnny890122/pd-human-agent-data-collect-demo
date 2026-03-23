@@ -25,16 +25,18 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     setIntroStep(currentStep);
   }, [currentStep]);
 
-  const agentMe = AGENTS[setup.decisionMaker];
-  const agentOpponent = AGENTS[setup.opponent];
+  const agentMe = AGENTS[setup.focalNode];
+  const agentOpponent = AGENTS[setup.opponentNode];
+
 
   const networkDemoSetup = useMemo(() => {
-    const others = AGENT_IDS.filter(id => id !== setup.decisionMaker && id !== setup.opponent);
+    const others = AGENT_IDS.filter(id => id !== setup.focalNode && id !== setup.opponentNode);
     return {
       ...setup,
       activeEdgeIds: [
-        `${setup.decisionMaker}-${setup.opponent}`,
-        `${setup.opponent}-${setup.decisionMaker}`,
+        `${setup.focalNode}-${setup.opponentNode}`,
+        `${setup.opponentNode}-${setup.focalNode}`,
+
         `${others[0]}-${others[1]}`,
         `${others[1]}-${others[0]}`,
       ]
@@ -49,7 +51,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     }), {} as Record<string, 0 | 1>),
   }), [networkDemoSetup]);
 
-  const introNodePositions = useMemo(() => generateTrianglePositions(setup.decisionMaker, false), [setup.decisionMaker]);
+  const introNodePositions = useMemo(() => generateTrianglePositions(setup.focalNode, false), [setup.focalNode]);
+
   const surveyGraphStyleProps = {
     mode: 'survey' as const,
     groupLabel: 'named' as const,
@@ -331,15 +334,16 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   <div className="grid grid-cols-1 gap-3 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {networkDemoSetup.activeEdgeIds.filter(edgeId => {
                       const [source, target] = edgeId.split('-');
-                      return source === setup.decisionMaker || target === setup.decisionMaker || source === setup.opponent || target === setup.opponent;
+                      return source === setup.focalNode || target === setup.focalNode || source === setup.opponentNode || target === setup.opponentNode;
                     }).map(edgeId => {
                       const [source, target] = edgeId.split('-');
                       const isGive = networkDemoScenario.edgeStates[edgeId] === 1;
-                      const isYou = source === setup.decisionMaker;
+                      const isYou = source === setup.focalNode;
                       
                       const getName = (id: string, agent: any) => {
-                        if (id === setup.decisionMaker) return "You";
-                        if (id === setup.opponent) return "Partner";
+                        if (id === setup.focalNode) return "You";
+                        if (id === setup.opponentNode) return "Partner";
+
                         return `Agent ${agent.group}`;
                       };
                       

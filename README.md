@@ -17,7 +17,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1Mo0KYmUbtggjpVpGE1zTpy
 2. Create `.env.local` from `.env.example` and set credentials:
    - `GEMINI_API_KEY`
    - `MONGODB_URI`
-   - `VITE_ADMIN_PASSWORD`
+   - `ADMIN_PASSWORD`
 3. Start backend (GraphQL + Express):
    `npm run dev:server`
 4. Start frontend (Vite):

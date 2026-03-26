@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
             target: env.VITE_BACKEND_ORIGIN || 'http://localhost:3001',
             changeOrigin: true,
           },
+          '/api': {
+            target: env.VITE_BACKEND_ORIGIN || 'http://localhost:3001',
+            changeOrigin: true,
+          },
         },
         middlewareMode: false,
       },

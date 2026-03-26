@@ -38,6 +38,34 @@ async function startServer() {
   app.use(express.json());
   app.use('/graphql', expressMiddleware(apolloServer));
 
+  app.post('/api/admin/login', (req, res) => {
+    const configuredPassword = process.env.ADMIN_PASSWORD
+    const submittedPassword = req.body?.password;
+
+    if (!configuredPassword) {
+      return res.status(500).json({
+        success: false,
+        message: 'Admin password is not configured.',
+      });
+    }
+
+    if (typeof submittedPassword !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required.',
+      });
+    }
+
+    if (submittedPassword === configuredPassword) {
+      return res.json({ success: true });
+    }
+
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid password',
+    });
+  });
+
   // Serve static files from the dist directory when running the production bundle.
   app.use(express.static(path.join(__dirname, 'dist')));
 

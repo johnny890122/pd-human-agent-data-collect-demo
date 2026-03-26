@@ -25,7 +25,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
     <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm">
       <div className="border-b border-indigo-100 px-4 py-4 md:px-6">
         <h2 className="text-sm font-semibold text-indigo-800 uppercase tracking-wider">
-         Sessions & Progress
+          Sessions & Progress
         </h2>
       </div>
       <div className="overflow-x-auto px-4 py-4 md:px-6">
@@ -107,7 +107,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
             })}
             {history.length === 0 && (
               <tr>
-                <td colSpan={6} className="py-6 text-center text-gray-400 italic">No history found</td>
+                <td colSpan={6} className="py-6 text-center text-gray-400 italic">No session found</td>
               </tr>
             )}
           </tbody>
@@ -116,7 +116,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
         {history.length > 0 && (
           <div className="mt-4 flex items-center justify-between text-xs text-gray-600">
             <span>
-            {startIdx + 1}-{Math.min(endIdx, history.length)} of {history.length}
+              {startIdx + 1}-{Math.min(endIdx, history.length)} of {history.length}
             </span>
             <div className="flex items-center gap-2">
               <button

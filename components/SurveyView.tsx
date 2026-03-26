@@ -7,16 +7,20 @@ import { generateDesignMatrix } from '../utils/math';
 import { generateTrianglePositions, PayoffMatrix, DecisionSlider } from './SurveyShared';
 import SurveyIntro from './SurveyIntro';
 import SurveyOutro from './SurveyOutro';
+import { saveSession } from '../utils/surveySession';
 
 interface SurveyViewProps {
   setup: ExperimentSetup;
-  onComplete: (results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
+  onStartSurvey: () => Promise<string | undefined>;
+  onSaveAnswer: (entryId: string, answer: SurveyResult) => Promise<boolean>;
+  onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
   onBack: () => void;
+  initialEntryId?: string;
 }
 
 
 // ─── Main Survey View ─────────────────────────────────────────────────────────
-const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) => {
+const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAnswer, onComplete, onBack, initialEntryId }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
@@ -51,6 +55,14 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
   const [hasInteracted, setHasInteracted] = useState(false);
   const [demographics, setDemographics] = useState({ age: 25, gender: 'other', education: 'university' });
   const [showDemographics, setShowDemographics] = useState(false);
+  const [entryId, setEntryId] = useState<string | undefined>(initialEntryId);
+
+  // Sync initialEntryId when it loads asynchronously
+  useEffect(() => {
+    if (initialEntryId && !entryId) {
+      setEntryId(initialEntryId);
+    }
+  }, [initialEntryId, entryId]);
 
 
   // Gradual reveal state — which active edges the user has clicked to reveal
@@ -81,17 +93,32 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
   const scenarios = setup.scenarios || [];
   const currentScenario = scenarios[scenarioIdx];
 
-  const handleNext = () => {
-    const newResults = [...results];
-    newResults[scenarioIdx] = {
+  const handleNext = async () => {
+    const answer: SurveyResult = {
       scenarioId: currentScenario.id,
       cooperationProbability: sliderValue / 100,
     };
+    const newResults = [...results];
+    newResults[scenarioIdx] = answer;
     setResults(newResults);
+
+    // Persist this answer to the backend immediately
+    if (entryId) {
+      await onSaveAnswer(entryId, answer);
+    }
+
     if (scenarioIdx < scenarios.length - 1) {
+      const nextPath = `/survey/scenarios/${scenarioIdx + 1}${setupId ? `?setupId=${setupId}` : ''}`;
+      if (entryId) {
+        saveSession(setupId || setup.id || '', entryId, nextPath);
+      }
       navigateWithSetup(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      setShowDemographics(true);
+      const nextPath = `/survey/demographics${setupId ? `?setupId=${setupId}` : ''}`;
+      if (entryId) {
+        saveSession(setupId || setup.id || '', entryId, nextPath);
+      }
+      navigateWithSetup('/survey/demographics');
     }
   };
 
@@ -100,6 +127,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
   const isIntroStep = location.pathname.startsWith('/survey/intro/');
   const isScenariosStep = location.pathname.startsWith('/survey/scenarios/');
   const isOutroStep = location.pathname === '/survey/outro';
+  const isDemographicsStep = location.pathname === '/survey/demographics';
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (isIntroStep) {
@@ -108,7 +136,11 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
         setup={setup} 
         currentStep={introStep}
         onNavigateIntro={(step) => navigateWithSetup(`/survey/intro/${step}`)}
-        onFinish={() => navigateWithSetup('/survey/scenarios/0')} 
+        onFinish={async () => {
+          const newEntryId = await onStartSurvey();
+          setEntryId(newEntryId);
+          navigateWithSetup('/survey/scenarios/0');
+        }} 
       />
     );
   }
@@ -120,7 +152,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
 
   // ── Demographics ──────────────────────────────────────────────────────────
 
-  if (showDemographics) {
+  if (isDemographicsStep) {
     return (
       <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8">
         <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full space-y-6">
@@ -163,7 +195,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onComplete, onBack }) =>
           </div>
           
           <button
-            onClick={() => onComplete(results, demographics)}
+            onClick={() => onComplete(entryId ?? '', results, demographics)}
             className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
           >
             Submit & Finish

@@ -55,7 +55,7 @@ export const generateDesignMatrix = (activeEdgeIds: string[]): Scenario[] => {
     }
 
     scenarios.push({
-      id: i + 1,
+      id: i,
       edgeStates,
     });
   }

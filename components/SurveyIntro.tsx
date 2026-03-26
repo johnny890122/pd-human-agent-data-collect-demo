@@ -19,6 +19,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
   const [introSliderInteracted, setIntroSliderInteracted] = useState(false);
 
   const [introGraphRevealed, setIntroGraphRevealed] = useState<Set<string>>(new Set());
+  const [comprehensionAnswer, setComprehensionAnswer] = useState<string>('');
 
   // Sync introStep with URL param
   useEffect(() => {
@@ -77,8 +78,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     if (introStep === 4) return introGraphRevealed.size < networkDemoSetup.activeEdgeIds.length;
     // Step 5 (Part 3): Must interact with the slider
     if (introStep === 5) return !introSliderInteracted;
+    // Step 6 (Comprehension Check): Must pick the correct answer
+    if (introStep === 6) return comprehensionAnswer !== 'all-history-then-slider';
     return false;
-  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, networkDemoSetup]);
+  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, comprehensionAnswer, networkDemoSetup]);
 
 
 
@@ -461,6 +464,75 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                     onChange={(val) => { setIntroSliderValue(val); setIntroSliderInteracted(true); }}
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+        )
+      },
+      {
+        title: "Comprehension Check",
+        content: (
+          <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
+            <div className="bg-amber-50 border border-amber-200 p-6 md:p-8 rounded-3xl shadow-sm">
+              <h3 className="text-2xl font-bold text-amber-900 text-center mb-3">Quick Check</h3>
+              <p className="text-center text-amber-800 mb-8">
+                Before you start, answer this one question to make sure the instructions are clear.
+              </p>
+
+              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm space-y-4">
+                <p className="font-bold text-gray-900">
+                  In each scenario, what do you do first?
+                </p>
+
+                <div className="space-y-3">
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'move-slider-first' ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="comprehension-check"
+                      value="move-slider-first"
+                      checked={comprehensionAnswer === 'move-slider-first'}
+                      onChange={(e) => setComprehensionAnswer(e.target.value)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm text-gray-700">Move the decision slider first, then reveal history if needed.</span>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'all-history-then-slider' ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="comprehension-check"
+                      value="all-history-then-slider"
+                      checked={comprehensionAnswer === 'all-history-then-slider'}
+                      onChange={(e) => setComprehensionAnswer(e.target.value)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm text-gray-700">Reveal all history edges first, then enter decision phase and move the slider.</span>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'skip-history-random' ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="comprehension-check"
+                      value="skip-history-random"
+                      checked={comprehensionAnswer === 'skip-history-random'}
+                      onChange={(e) => setComprehensionAnswer(e.target.value)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm text-gray-700">Skip history and make a random choice for faster completion.</span>
+                  </label>
+                </div>
+
+                {comprehensionAnswer && comprehensionAnswer !== 'all-history-then-slider' && (
+                  <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    Please review the onboarding steps and choose the option that matches the instructions.
+                  </p>
+                )}
+
+                {comprehensionAnswer === 'all-history-then-slider' && (
+                  <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    Correct. You are ready to continue.
+                  </p>
+                )}
               </div>
             </div>
           </div>

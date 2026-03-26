@@ -82,6 +82,11 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     navigate('/admin/history');
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('isAuthenticated');
+    navigate('/login', { replace: true });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6">
@@ -103,7 +108,14 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
                 onClick={() => navigate('/admin/history')}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
               >
-                History
+                Session
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 border border-transparent"
+              >
+                Logout
               </button>
             </nav>
           </aside>

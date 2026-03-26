@@ -17,9 +17,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack }) => {
         </div>
         <h2 className="text-2xl font-bold text-gray-900">Survey Complete</h2>
         <p className="text-gray-600">Thank you for your participation. Your responses have been recorded.</p>
-        <div className="bg-gray-100 p-4 rounded-lg text-left text-xs font-mono overflow-auto max-h-60">
-          {JSON.stringify(results, null, 2)}
-        </div>
+
       </div>
     </div>
   );

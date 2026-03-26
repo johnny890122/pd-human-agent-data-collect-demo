@@ -1,8 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Navigate, Routes, Route, useNavigate, useSearchParams } from 'react-router-dom';
+import { Navigate, Routes, Route, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import AdminView from './components/AdminView';
 import SurveyView from './components/SurveyView';
+import Login from './components/Login';
+import NotFound from './components/NotFound';
+import ProtectedRoute from './components/ProtectedRoute';
 import { ExperimentSetup, SurveyResult } from './types';
 import {
   completeSurveyEntry,
@@ -12,18 +15,35 @@ import {
   saveExperimentSetup,
   startSurveyEntry,
 } from './utils/graphqlClient';
+import { loadSession, saveSession, clearSession } from './utils/surveySession';
 import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const setupIdFromUrl = searchParams.get('setupId');
   const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSetupId, setActiveSetupId] = useState<string | null>(null);
+  const [restoredEntryId, setRestoredEntryId] = useState<string | undefined>(undefined);
   
   // Initial Setup State
   const [setup, setSetup] = useState<ExperimentSetup>(INITIAL_SETUP);
+
+  useEffect(() => {
+    if (location.pathname.startsWith('/admin')) {
+      document.title = 'Admin Setup';
+      return;
+    }
+
+    if (location.pathname.startsWith('/survey')) {
+      document.title = 'Experiment';
+      return;
+    }
+
+    document.title = 'Experiment';
+  }, [location.pathname]);
 
 
   useEffect(() => {
@@ -38,6 +58,16 @@ const App: React.FC = () => {
 
         if (persistedSetup) {
           setSetup(persistedSetup);
+          
+          // Check for existing session
+          const setupId = setupIdFromUrl || persistedSetup.id;
+          if (setupId) {
+            const session = loadSession(setupId);
+            if (session) {
+              setRestoredEntryId(session.entryId);
+              navigate(session.path, { replace: true });
+            }
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
@@ -46,7 +76,7 @@ const App: React.FC = () => {
     };
 
     hydrateSetup();
-  }, [setupIdFromUrl]);
+  }, [setupIdFromUrl, navigate]);
 
   const handleSaveSetup = async (setupToSave: ExperimentSetup) => {
     try {
@@ -72,6 +102,10 @@ const App: React.FC = () => {
 
       const entryId = await startSurveyEntry(setupSessionId, edgeId);
       setBackendNotice(null);
+      
+      const path = `/survey/scenarios/0${setupIdFromUrl ? `?setupId=${setupIdFromUrl}` : ''}`;
+      saveSession(setupSessionId, entryId, path);
+      
       return entryId;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
@@ -99,14 +133,14 @@ const App: React.FC = () => {
     try {
       await completeSurveyEntry(entryId, demographics);
       setBackendNotice(null);
-
+      clearSession(setupIdFromUrl || setup.id || '');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setBackendNotice(`Could not persist survey results: ${message}`);
     }
 
     setIsSubmitting(false);
-    navigate(setupIdFromUrl ? `/survey/outro?setupId=${setupIdFromUrl}` : '/survey/outro');
+    navigate(setupIdFromUrl ? `/survey/outro?setupId=${setupIdFromUrl}` : '/survey/outro', { replace: true });
   };
 
   const handleBackToAdmin = () => {
@@ -131,14 +165,31 @@ const App: React.FC = () => {
         </div>
       )}
       <Routes>
+        <Route path="/login" element={<Login />} />
         <Route path="/" element={<Navigate to="/admin/setup" replace />} />
         <Route
           path="/admin/setup"
-          element={<AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />}
+          element={
+            <ProtectedRoute>
+              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+            </ProtectedRoute>
+          }
+        />
+        <Route 
+          path="/admin/history"
+          element={
+            <ProtectedRoute>
+              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+            </ProtectedRoute>
+          }
         />
         <Route
-          path="/admin/history"
-          element={<AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />}
+          path="/admin/*"
+          element={
+            <ProtectedRoute>
+              <NotFound />
+            </ProtectedRoute>
+          }
         />
         <Route 
           path="/survey/intro/:introStep" 
@@ -149,6 +200,7 @@ const App: React.FC = () => {
               onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
+              initialEntryId={restoredEntryId}
             />
           } 
         />
@@ -161,6 +213,7 @@ const App: React.FC = () => {
               onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
+              initialEntryId={restoredEntryId}
             />
           } 
         />
@@ -173,9 +226,24 @@ const App: React.FC = () => {
               onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
+              initialEntryId={restoredEntryId}
             />
           } 
         />
+        <Route 
+          path="/survey/demographics" 
+          element={
+            <SurveyView 
+              setup={setup} 
+              onStartSurvey={handleSurveyStart}
+              onSaveAnswer={handleSaveAnswer}
+              onComplete={handleSurveyComplete} 
+              onBack={handleBackToAdmin}
+              initialEntryId={restoredEntryId}
+            />
+          } 
+        />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </div>
   );

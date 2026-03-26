@@ -82,7 +82,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             <div className="space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">YOU Node</label>
+                  <label className="block text-xs text-gray-500 mb-1">Focal Node</label>
                   <select
                     value={setup.focalNode}
                     onChange={(e) => handleFocalNodeChange(e.target.value)}
@@ -178,22 +178,47 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             </button>
           ) : (
             <div className="space-y-3">
-              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-xs font-bold text-green-800 mb-1">Session Live!</p>
-                <input
-                  readOnly
-                  value={generatedUrl}
-                  className="w-full p-2 text-[10px] font-mono bg-white border rounded border-green-200 mb-2 truncate"
-                />
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(generatedUrl);
-                    toast.success('URL copied to clipboard!');
-                  }}
-                  className="w-full py-2 bg-green-600 text-white rounded-md text-xs font-bold hover:bg-green-700 transition-colors"
-                >
-                  Copy URL
-                </button>
+              <div className="p-4 bg-gradient-to-br from-emerald-50 to-green-100 border-2 border-emerald-300 rounded-xl shadow-sm">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <p className="text-sm font-bold text-emerald-900">Session is live and ready</p>
+                  </div>
+                  <span className="px-2 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-bold tracking-wider">
+                    LIVE
+                  </span>
+                </div>
+
+                <label className="block text-[11px] font-semibold text-emerald-800 mb-1">Session URL</label>
+                <div className="w-full p-2 bg-white border border-emerald-200 rounded-lg mb-3">
+                  <input
+                    readOnly
+                    value={generatedUrl}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="w-full text-xs font-mono text-emerald-900 bg-transparent outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedUrl);
+                      toast.success('URL copied to clipboard!');
+                    }}
+                    className="w-full py-2.5 bg-emerald-600 text-white rounded-md text-xs font-bold hover:bg-emerald-700 transition-colors"
+                  >
+                    Copy URL
+                  </button>
+                  <button
+                    onClick={() => window.open(generatedUrl, '_blank', 'noopener,noreferrer')}
+                    className="w-full py-2.5 bg-white text-emerald-800 border border-emerald-300 rounded-md text-xs font-bold hover:bg-emerald-50 transition-colors"
+                  >
+                    Open Link
+                  </button>
+                </div>
+
+                <p className="mt-2 text-[11px] text-emerald-800">
+                  This link is required for participant access. Keep it visible and easy to copy.
+                </p>
               </div>
               <button
                 onClick={() => setGeneratedUrl(null)}
@@ -212,7 +237,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
         {!readOnly ? (
           <div className="absolute top-4 left-4 right-4 flex justify-between pointer-events-none z-10">
             <div className="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm text-[10px] md:text-xs font-medium text-gray-600 pointer-events-auto border border-gray-200">
-              Click nodes to view roles. Click edges to see factors.
+              Click edges to see factors.
             </div>
           </div>
         ) : null}
@@ -221,8 +246,8 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           <NetworkGraph
             mode="admin"
             setup={setup}
-            onEdgeClick={readOnly ? () => {} : onEdgeToggle}
-            onNodeClick={readOnly ? () => {} : onNodeInteraction}
+            onEdgeClick={readOnly ? () => { } : onEdgeToggle}
+            onNodeClick={readOnly ? () => { } : onNodeInteraction}
           />
         </div>
       </div>

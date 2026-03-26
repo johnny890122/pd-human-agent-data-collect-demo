@@ -9,8 +9,8 @@ describe('NetworkGraph', () => {
     const setup: ExperimentSetup = {
       activeEdgeIds: [],
       edgeConfigs: {},
-      decisionMaker: 'HA',
-      opponent: 'HA',
+      decisionMaker: '1',
+      opponent: '1',
     };
 
     expect(() =>
@@ -19,9 +19,6 @@ describe('NetworkGraph', () => {
           mode="survey"
           setup={setup}
           decision={50}
-          nodeIdentity="avatar"
-          groupLabel="named"
-          roleIdentity="glow"
         />
       )
     ).not.toThrow();

@@ -1,219 +1,150 @@
 import React, { useEffect, useState } from 'react';
-import { ExperimentSetup, EdgeConfig, AgentId } from '../types';
-import { AGENTS, DEFAULT_EDGE_CONFIG } from '../constants';
-import NetworkGraph from './NetworkGraph';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { ExperimentSetup, AgentId } from '../types';
+import { AGENTS } from '../constants';
+import { generateDesignMatrix } from '../utils/math';
+import { fetchAllExperimentSetups } from '../utils/graphqlClient';
+import HistoryTable from './HistoryTable';
+import SetupPanel from './SetupPanel';
 
 interface AdminViewProps {
   setup: ExperimentSetup;
   setSetup: React.Dispatch<React.SetStateAction<ExperimentSetup>>;
-  onStart: () => void;
+  onSave: (setupToSave: ExperimentSetup) => Promise<string | undefined>; // Returns the setup ID
 }
 
-const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onStart }) => {
-  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
+const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const activeTab: 'setup' | 'history' = location.pathname === '/admin/history' ? 'history' : 'setup';
+  const isReadOnly = location.state?.readOnly === true;
+  const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [history, setHistory] = useState<ExperimentSetup[]>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const pageSize = 10;
 
   useEffect(() => {
-    if (setup.decisionMaker === setup.opponent) {
-      const fallbackOpponent = (Object.keys(AGENTS) as AgentId[]).find(
-        id => id !== setup.decisionMaker
-      );
-      if (fallbackOpponent) {
-        setSetup(prev => ({ ...prev, opponent: fallbackOpponent }));
-      }
+    if (activeTab === 'history') {
+      const loadHistory = async () => {
+        try {
+          const data = await fetchAllExperimentSetups();
+          setHistory(data);
+          setHistoryPage(1);
+        } catch (error) {
+          console.error("Failed to load history", error);
+        }
+      };
+      loadHistory();
     }
-  }, [setup.decisionMaker, setup.opponent, setSetup]);
+  }, [activeTab]);
 
-  const handleDecisionMakerChange = (decisionMaker: AgentId) => {
-    let opponent = setup.opponent;
-    if (decisionMaker === opponent) {
-      opponent = (Object.keys(AGENTS) as AgentId[]).find(id => id !== decisionMaker) ?? opponent;
+  useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(history.length / pageSize));
+    if (historyPage > totalPages) {
+      setHistoryPage(totalPages);
     }
-    setSetup({ ...setup, decisionMaker, opponent });
-  };
+  }, [history, historyPage]);
 
-  const handleOpponentChange = (opponent: AgentId) => {
-    let decisionMaker = setup.decisionMaker;
-    if (opponent === decisionMaker) {
-      decisionMaker = (Object.keys(AGENTS) as AgentId[]).find(id => id !== opponent) ?? decisionMaker;
+  const handleNodeInteraction = (nodeId: AgentId) => {
+    if (nodeId === setup.focalNode) {
+      setSetup(prev => ({
+        ...prev,
+        focalNode: prev.opponentNode,
+        opponentNode: prev.focalNode
+      }));
+    } else {
+      setSetup(prev => ({
+        ...prev,
+        opponentNode: nodeId
+      }));
     }
-    setSetup({ ...setup, decisionMaker, opponent });
   };
 
   const toggleEdge = (edgeId: string) => {
     const isActive = setup.activeEdgeIds.includes(edgeId);
     let newActive = [...setup.activeEdgeIds];
-    let newConfigs = { ...setup.edgeConfigs };
-
     if (isActive) {
       newActive = newActive.filter((id) => id !== edgeId);
-      delete newConfigs[edgeId];
     } else {
       newActive.push(edgeId);
-      newConfigs[edgeId] = { ...DEFAULT_EDGE_CONFIG };
-      setEditingEdgeId(edgeId); // Auto-open config
     }
-
-    setSetup({ ...setup, activeEdgeIds: newActive, edgeConfigs: newConfigs });
+    setSetup({ ...setup, activeEdgeIds: newActive });
   };
 
-  const updateEdgeConfig = (edgeId: string, updates: Partial<EdgeConfig>) => {
-    setSetup((prev) => ({
-      ...prev,
-      edgeConfigs: {
-        ...prev.edgeConfigs,
-        [edgeId]: { ...prev.edgeConfigs[edgeId], ...updates },
-      },
-    }));
+  const handleLoadHistorySetup = (selectedSetup: ExperimentSetup) => {
+    setSetup(selectedSetup);
+    setGeneratedUrl(null);
+    navigate('/admin/setup', { state: { readOnly: true } });
   };
 
-  const k = setup.activeEdgeIds.length;
-  const scenariosCount = Math.pow(2, k);
-  const isHighLoad = k > 4;
+  const handleBackFromReadOnly = () => {
+    navigate('/admin/history');
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('isAuthenticated');
+    navigate('/login', { replace: true });
+  };
 
   return (
-    <div className="flex flex-col xl:flex-row min-h-screen xl:h-screen bg-gray-50 xl:overflow-hidden">
-      {/* Sidebar Controls */}
-      <div className="w-full xl:w-1/3 p-4 md:p-6 bg-white shadow-xl xl:overflow-y-auto z-10 flex flex-col border-b xl:border-b-0 xl:border-r border-gray-200">
-        <h1 className="text-xl md:text-2xl font-bold text-gray-800 mb-6">Experiment Setup</h1>
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6">
+        <div className="flex flex-col lg:flex-row gap-6">
+          <aside className="w-full lg:w-56 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm h-fit">
+            <h1 className="text-xl font-bold text-gray-800">Experiment</h1>
+            <p className="mt-1 text-xs text-gray-500">Admin Navigation</p>
 
-        <div className="space-y-6 flex-1">
-          {/* Role Assignment */}
-          <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-              Role Assignment
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Decision Maker (Subject)</label>
-                <select
-                  value={setup.decisionMaker}
-                  onChange={(e) => handleDecisionMakerChange(e.target.value as AgentId)}
-                  className="w-full p-2 border rounded-md bg-white text-sm"
-                >
-                  {Object.values(AGENTS).map((a) => (
-                    <option key={a.id} value={a.id} disabled={a.id === setup.opponent}>
-                      {a.label} ({a.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Partner</label>
-                <select
-                  value={setup.opponent}
-                  onChange={(e) => handleOpponentChange(e.target.value as AgentId)}
-                  className="w-full p-2 border rounded-md bg-white text-sm"
-                >
-                  {Object.values(AGENTS).map((a) => (
-                    <option key={a.id} value={a.id} disabled={a.id === setup.decisionMaker}>
-                      {a.label} ({a.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          </div>
+            <nav className="mt-4 space-y-2">
+              <button
+                type="button"
+                onClick={() => navigate('/admin/setup')}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'setup' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
+              >
+                Setup
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/history')}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
+              >
+                Session
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 border border-transparent"
+              >
+                Logout
+              </button>
+            </nav>
+          </aside>
 
-          {/* Complexity Monitor */}
-          <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-            <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wider mb-2">
-              Complexity Check
-            </h3>
-            <div className="flex justify-between items-center text-sm mb-1">
-              <span>Active Factors (k):</span>
-              <span className="font-mono font-bold">{k}</span>
-            </div>
-            <div className="flex justify-between items-center text-sm">
-              <span>Total Scenarios (2^k):</span>
-              <span className="font-mono font-bold">{scenariosCount}</span>
-            </div>
-            {isHighLoad && (
-              <div className="mt-3 p-2 bg-red-100 text-red-700 text-xs rounded border border-red-200 flex items-start">
-                <span className="mr-2">⚠️</span>
-                Cognitive Load Alert: {scenariosCount} scenarios may be too fatiguing for a single session.
-              </div>
+          <div className="flex-1 min-w-0">
+            {activeTab === 'history' ? (
+              <HistoryTable
+                history={history}
+                historyPage={historyPage}
+                pageSize={pageSize}
+                onPageChange={setHistoryPage}
+                onLoadSetup={handleLoadHistorySetup}
+              />
+            ) : (
+              <SetupPanel
+                setup={setup}
+                setSetup={setSetup}
+                generatedUrl={generatedUrl}
+                setGeneratedUrl={setGeneratedUrl}
+                isSaving={isSaving}
+                setIsSaving={setIsSaving}
+                onSave={onSave}
+                onNodeInteraction={handleNodeInteraction}
+                onEdgeToggle={toggleEdge}
+                readOnly={isReadOnly}
+                onBack={handleBackFromReadOnly}
+              />
             )}
           </div>
-
-          {/* Edge Configuration Panel */}
-          {editingEdgeId && setup.edgeConfigs[editingEdgeId] && (
-            <div className="p-4 bg-amber-50 rounded-lg border border-amber-200 animate-fadeIn">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="text-sm font-semibold text-amber-800 uppercase tracking-wider">
-                  Configuring {editingEdgeId}
-                </h3>
-                <button
-                  onClick={() => setEditingEdgeId(null)}
-                  className="text-amber-600 hover:text-amber-800 text-xs"
-                >
-                  Close
-                </button>
-              </div>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-amber-700 mb-1">Semantic Label</label>
-                  <input
-                    type="text"
-                    value={setup.edgeConfigs[editingEdgeId].label}
-                    onChange={(e) => updateEdgeConfig(editingEdgeId, { label: e.target.value })}
-                    className="w-full p-2 border border-amber-200 rounded text-sm"
-                  />
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-xs text-red-600 mb-1">Low (0) Meaning</label>
-                    <input
-                      type="text"
-                      value={setup.edgeConfigs[editingEdgeId].low}
-                      onChange={(e) => updateEdgeConfig(editingEdgeId, { low: e.target.value })}
-                      className="w-full p-2 border border-red-200 rounded text-sm bg-red-50"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-green-600 mb-1">High (1) Meaning</label>
-                    <input
-                      type="text"
-                      value={setup.edgeConfigs[editingEdgeId].high}
-                      onChange={(e) => updateEdgeConfig(editingEdgeId, { high: e.target.value })}
-                      className="w-full p-2 border border-green-200 rounded text-sm bg-green-50"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Action Button */}
-        <div className="py-6 mt-6 border-t border-gray-100">
-          <button
-            onClick={onStart}
-            disabled={k === 0}
-            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${k === 0
-              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
-              }`}
-          >
-            Generate & Start Survey
-          </button>
-          {k === 0 && <p className="text-center text-xs text-gray-400 mt-2">Select at least one edge on the graph to begin.</p>}
-        </div>
-      </div>
-
-      {/* Main Graph Area */}
-      <div className="flex-1 bg-gray-100 relative flex items-center justify-center p-4 md:p-8 overflow-hidden">
-        <div className="absolute top-4 left-4 right-4 flex justify-between pointer-events-none z-10">
-          <div className="bg-white/90 backdrop-blur px-3 py-1.5 rounded-lg shadow-sm text-[10px] md:text-xs font-medium text-gray-600 pointer-events-auto border border-gray-200">
-            Select edges to include them as factors.
-          </div>
-        </div>
-
-        <div className="w-full max-w-full md:max-w-2xl bg-white rounded-2xl shadow-2xl p-4 md:p-8 aspect-square flex items-center justify-center overflow-hidden">
-          <NetworkGraph
-            mode="admin"
-            setup={setup}
-            onEdgeClick={toggleEdge}
-          />
         </div>
       </div>
     </div>

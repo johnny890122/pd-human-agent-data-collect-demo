@@ -19,27 +19,39 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
   const [introSliderInteracted, setIntroSliderInteracted] = useState(false);
 
   const [introGraphRevealed, setIntroGraphRevealed] = useState<Set<string>>(new Set());
+  const [comprehensionAnswer, setComprehensionAnswer] = useState<string>('');
 
   // Sync introStep with URL param
   useEffect(() => {
     setIntroStep(currentStep);
   }, [currentStep]);
 
-  const agentMe = AGENTS[setup.decisionMaker];
-  const agentOpponent = AGENTS[setup.opponent];
+  const safeFocalNode = (AGENTS[setup.focalNode as AgentId] ? setup.focalNode : '1') as AgentId;
+  const safeOpponentNode = (
+    AGENTS[setup.opponentNode as AgentId] && setup.opponentNode !== safeFocalNode
+      ? setup.opponentNode
+      : (safeFocalNode === '1' ? '2' : '1')
+  ) as AgentId;
+
+  const agentMe = AGENTS[safeFocalNode];
+  const agentOpponent = AGENTS[safeOpponentNode];
+
 
   const networkDemoSetup = useMemo(() => {
-    const others = AGENT_IDS.filter(id => id !== setup.decisionMaker && id !== setup.opponent);
+    const others = AGENT_IDS.filter(id => id !== safeFocalNode && id !== safeOpponentNode);
     return {
       ...setup,
+      focalNode: safeFocalNode,
+      opponentNode: safeOpponentNode,
       activeEdgeIds: [
-        `${setup.decisionMaker}-${setup.opponent}`,
-        `${setup.opponent}-${setup.decisionMaker}`,
+        `${safeFocalNode}-${safeOpponentNode}`,
+        `${safeOpponentNode}-${safeFocalNode}`,
+
         `${others[0]}-${others[1]}`,
         `${others[1]}-${others[0]}`,
       ]
     };
-  }, [setup]);
+  }, [setup, safeFocalNode, safeOpponentNode]);
 
   const networkDemoScenario = useMemo(() => ({
     id: 0,
@@ -49,13 +61,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     }), {} as Record<string, 0 | 1>),
   }), [networkDemoSetup]);
 
-  const introNodePositions = useMemo(() => generateTrianglePositions(setup.decisionMaker, false), [setup.decisionMaker]);
-  const surveyGraphStyleProps = {
-    mode: 'survey' as const,
-    groupLabel: 'named' as const,
-    nodeIdentity: 'avatar' as const,
-    roleIdentity: 'glow' as const,
-  };
+  const introNodePositions = useMemo(() => generateTrianglePositions(safeFocalNode, false), [safeFocalNode]);
+
   const meAccent = agentMe.group === 'A' ? 'blue' : 'green';
   const opponentAccent = agentOpponent.group === 'A' ? 'blue' : 'green';
   const meTitleClass = meAccent === 'blue' ? 'text-blue-900' : 'text-green-900';
@@ -71,8 +78,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     if (introStep === 4) return introGraphRevealed.size < networkDemoSetup.activeEdgeIds.length;
     // Step 5 (Part 3): Must interact with the slider
     if (introStep === 5) return !introSliderInteracted;
+    // Step 6 (Comprehension Check): Must pick the correct answer
+    if (introStep === 6) return comprehensionAnswer !== 'all-history-then-slider';
     return false;
-  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, networkDemoSetup]);
+  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, comprehensionAnswer, networkDemoSetup]);
 
 
 
@@ -88,7 +97,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       let strokeWidth = 2;
 
       if (role === 'me') { strokeColor = COLORS.highlight; strokeWidth = 5; }
-      else if (role === 'opponent') { strokeColor = '#374151'; strokeWidth = 5; }
+      else if (role === 'opponent') { strokeColor = COLORS.roleOpponent; strokeWidth = 5; }
 
       // Re-use avatar drawing logic if selected
       const avatarBody = (
@@ -97,27 +106,27 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
             <circle cx={0} cy={0} r={r} />
           </clipPath>
           <circle cx={0} cy={0} r={r} fill={groupColor} clipPath={`url(#${clipPathId})`} />
-          <rect x={-r} y={9} width={r * 2} height={r} fill={agent.group === 'A' ? '#00004d' : '#0a3a10'} clipPath={`url(#${clipPathId})`} />
+          <rect x={-r} y={9} width={r * 2} height={r} fill={agent.group === 'A' ? COLORS.avatarClothKmt : COLORS.avatarClothDpp} clipPath={`url(#${clipPathId})`} />
           <path d={`M -6 9 L -2 5 L 0 7 L 2 5 L 6 9 Z`} fill="white" clipPath={`url(#${clipPathId})`} />
-          <rect x={-3} y={4} width={6} height={6} fill="#FDDCB5" clipPath={`url(#${clipPathId})`} />
-          <circle cx={0} cy={-4} r={13} fill="#FDDCB5" clipPath={`url(#${clipPathId})`} />
-          <circle cx={-13} cy={-3} r={2.5} fill="#F0C090" clipPath={`url(#${clipPathId})`} />
-          <circle cx={13} cy={-3} r={2.5} fill="#F0C090" clipPath={`url(#${clipPathId})`} />
+          <rect x={-3} y={4} width={6} height={6} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
+          <circle cx={0} cy={-4} r={13} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
+          <circle cx={-13} cy={-3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={`url(#${clipPathId})`} />
+          <circle cx={13} cy={-3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={`url(#${clipPathId})`} />
           {agent.group === 'A' ? (
-            <path d={`M -13 -8 Q -8 -22 0 -21 Q 8 -22 13 -8 Q 6 -14 0 -16 Q -6 -14 -13 -8 Z`} fill="#1a1a6e" clipPath={`url(#${clipPathId})`} />
+            <path d={`M -13 -8 Q -8 -22 0 -21 Q 8 -22 13 -8 Q 6 -14 0 -16 Q -6 -14 -13 -8 Z`} fill={COLORS.avatarHairKmt} clipPath={`url(#${clipPathId})`} />
           ) : (
-            <path d={`M -13 -8 Q -11 -23 -4 -22 Q 0 -25 4 -22 Q 11 -23 13 -8 Q 5 -15 0 -17 Q -5 -15 -13 -8 Z`} fill="#0d2a0d" clipPath={`url(#${clipPathId})`} />
+            <path d={`M -13 -8 Q -11 -23 -4 -22 Q 0 -25 4 -22 Q 11 -23 13 -8 Q 5 -15 0 -17 Q -5 -15 -13 -8 Z`} fill={COLORS.avatarHairDppIntro} clipPath={`url(#${clipPathId})`} />
           )}
-          <circle cx={-4.5} cy={-4.5} r={2} fill="#1a1a1a" clipPath={`url(#${clipPathId})`} />
-          <circle cx={4.5} cy={-4.5} r={2} fill="#1a1a1a" clipPath={`url(#${clipPathId})`} />
+          <circle cx={-4.5} cy={-4.5} r={2} fill={COLORS.avatarFeature} clipPath={`url(#${clipPathId})`} />
+          <circle cx={4.5} cy={-4.5} r={2} fill={COLORS.avatarFeature} clipPath={`url(#${clipPathId})`} />
           <circle cx={-3.8} cy={-5.2} r={0.7} fill="white" clipPath={`url(#${clipPathId})`} />
           <circle cx={5.2} cy={-5.2} r={0.7} fill="white" clipPath={`url(#${clipPathId})`} />
-          <path d={`M -3.5 -0.5 Q 0 2 3.5 -0.5`} stroke="#aa6655" strokeWidth="1.2" fill="none" clipPath={`url(#${clipPathId})`} />
+          <path d={`M -3.5 -0.5 Q 0 2 3.5 -0.5`} stroke={COLORS.avatarMouth} strokeWidth="1.2" fill="none" clipPath={`url(#${clipPathId})`} />
           {agent.group === 'A' && (
             <g clipPath={`url(#${clipPathId})`}>
-              <rect x={-8.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke="#5566aa" strokeWidth="0.85" />
-              <rect x={2.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke="#5566aa" strokeWidth="0.85" />
-              <line x1={-2.5} y1={-5.5} x2={2.5} y2={-5.5} stroke="#5566aa" strokeWidth="0.85" />
+              <rect x={-8.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
+              <rect x={2.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
+              <line x1={-2.5} y1={-5.5} x2={2.5} y2={-5.5} stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
             </g>
           )}
           <circle cx={0} cy={0} r={r} fill="none" stroke={strokeColor} strokeWidth={strokeWidth} />
@@ -130,7 +139,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       return (
         <svg width={rDraw * 3} height={rDraw * 3} viewBox="-60 -60 120 120" className="inline-block overflow-visible mx-2">
           <g>
-            <circle r={glowR} fill="none" stroke={role === 'me' ? COLORS.highlight : role === 'opponent' ? '#374151' : 'transparent'} strokeWidth="4" strokeOpacity={role === 'none' ? 0 : 0.6}>
+            <circle r={glowR} fill="none" stroke={role === 'me' ? COLORS.highlight : role === 'opponent' ? COLORS.roleOpponent : 'transparent'} strokeWidth="4" strokeOpacity={role === 'none' ? 0 : 0.6}>
               <animate attributeName="stroke-opacity" values="0.6;0.2;0.6" dur="2s" repeatCount="indefinite" />
               <animate attributeName="r" values={`${glowR};${glowR + 4};${glowR}`} dur="2s" repeatCount="indefinite" />
             </circle>
@@ -141,7 +150,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               <g transform={`translate(0, ${rDraw})`}>
                 <rect x={-45} y="-14" width={90} height="16" rx="8" fill="white" stroke={strokeColor} strokeWidth="2" opacity="0.95" />
                 <text y="-2" textAnchor="middle" fontSize="10" className="font-black pointer-events-none">
-                  <tspan fill={role === 'me' ? COLORS.highlight : '#6b7280'} className="uppercase">
+                  <tspan fill={role === 'me' ? COLORS.highlight : COLORS.rolePartner} className="uppercase">
                     {role === 'me' ? 'YOU' : 'Partner'}
                   </tspan>
                 </text>
@@ -153,9 +162,9 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     }
 
     const InteractiveInlineEdge = ({ isRevealed, onReveal }: { isRevealed: boolean, onReveal: () => void }) => {
-      const COOP_COLOR = '#16a34a'; // green-600
-      const UNREVEALED_COLOR = '#9ca3af'; // gray-400
-      const BLUE_COLOR = '#3b82f6'; // blue-500
+      const COOP_COLOR = COLORS.coop; // green-600
+      const UNREVEALED_COLOR = COLORS.neutral; // gray-400
+      const BLUE_COLOR = COLORS.blue; // blue-500
 
       return (
         <svg
@@ -206,7 +215,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 <circle r="12" fill="white" stroke={BLUE_COLOR} strokeWidth="2" className="shadow-lg">
                   <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
                 </circle>
-                <text textAnchor="middle" y="4" className="text-[14px] font-black fill-blue-600" style={{ filter: 'drop-shadow(0px 1px 1px rgba(0,0,0,0.1))', fontFamily: 'sans-serif' }}>?</text>
+                <text textAnchor="middle" y="4" className="text-[14px] font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})`, fontFamily: 'sans-serif' }}>?</text>
               </g>
             )}
           </g>
@@ -229,7 +238,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Model Group A */}
                 <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-100 min-w-[140px] max-w-[200px]">
                   <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS.HA, label: 'A' }} role="none" /></div>
+                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['1'], label: 'A' }} role="none" /></div>
                     <span className="text-xl font-black text-blue-400">× 2</span>
                   </div>
                   <span className="text-xs font-bold text-blue-900 bg-blue-50 px-2 py-1 rounded mt-auto">Group A</span>
@@ -240,7 +249,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Model Group B */}
                 <div className="flex-1 flex flex-col items-center p-2 bg-green-50/30 rounded-xl border border-green-100 min-w-[140px] max-w-[200px]">
                   <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS.HB, label: 'B' }} role="none" /></div>
+                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['3'], label: 'B' }} role="none" /></div>
                     <span className="text-xl font-black text-green-400">× 2</span>
                   </div>
                   <span className="text-xs font-bold text-green-900 bg-green-50 px-2 py-1 rounded mt-auto">Group B</span>
@@ -316,7 +325,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               <div className="bg-gray-50/50 rounded-2xl p-4 md:p-8 border border-gray-100 flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-12">
                 <div className="h-[350px] md:h-[400px] w-full max-w-lg flex-1">
                   <NetworkGraph
-                    {...surveyGraphStyleProps}
+                    mode="survey"
                     setup={networkDemoSetup}
                     scenario={networkDemoScenario}
                     positionOverrides={introNodePositions}
@@ -331,15 +340,16 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   <div className="grid grid-cols-1 gap-3 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {networkDemoSetup.activeEdgeIds.filter(edgeId => {
                       const [source, target] = edgeId.split('-');
-                      return source === setup.decisionMaker || target === setup.decisionMaker || source === setup.opponent || target === setup.opponent;
+                      return source === setup.focalNode || target === setup.focalNode || source === setup.opponentNode || target === setup.opponentNode;
                     }).map(edgeId => {
                       const [source, target] = edgeId.split('-');
                       const isGive = networkDemoScenario.edgeStates[edgeId] === 1;
-                      const isYou = source === setup.decisionMaker;
+                      const isYou = source === setup.focalNode;
                       
                       const getName = (id: string, agent: any) => {
-                        if (id === setup.decisionMaker) return "You";
-                        if (id === setup.opponent) return "Partner";
+                        if (id === setup.focalNode) return "You";
+                        if (id === setup.opponentNode) return "Partner";
+
                         return `Agent ${agent.group}`;
                       };
                       
@@ -405,7 +415,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 md:p-6 mb-2 shadow-inner border border-blue-100 w-full h-full flex-1">
                 <div className="h-[350px] md:h-[400px] w-full">
                   <NetworkGraph
-                    {...surveyGraphStyleProps}
+                    mode="survey"
                     setup={networkDemoSetup}
                     scenario={networkDemoScenario}
                     positionOverrides={introNodePositions}
@@ -437,7 +447,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 md:p-6 mb-2 shadow-inner border border-indigo-100 w-full flex-1 flex flex-col md:flex-row items-center gap-8 justify-center">
                 <div className="h-[350px] md:h-[400px] w-full max-w-lg relative flex-1">
                   <NetworkGraph
-                    {...surveyGraphStyleProps}
+                    mode="survey"
                     setup={networkDemoSetup}
                     scenario={networkDemoScenario}
                     positionOverrides={introNodePositions}
@@ -454,6 +464,75 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                     onChange={(val) => { setIntroSliderValue(val); setIntroSliderInteracted(true); }}
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+        )
+      },
+      {
+        title: "Comprehension Check",
+        content: (
+          <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
+            <div className="bg-amber-50 border border-amber-200 p-6 md:p-8 rounded-3xl shadow-sm">
+              <h3 className="text-2xl font-bold text-amber-900 text-center mb-3">Quick Check</h3>
+              <p className="text-center text-amber-800 mb-8">
+                Before you start, answer this one question to make sure the instructions are clear.
+              </p>
+
+              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm space-y-4">
+                <p className="font-bold text-gray-900">
+                  In each scenario, what do you do first?
+                </p>
+
+                <div className="space-y-3">
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'move-slider-first' ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="comprehension-check"
+                      value="move-slider-first"
+                      checked={comprehensionAnswer === 'move-slider-first'}
+                      onChange={(e) => setComprehensionAnswer(e.target.value)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm text-gray-700">Move the decision slider first, then reveal history if needed.</span>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'all-history-then-slider' ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="comprehension-check"
+                      value="all-history-then-slider"
+                      checked={comprehensionAnswer === 'all-history-then-slider'}
+                      onChange={(e) => setComprehensionAnswer(e.target.value)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm text-gray-700">Reveal all history edges first, then enter decision phase and move the slider.</span>
+                  </label>
+
+                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'skip-history-random' ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <input
+                      type="radio"
+                      name="comprehension-check"
+                      value="skip-history-random"
+                      checked={comprehensionAnswer === 'skip-history-random'}
+                      onChange={(e) => setComprehensionAnswer(e.target.value)}
+                      className="mt-1"
+                    />
+                    <span className="text-sm text-gray-700">Skip history and make a random choice for faster completion.</span>
+                  </label>
+                </div>
+
+                {comprehensionAnswer && comprehensionAnswer !== 'all-history-then-slider' && (
+                  <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                    Please review the onboarding steps and choose the option that matches the instructions.
+                  </p>
+                )}
+
+                {comprehensionAnswer === 'all-history-then-slider' && (
+                  <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                    Correct. You are ready to continue.
+                  </p>
+                )}
               </div>
             </div>
           </div>

@@ -1,11 +1,10 @@
-export type AgentId = 'HA' | 'RA' | 'HB' | 'RB';
+export type AgentId = '1' | '2' | '3' | '4';
 export type GroupId = 'A' | 'B';
 
 export interface Agent {
   id: AgentId;
   label: string;
   group: GroupId;
-  isRobot: boolean;
 }
 
 export interface EdgeDef {
@@ -14,18 +13,29 @@ export interface EdgeDef {
   target: AgentId;
 }
 
-export interface EdgeConfig {
-  label: string;
-  low: string;
-  high: string;
+export interface ExperimentSetup {
+  id?: string;
+  activeEdgeIds: string[];
+  scenarios: Scenario[];
+  focalNode: string;
+  opponentNode: string;
+  sampleSize: number;
+  submissionCount: number;
+  updatedAt?: string;
 }
 
-export interface ExperimentSetup {
-  activeEdgeIds: string[];
-  edgeConfigs: Record<string, EdgeConfig>;
-  decisionMaker: AgentId;
-  opponent: AgentId;
+export interface EdgeConfigEntry {
+  sessionId: string;
+  edgeId: string;
+  results: SurveyResult[];
+  demographics?: {
+    age: number;
+    gender: string;
+    education: string;
+  };
+  isCompleted?: boolean;
 }
+
 
 export interface Scenario {
   id: number;

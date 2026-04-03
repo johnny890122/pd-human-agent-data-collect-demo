@@ -34,10 +34,13 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
   // Keep users in the survey flow by ignoring browser Back navigation.
   useEffect(() => {
     const blockBackNavigation = () => {
-      window.history.pushState(null, '', window.location.href);
+      // Avoid pushing state repeatedly to prevent history stack bloat
+      if (window.history.state !== 'blocked') {
+        window.history.pushState('blocked', '', window.location.href);
+      }
     };
 
-    window.history.pushState(null, '', window.location.href);
+    blockBackNavigation();
     window.addEventListener('popstate', blockBackNavigation);
 
     return () => {

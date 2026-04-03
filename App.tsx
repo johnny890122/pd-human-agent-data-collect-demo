@@ -17,6 +17,8 @@ import {
 } from './utils/graphqlClient';
 import { loadSession, saveSession, clearSession } from './utils/surveySession';
 import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
+import { SessionRecorder } from './components/SessionRecorder';
+import { SessionPlayback } from './components/SessionPlayback';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -27,6 +29,7 @@ const App: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeSetupId, setActiveSetupId] = useState<string | null>(null);
   const [restoredEntryId, setRestoredEntryId] = useState<string | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(true);
   
   // Initial Setup State
   const [setup, setSetup] = useState<ExperimentSetup>(INITIAL_SETUP);
@@ -62,16 +65,47 @@ const App: React.FC = () => {
           // Check for existing session
           const setupId = setupIdFromUrl || persistedSetup.id;
           if (setupId) {
-            const session = loadSession(setupId);
+            // Check if explicitly trying to restart the survey
+            const isRestarting = location.pathname.startsWith('/survey/intro');
+            if (isRestarting) {
+              clearSession(setupId);
+              setRestoredEntryId(undefined);
+            }
+
+            let session = isRestarting ? null : loadSession(setupId);
+            
+            // If the user's current URL is quite different from the session's path, 
+            // they probably manually navigated or reloaded with a new URL. Let them continue.
+            if (session && location.pathname.startsWith('/survey/scenarios') && location.pathname !== session.path.split('?')[0]) {
+               console.warn("Session path mismatch, ignoring stored session cookie.");
+               session = null; 
+            }
+
             if (session) {
               setRestoredEntryId(session.entryId);
-              navigate(session.path, { replace: true });
+              // Only redirect if the path is different
+              const fullSessionPath = session.path;
+              const currentFullPath = location.pathname + location.search;
+              if (currentFullPath !== fullSessionPath) {
+                navigate(fullSessionPath, { replace: true });
+              }
+            } else if (location.pathname.startsWith('/survey') && !location.pathname.includes('/outro') && !location.pathname.startsWith('/survey/intro')) {
+              try {
+                const edgeId = `${persistedSetup.focalNode}-${persistedSetup.opponentNode}`;
+                const entryId = await startSurveyEntry(setupId, edgeId);
+                setRestoredEntryId(entryId);
+                saveSession(setupId, entryId, location.pathname + location.search);
+              } catch (e) {
+                console.error("Failed to eagerly create survey session", e);
+              }
             }
           }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         setBackendNotice(`Backend unavailable: ${message}`);
+      } finally {
+        setIsLoading(false);
       }
     };
 
@@ -93,14 +127,21 @@ const App: React.FC = () => {
 
   const handleSurveyStart = async (): Promise<string | undefined> => {
     try {
-      const edgeId = `${setup.focalNode}-${setup.opponentNode}`;
       const setupSessionId = setupIdFromUrl || activeSetupId || setup.id;
 
       if (!setupSessionId) {
         throw new Error('Missing setupId. Please start from an admin-generated survey URL.');
       }
 
+      if (restoredEntryId) {
+        const path = `/survey/scenarios/0${setupIdFromUrl ? `?setupId=${setupIdFromUrl}` : ''}`;
+        saveSession(setupSessionId, restoredEntryId, path);
+        return restoredEntryId;
+      }
+
+      const edgeId = `${setup.focalNode}-${setup.opponentNode}`;
       const entryId = await startSurveyEntry(setupSessionId, edgeId);
+      setRestoredEntryId(entryId);
       setBackendNotice(null);
       
       const path = `/survey/scenarios/0${setupIdFromUrl ? `?setupId=${setupIdFromUrl}` : ''}`;
@@ -147,8 +188,33 @@ const App: React.FC = () => {
       navigate('/admin/setup');
   };
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  const isSurveyRoute = location.pathname.startsWith('/survey') && !location.pathname.startsWith('/survey/outro');
+  const isSessionFull = setup.submissionCount >= setup.sampleSize;
+
+  if (isSurveyRoute && isSessionFull && !restoredEntryId) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8 text-center">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
+          <h2 className="text-2xl font-bold text-gray-900">Session Full</h2>
+          <p className="text-gray-600">
+            The maximum number of participants for this study has been reached. Thank you for your interest!
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="antialiased text-gray-900">
+      {(location.pathname.startsWith('/survey') && restoredEntryId) && <SessionRecorder sessionId={restoredEntryId} />}
       <Toaster position="top-center" toastOptions={{ duration: TOAST_DURATION_MS }} />
       {backendNotice && (
         <div className="mx-auto max-w-5xl mt-4 px-4">
@@ -172,6 +238,14 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+            </ProtectedRoute>
+          }
+        />
+        <Route 
+          path="/admin/replay/:sessionId"
+          element={
+            <ProtectedRoute>
+              <SessionPlayback />
             </ProtectedRoute>
           }
         />

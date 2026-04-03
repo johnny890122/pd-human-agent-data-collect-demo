@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { ExperimentSetup, AgentId } from '../types';
 import { AGENTS } from '../constants';
 import { generateDesignMatrix } from '../utils/math';
-import { fetchAllExperimentSetups } from '../utils/graphqlClient';
+import { fetchAllExperimentSetups, clearDatabase } from '../utils/graphqlClient';
 import HistoryTable from './HistoryTable';
 import SetupPanel from './SetupPanel';
 
@@ -82,6 +82,19 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     navigate('/admin/history');
   };
 
+  const handleClearDatabase = async () => {
+    if (window.confirm("WARNING: You are about to delete ALL experiment setups, sessions, and submissions. This action cannot be undone.\\n\\nAre you sure you want to clean the database?")) {
+      const success = await clearDatabase();
+      if (success) {
+        setHistory([]);
+        setHistoryPage(1);
+        alert("Database cleaned successfully.");
+      } else {
+        alert("Failed to clean database. Check console for details.");
+      }
+    }
+  };
+
   const handleLogout = () => {
     localStorage.removeItem('isAuthenticated');
     navigate('/login', { replace: true });
@@ -112,12 +125,20 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
               </button>
               <button
                 type="button"
+                onClick={handleClearDatabase}
+                className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50 border border-transparent"
+              >
+                Clear Database
+              </button>
+              <button
+                type="button"
                 onClick={handleLogout}
                 className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-red-600 transition-colors hover:bg-red-50 border border-transparent"
               >
                 Logout
               </button>
             </nav>
+
           </aside>
 
           <div className="flex-1 min-w-0">

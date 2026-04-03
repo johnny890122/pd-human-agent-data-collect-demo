@@ -269,3 +269,46 @@ export async function completeSurveyEntry(
   });
 }
 
+
+export interface EdgeConfigEntry {
+  id: string;
+  sessionId: string;
+  edgeId: string;
+  results: any[];
+  demographics: any;
+  isCompleted: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export async function fetchRecentSubmissions(): Promise<EdgeConfigEntry[]> {
+  const query = `
+    query RecentSubmissions {
+      recentSubmissions(limit: 100) {
+        id
+        sessionId
+        edgeId
+        isCompleted
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+  const data = await runGraphQL<{ recentSubmissions: EdgeConfigEntry[] }>(query);
+  return data.recentSubmissions || [];
+}
+
+export async function clearDatabase(): Promise<boolean> {
+  const mutation = `
+    mutation ClearDatabase {
+      clearDatabase
+    }
+  `;
+  try {
+    const data = await runGraphQL<{ clearDatabase: boolean }>(mutation);
+    return data.clearDatabase || false;
+  } catch (error) {
+    console.error("Failed to clear database via GraphQL:", error);
+    return false;
+  }
+}

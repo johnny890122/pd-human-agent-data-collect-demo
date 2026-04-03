@@ -1,6 +1,7 @@
 import { connectToDatabase, isDbConfigured } from '../db.js';
 import { ExperimentSetupModel, EdgeConfigEntryModel } from '../models/ExperimentSetup.js';
-import { GraphQLScalarType } from 'graphql';
+import { SessionReplayModel } from '../models/SessionReplay.js';
+import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
 
 
@@ -49,32 +50,12 @@ function mapEntry(doc) {
     demographics: doc.demographics || null,
     isCompleted: doc.isCompleted === true,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
 }
 
 export const resolvers = {
-  JSON: new GraphQLScalarType({
-    name: 'JSON',
-    serialize: (val) => val,
-    parseValue: (val) => val,
-    parseLiteral: (ast) => {
-      // Basic implementation for JSON in variables, but handles literals if needed
-      switch (ast.kind) {
-        case 'StringValue':
-        case 'BooleanValue':
-          return ast.value;
-        case 'IntValue':
-        case 'FloatValue':
-          return parseFloat(ast.value);
-        case 'ObjectValue':
-          return Object.fromEntries(ast.fields.map(f => [f.name.value, resolvers.JSON.parseLiteral(f.value)]));
-        case 'ListValue':
-          return ast.values.map(v => resolvers.JSON.parseLiteral(v));
-        default:
-          return null;
-      }
-    },
-  }),
+  JSON: GraphQLJSON,
 
   Query: {
     health: () => 'ok',
@@ -108,6 +89,20 @@ export const resolvers = {
         isCompleted: doc.isCompleted === true,
       }));
 
+    },
+    getSessionReplay: async (_, { sessionId }) => {
+      requireDb();
+      await connectToDatabase();
+      const chunks = await SessionReplayModel.find({ sessionId }).sort({ chunkIndex: 1 }).lean();
+      if (!chunks || chunks.length === 0) return [];
+      
+      let allEvents = [];
+      for (const chunk of chunks) {
+        if (Array.isArray(chunk.events)) {
+          allEvents = allEvents.concat(chunk.events);
+        }
+      }
+      return allEvents;
     },
   },
   Mutation: {
@@ -228,6 +223,50 @@ export const resolvers = {
       } catch (error) {
         console.error("Survey submission failed:", error);
         throw error;
+      }
+    },
+    saveSessionEvents: async (_, { sessionId, events }) => {
+      requireDb();
+      await connectToDatabase();
+
+      if (!events || events.length === 0) return true;
+
+      // Find the latest chunk for this session
+      let latestChunk = await SessionReplayModel.findOne({ sessionId }).sort({ chunkIndex: -1 });
+
+      if (!latestChunk) {
+        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: 0, eventCount: 0, events: [] });
+      }
+
+      // Check threshold (e.g., 2000 events) as a safe heuristic for 16MB MongoDB limit
+      if (latestChunk.eventCount >= 2000) {
+        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: latestChunk.chunkIndex + 1, eventCount: 0, events: [] });
+      }
+
+      await SessionReplayModel.updateOne(
+        { _id: latestChunk._id },
+        { 
+          $push: { events: { $each: events } },
+          $inc: { eventCount: events.length }
+        }
+      );
+
+      return true;
+    },
+    clearDatabase: async () => {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('Action denied: You cannot clear the database in production.');
+      }
+      requireDb();
+      await connectToDatabase();
+      try {
+        await ExperimentSetupModel.deleteMany({});
+        await EdgeConfigEntryModel.deleteMany({});
+        await SessionReplayModel.deleteMany({});
+        return true;
+      } catch (error) {
+        console.error("Failed to clean database:", error);
+        return false;
       }
     },
   },

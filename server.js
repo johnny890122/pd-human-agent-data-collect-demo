@@ -35,8 +35,16 @@ async function startServer() {
 
   await apolloServer.start();
 
-  app.use(express.json());
-  app.use('/graphql', expressMiddleware(apolloServer));
+  // 📝 在抵達 JSON body parser 之前，先中途攔截並印出大小
+  app.use('/graphql', (req, res, next) => {
+    if (req.headers['content-length']) {
+      const sizeMB = (parseInt(req.headers['content-length'], 10) / 1024 / 1024).toFixed(3);
+    }
+    next();
+  }, express.json({ limit: '50mb' }), expressMiddleware(apolloServer));
+
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   app.post('/api/admin/login', (req, res) => {
     const configuredPassword = process.env.ADMIN_PASSWORD

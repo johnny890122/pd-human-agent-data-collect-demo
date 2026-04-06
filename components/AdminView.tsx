@@ -122,13 +122,15 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
               >
                 Session
               </button>
-              <button
-                type="button"
-                onClick={handleClearDatabase}
-                className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50 border border-transparent"
-              >
-                Clear Database
-              </button>
+              {import.meta.env.DEV && (
+                <button
+                  type="button"
+                  onClick={handleClearDatabase}
+                  className="w-full rounded-lg px-3 py-2 text-left text-sm font-semibold text-orange-600 transition-colors hover:bg-orange-50 border border-transparent"
+                >
+                  Clear Database
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleLogout}

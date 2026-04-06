@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ExperimentSetup } from '../types';
+import { SessionSetup } from '../types';
 import { AGENTS, COLORS } from '../constants';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
 import { AGENT_IDS, generateTrianglePositions, PayoffMatrix, DecisionSlider } from './SurveyShared';
 
 export interface SurveyIntroProps {
-  setup: ExperimentSetup;
+  setup: SessionSetup;
   currentStep?: number;
   onNavigateIntro?: (step: number) => void;
   onFinish: () => void;
@@ -30,7 +30,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
   const safeOpponentNode = (
     AGENTS[setup.opponentNode as AgentId] && setup.opponentNode !== safeFocalNode
       ? setup.opponentNode
-      : (safeFocalNode === '1' ? '2' : '1')
+      : (safeFocalNode === 'A1' ? 'A2' : 'A1')
   ) as AgentId;
 
   const agentMe = AGENTS[safeFocalNode];
@@ -41,8 +41,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     const others = AGENT_IDS.filter(id => id !== safeFocalNode && id !== safeOpponentNode);
     return {
       ...setup,
-      focalNode: safeFocalNode,
-      opponentNode: safeOpponentNode,
+      focalNode: safeFocalNode as string,
+      opponentNode: safeOpponentNode as string,
       activeEdgeIds: [
         `${safeFocalNode}-${safeOpponentNode}`,
         `${safeOpponentNode}-${safeFocalNode}`,
@@ -55,10 +55,11 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
   const networkDemoScenario = useMemo(() => ({
     id: 0,
-    edgeStates: networkDemoSetup.activeEdgeIds.reduce((acc, id) => ({
-      ...acc,
-      [id]: Math.random() < 0.5 ? 0 : 1
-    }), {} as Record<string, 0 | 1>),
+    edgeStates: networkDemoSetup.activeEdgeIds.reduce((acc, id, index) => {
+      // Use a consistent pattern instead of random
+      acc[id] = index % 2 === 0 ? 'not give' : 'give';
+      return acc;
+    }, {} as Record<string, 'not give' | 'give'>),
   }), [networkDemoSetup]);
 
   const introNodePositions = useMemo(() => generateTrianglePositions(safeFocalNode, false), [safeFocalNode]);
@@ -343,7 +344,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                       return source === setup.focalNode || target === setup.focalNode || source === setup.opponentNode || target === setup.opponentNode;
                     }).map(edgeId => {
                       const [source, target] = edgeId.split('-');
-                      const isGive = networkDemoScenario.edgeStates[edgeId] === 1;
+                      const isGive = networkDemoScenario.edgeStates[edgeId] === 'give';
                       const isYou = source === setup.focalNode;
                       
                       const getName = (id: string, agent: any) => {

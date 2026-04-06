@@ -2,15 +2,17 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import NetworkGraph from '../NetworkGraph';
-import { ExperimentSetup } from '../../types';
+import { SessionSetup } from '../../types';
 
 describe('NetworkGraph', () => {
   it('does not render the decision bubble when decision maker equals opponent', () => {
-    const setup: ExperimentSetup = {
+    const setup: SessionSetup = {
       activeEdgeIds: [],
-      edgeConfigs: {},
-      decisionMaker: '1',
-      opponent: '1',
+      scenarios: [],
+      focalNode: 'A1',
+      opponentNode: 'A2',
+      sampleSize: 20,
+      submissionCount: 0,
     };
 
     expect(() =>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { AgentId } from '../types';
 
-export const AGENT_IDS: AgentId[] = ['1', '2', '3', '4'];
+export const AGENT_IDS: AgentId[] = ['A1', 'A2', 'B3', 'B4'];
 
 export function generateTrianglePositions(
   decisionMakerId: AgentId,

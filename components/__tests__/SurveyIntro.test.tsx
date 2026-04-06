@@ -2,14 +2,16 @@ import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import SurveyIntro from '../SurveyIntro';
-import { ExperimentSetup } from '../../types';
+import { SessionSetup } from '../../types';
 
 describe('SurveyIntro', () => {
-  const setup: ExperimentSetup = {
-    activeEdgeIds: ['1-3'],
-    edgeConfigs: {},
-    decisionMaker: '1',
-    opponent: '3',
+  const setup: SessionSetup = {
+    activeEdgeIds: ['A1-B3'],
+    scenarios: [],
+    focalNode: 'A1',
+    opponentNode: 'A2',
+    sampleSize: 20,
+    submissionCount: 0,
   };
 
   it('uses static class names for role cards', () => {

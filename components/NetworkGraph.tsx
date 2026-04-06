@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import * as d3 from 'd3';
 import { AGENTS, ALL_EDGES, COLORS } from '../constants';
-import { AgentId, ExperimentSetup, Scenario } from '../types';
+import { AgentId, SessionSetup, Scenario } from '../types';
 import { clamp, distance, getBezierPoint, projectPointToSegmentT } from '../utils/math';
 
 interface NetworkGraphProps {
   mode: 'admin' | 'survey';
-  setup: ExperimentSetup;
+  setup: SessionSetup;
   scenario?: Scenario;
   onEdgeClick?: (edgeId: string) => void;
   onNodeClick?: (agentId: AgentId) => void;
@@ -100,10 +100,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const positions = React.useMemo(() => {
     const defaultPositions: Record<AgentId, { x: number; y: number }> = {
-      '1': { x: 100, y: 100 },
-      '2': { x: 300, y: 100 },
-      '3': { x: 100, y: 300 },
-      '4': { x: 300, y: 300 },
+      'A1': { x: 100, y: 100 },
+      'A2': { x: 300, y: 100 },
+      'B3': { x: 100, y: 300 },
+      'B4': { x: 300, y: 300 },
     };
     return positionOverrides
       ? { ...defaultPositions, ...positionOverrides }
@@ -115,7 +115,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       return setup.activeEdgeIds.includes(edgeId) ? COLORS.highlight : COLORS.edgeInactive;
     }
     if (setup.activeEdgeIds.includes(edgeId) && scenario) {
-      return scenario.edgeStates[edgeId] === 1 ? COLORS.coop : COLORS.defect;
+      return scenario.edgeStates[edgeId] === 'give' ? COLORS.coop : COLORS.defect;
     }
     return 'transparent';
   };
@@ -432,8 +432,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         if (isActive && mode === 'survey' && scenario && isRevealed) {
           const state = scenario.edgeStates[edge.id];
           showBubble = true;
-          bubbleLabel = state === 1 ? 'GIVE' : 'NOT GIVE';
-          bubbleColor = state === 1 ? COLORS.coop : COLORS.defect;
+          bubbleLabel = state === 'give' ? 'GIVE' : 'NOT GIVE';
+          bubbleColor = state === 'give' ? COLORS.coop : COLORS.defect;
         }
 
         if (!showBubble && !isUnrevealedActive) return null;
@@ -699,10 +699,14 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           <g
             key={agent.id}
             transform={`translate(${pos.x}, ${pos.y})`}
-            className="transition-all duration-300"
-            onMouseEnter={() => setHoveredNode(agent.id)}
-            onMouseLeave={() => setHoveredNode(null)}
-            onClick={() => onNodeClick?.(agent.id)}
+            className={`transition-all duration-300 ${mode !== 'admin' && onNodeClick ? 'cursor-pointer hover:opacity-80' : ''}`}
+            onMouseEnter={() => mode !== 'admin' && setHoveredNode(agent.id)}
+            onMouseLeave={() => mode !== 'admin' && setHoveredNode(null)}
+            onClick={() => {
+              if (mode !== 'admin') {
+                onNodeClick?.(agent.id);
+              }
+            }}
           >
             {/* Glow Aura */}
             {isDecisionMaker && (

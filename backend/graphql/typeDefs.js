@@ -1,7 +1,7 @@
 export const typeDefs = `#graphql
   scalar JSON
 
-  type EdgeConfigEntry {
+  type Submission {
     id: ID!
     sessionId: String!
     edgeId: String!
@@ -25,7 +25,7 @@ export const typeDefs = `#graphql
     education: String!
   }
 
-  type ExperimentSetup {
+  type SessionSetup {
     id: ID!
     activeEdgeIds: [String!]!
     scenarios: [JSON!]!
@@ -36,7 +36,7 @@ export const typeDefs = `#graphql
     updatedAt: String
   }
 
-  input ExperimentSetupInput {
+  input SessionSetupInput {
     activeEdgeIds: [String!]!
     scenarios: [JSON!]!
     focalNode: String!
@@ -57,19 +57,19 @@ export const typeDefs = `#graphql
 
   type Query {
     health: String!
-    activeExperimentSetup: ExperimentSetup
-    experimentSetup(id: ID!): ExperimentSetup
-    allExperimentSetups: [ExperimentSetup!]!
-    recentSubmissions(limit: Int = 20): [EdgeConfigEntry!]!
+    activeSessionSetup: SessionSetup
+    sessionSetup(id: ID!): SessionSetup
+    allSessionSetups: [SessionSetup!]!
+    recentSubmissions(limit: Int = 20): [Submission!]!
     getSessionReplay(sessionId: String!): [JSON!]!
   }
 
   type Mutation {
-    saveExperimentSetup(setup: ExperimentSetupInput!): ExperimentSetup!
-    startSurveyEntry(sessionId: String!, edgeId: String!): EdgeConfigEntry!
-    saveSurveyAnswer(entryId: ID!, answer: SurveyAnswerInput!): EdgeConfigEntry!
-    completeSurveyEntry(entryId: ID!, demographics: DemographicInput!): EdgeConfigEntry!
-    submitSurvey(sessionId: String!, edgeId: String!, results: [SurveyAnswerInput!]!, demographics: DemographicInput!): EdgeConfigEntry!
+    saveSessionSetup(setup: SessionSetupInput!): SessionSetup!
+    startSurveyEntry(sessionId: String!, edgeId: String!): Submission!
+    saveSurveyAnswer(entryId: ID!, answer: SurveyAnswerInput!): Submission!
+    completeSurveyEntry(entryId: ID!, demographics: DemographicInput!): Submission!
+    submitSurvey(sessionId: String!, edgeId: String!, results: [SurveyAnswerInput!]!, demographics: DemographicInput!): Submission!
     saveSessionEvents(sessionId: String!, events: [JSON!]!): Boolean!
     clearDatabase: Boolean!
   }

@@ -3,18 +3,18 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import AdminView from '../AdminView';
-import { ExperimentSetup } from '../../types';
-import { fetchAllExperimentSetups } from '../../utils/graphqlClient';
+import { SessionSetup } from '../../types';
+import { fetchAllSessionSetups } from '../../utils/graphqlClient';
 
 vi.mock('../../utils/graphqlClient', () => ({
-  fetchAllExperimentSetups: vi.fn().mockResolvedValue([]),
+  fetchAllSessionSetups: vi.fn().mockResolvedValue([]),
 }));
 
-const baseSetup: ExperimentSetup = {
-  activeEdgeIds: ['1-2'],
+const baseSetup: SessionSetup = {
+  activeEdgeIds: ['A1-A2'],
   scenarios: [],
-  focalNode: '1',
-  opponentNode: '2',
+  focalNode: 'A1',
+  opponentNode: 'A2',
   sampleSize: 20,
   submissionCount: 0,
 };
@@ -52,18 +52,18 @@ describe('AdminView', () => {
 
   it('loads selected setup from history when Setup ID is clicked', async () => {
     const setSetup = vi.fn();
-    const historySetup: ExperimentSetup = {
+    const historySetup: SessionSetup = {
       id: 'setup-123',
-      activeEdgeIds: ['1-2', '3-4'],
+      activeEdgeIds: ['A1-A2', 'B3-B4'],
       scenarios: [],
-      focalNode: '3',
-      opponentNode: '2',
+      focalNode: 'B3',
+      opponentNode: 'A2',
       sampleSize: 30,
       submissionCount: 7,
       updatedAt: '2026-03-23T00:00:00.000Z',
     };
 
-    vi.mocked(fetchAllExperimentSetups).mockResolvedValueOnce([historySetup]);
+    vi.mocked(fetchAllSessionSetups).mockResolvedValueOnce([historySetup]);
 
     render(
       <MemoryRouter initialEntries={['/admin/setup']}>

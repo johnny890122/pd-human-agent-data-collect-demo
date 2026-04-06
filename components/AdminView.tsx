@@ -1,16 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ExperimentSetup, AgentId } from '../types';
+import { SessionSetup, AgentId } from '../types';
 import { AGENTS } from '../constants';
 import { generateDesignMatrix } from '../utils/math';
-import { fetchAllExperimentSetups, clearDatabase } from '../utils/graphqlClient';
+import { fetchAllSessionSetups, clearDatabase } from '../utils/graphqlClient';
 import HistoryTable from './HistoryTable';
 import SetupPanel from './SetupPanel';
 
 interface AdminViewProps {
-  setup: ExperimentSetup;
-  setSetup: React.Dispatch<React.SetStateAction<ExperimentSetup>>;
-  onSave: (setupToSave: ExperimentSetup) => Promise<string | undefined>; // Returns the setup ID
+  setup: SessionSetup;
+  setSetup: React.Dispatch<React.SetStateAction<SessionSetup>>;
+  onSave: (setupToSave: SessionSetup) => Promise<string | undefined>; // Returns the setup ID
 }
 
 const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
@@ -20,7 +20,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   const isReadOnly = location.state?.readOnly === true;
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [history, setHistory] = useState<ExperimentSetup[]>([]);
+  const [history, setHistory] = useState<SessionSetup[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
   const pageSize = 10;
 
@@ -28,7 +28,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     if (activeTab === 'history') {
       const loadHistory = async () => {
         try {
-          const data = await fetchAllExperimentSetups();
+          const data = await fetchAllSessionSetups();
           setHistory(data);
           setHistoryPage(1);
         } catch (error) {
@@ -72,7 +72,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     setSetup({ ...setup, activeEdgeIds: newActive });
   };
 
-  const handleLoadHistorySetup = (selectedSetup: ExperimentSetup) => {
+  const handleLoadHistorySetup = (selectedSetup: SessionSetup) => {
     setSetup(selectedSetup);
     setGeneratedUrl(null);
     navigate('/admin/setup', { state: { readOnly: true } });
@@ -105,8 +105,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
       <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-6">
         <div className="flex flex-col lg:flex-row gap-6">
           <aside className="w-full lg:w-56 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm h-fit">
-            <h1 className="text-xl font-bold text-gray-800">Experiment</h1>
-            <p className="mt-1 text-xs text-gray-500">Admin Navigation</p>
+            <h1 className="text-xl font-bold text-gray-800">Admin View</h1>
 
             <nav className="mt-4 space-y-2">
               <button

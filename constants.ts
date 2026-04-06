@@ -1,26 +1,26 @@
-import { Agent, AgentId, EdgeDef, ExperimentSetup } from './types';
+import { Agent, AgentId, EdgeDef, SessionSetup } from './types';
 
 export const AGENTS: Record<AgentId, Agent> = {
-  '1': { id: '1', label: '1', group: 'A' },
-  '2': { id: '2', label: '2', group: 'A' },
-  '3': { id: '3', label: '3', group: 'B' },
-  '4': { id: '4', label: '4', group: 'B' },
+  'A1': { id: 'A1', label: '1', group: 'A' },
+  'A2': { id: 'A2', label: '2', group: 'A' },
+  'B3': { id: 'B3', label: '3', group: 'B' },
+  'B4': { id: 'B4', label: '4', group: 'B' },
 };
 
 // Define all 12 possible edges in a fully connected directed graph of 4 nodes (excluding self-loops)
 export const ALL_EDGES: EdgeDef[] = [
-  { id: '1-2', source: '1', target: '2' },
-  { id: '1-3', source: '1', target: '3' },
-  { id: '1-4', source: '1', target: '4' },
-  { id: '2-1', source: '2', target: '1' },
-  { id: '2-3', source: '2', target: '3' },
-  { id: '2-4', source: '2', target: '4' },
-  { id: '3-1', source: '3', target: '1' },
-  { id: '3-2', source: '3', target: '2' },
-  { id: '3-4', source: '3', target: '4' },
-  { id: '4-1', source: '4', target: '1' },
-  { id: '4-2', source: '4', target: '2' },
-  { id: '4-3', source: '4', target: '3' },
+  { id: 'A1-A2', source: 'A1', target: 'A2' },
+  { id: 'A1-B3', source: 'A1', target: 'B3' },
+  { id: 'A1-B4', source: 'A1', target: 'B4' },
+  { id: 'A2-A1', source: 'A2', target: 'A1' },
+  { id: 'A2-B3', source: 'A2', target: 'B3' },
+  { id: 'A2-B4', source: 'A2', target: 'B4' },
+  { id: 'B3-A1', source: 'B3', target: 'A1' },
+  { id: 'B3-A2', source: 'B3', target: 'A2' },
+  { id: 'B3-B4', source: 'B3', target: 'B4' },
+  { id: 'B4-A1', source: 'B4', target: 'A1' },
+  { id: 'B4-A2', source: 'B4', target: 'A2' },
+  { id: 'B4-B3', source: 'B4', target: 'B3' },
 ];
 
 export const DEFAULT_EDGE_CONFIG = {
@@ -78,11 +78,11 @@ export const COLORS = {
   indigoRgb: '79, 70, 229',
 };
 
-export const INITIAL_SETUP: ExperimentSetup = {
+export const INITIAL_SETUP: SessionSetup = {
   activeEdgeIds: [],
   scenarios: [],
-  focalNode: '3',
-  opponentNode: '2',
+  focalNode: 'A1',
+  opponentNode: 'A2',
   sampleSize: 20,
   submissionCount: 0,
 };

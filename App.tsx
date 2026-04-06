@@ -6,13 +6,13 @@ import SurveyView from './components/SurveyView';
 import Login from './components/Login';
 import NotFound from './components/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
-import { ExperimentSetup, SurveyResult } from './types';
+import { SessionSetup, SurveyResult } from './types';
 import {
   completeSurveyEntry,
-  fetchActiveExperimentSetup,
-  fetchExperimentSetup,
+  fetchActiveSessionSetup,
+  fetchSessionSetup,
   saveSurveyAnswer,
-  saveExperimentSetup,
+  saveSessionSetup,
   startSurveyEntry,
 } from './utils/graphqlClient';
 import { loadSession, saveSession, clearSession } from './utils/surveySession';
@@ -32,7 +32,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   
   // Initial Setup State
-  const [setup, setSetup] = useState<ExperimentSetup>(INITIAL_SETUP);
+  const [setup, setSetup] = useState<SessionSetup>(INITIAL_SETUP);
 
   useEffect(() => {
     if (location.pathname.startsWith('/admin')) {
@@ -54,9 +54,9 @@ const App: React.FC = () => {
       try {
         let persistedSetup;
         if (setupIdFromUrl) {
-          persistedSetup = await fetchExperimentSetup(setupIdFromUrl);
+          persistedSetup = await fetchSessionSetup(setupIdFromUrl);
         } else {
-          persistedSetup = await fetchActiveExperimentSetup();
+          persistedSetup = await fetchActiveSessionSetup();
         }
 
         if (persistedSetup) {
@@ -112,9 +112,9 @@ const App: React.FC = () => {
     hydrateSetup();
   }, [setupIdFromUrl, navigate]);
 
-  const handleSaveSetup = async (setupToSave: ExperimentSetup) => {
+  const handleSaveSetup = async (setupToSave: SessionSetup) => {
     try {
-      const savedSetup = await saveExperimentSetup(setupToSave);
+      const savedSetup = await saveSessionSetup(setupToSave);
       const id = savedSetup.id;
       setActiveSetupId(id ?? null);
       return id;
@@ -205,7 +205,7 @@ const App: React.FC = () => {
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
           <h2 className="text-2xl font-bold text-gray-900">Session Full</h2>
           <p className="text-gray-600">
-            The maximum number of participants for this study has been reached. Thank you for your interest!
+            The session is full. Thank you for your interest!
           </p>
         </div>
       </div>

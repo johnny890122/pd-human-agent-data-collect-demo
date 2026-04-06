@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ExperimentSetup, SurveyResult } from '../types';
+import { SessionSetup, SurveyResult } from '../types';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
@@ -10,7 +10,7 @@ import SurveyOutro from './SurveyOutro';
 import { saveSession } from '../utils/surveySession';
 
 interface SurveyViewProps {
-  setup: ExperimentSetup;
+  setup: SessionSetup;
   onStartSurvey: () => Promise<string | undefined>;
   onSaveAnswer: (entryId: string, answer: SurveyResult) => Promise<boolean>;
   onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
@@ -90,7 +90,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
   const [randomPositions, setRandomPositions] = useState<Record<AgentId, { x: number; y: number }> | null>(null);
 
   useEffect(() => {
-    setRandomPositions(generateTrianglePositions(setup.focalNode));
+    setRandomPositions(generateTrianglePositions(setup.focalNode as AgentId));
   }, [scenarioIdx, setup.focalNode]);
 
   const scenarios = setup.scenarios || [];

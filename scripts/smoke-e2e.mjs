@@ -47,8 +47,8 @@ async function run() {
   };
 
   const saveSetupData = await graphQL(
-    `mutation SaveSetup($setup: ExperimentSetupInput!) {
-      saveExperimentSetup(setup: $setup) {
+    `mutation SaveSetup($setup: SessionSetupInput!) {
+      saveSessionSetup(setup: $setup) {
         activeEdgeIds
         decisionMaker
         opponent
@@ -57,14 +57,14 @@ async function run() {
     { setup: setupInput }
   );
 
-  assert(saveSetupData?.saveExperimentSetup, 'saveExperimentSetup returned no data');
+  assert(saveSetupData?.saveSessionSetup, 'saveSessionSetup returned no data');
   assert(
-    saveSetupData.saveExperimentSetup.activeEdgeIds.includes(edgeId),
+    saveSetupData.saveSessionSetup.activeEdgeIds.includes(edgeId),
     'saved setup does not include expected edge id'
   );
 
   const submitData = await graphQL(
-    `mutation SubmitSurvey($sessionId: String!, $setup: ExperimentSetupInput!, $results: [SurveyAnswerInput!]!) {
+    `mutation SubmitSurvey($sessionId: String!, $setup: SessionSetupInput!, $results: [SurveyAnswerInput!]!) {
       submitSurvey(sessionId: $sessionId, setup: $setup, results: $results) {
         id
         sessionId
@@ -85,17 +85,17 @@ async function run() {
   );
 
   const readSetupData = await graphQL(`query ReadSetup {
-    activeExperimentSetup {
+    activeSessionSetup {
       activeEdgeIds
       decisionMaker
       opponent
     }
   }`);
 
-  assert(readSetupData?.activeExperimentSetup, 'activeExperimentSetup returned no data');
+  assert(readSetupData?.activeSessionSetup, 'activeSessionSetup returned no data');
   assert(
-    readSetupData.activeExperimentSetup.activeEdgeIds.includes(edgeId),
-    'activeExperimentSetup does not match the setup saved in this smoke run'
+    readSetupData.activeSessionSetup.activeEdgeIds.includes(edgeId),
+    'activeSessionSetup does not match the setup saved in this smoke run'
   );
 
   console.log('Smoke e2e passed');

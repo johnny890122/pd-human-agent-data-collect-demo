@@ -1,5 +1,5 @@
 import { connectToDatabase, isDbConfigured } from '../db.js';
-import { ExperimentSetupModel, EdgeConfigEntryModel } from '../models/ExperimentSetup.js';
+import { SessionSetupModel, SubmissionModel } from '../models/SessionSetup.js';
 import { SessionReplayModel } from '../models/SessionReplay.js';
 import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
@@ -13,7 +13,7 @@ function requireDb() {
 
 async function toSetupGraph(doc) {
   if (!doc) return null;
-  const submissionCount = await EdgeConfigEntryModel.countDocuments({
+  const submissionCount = await SubmissionModel.countDocuments({
     sessionId: String(doc._id),
     $or: [
       { isCompleted: true },
@@ -59,28 +59,28 @@ export const resolvers = {
 
   Query: {
     health: () => 'ok',
-    activeExperimentSetup: async () => {
+    activeSessionSetup: async () => {
       requireDb();
       await connectToDatabase();
-      const doc = await ExperimentSetupModel.findOne().sort({ updatedAt: -1 }).lean();
+      const doc = await SessionSetupModel.findOne().sort({ updatedAt: -1 }).lean();
       return await toSetupGraph(doc);
     },
-    experimentSetup: async (_, { id }) => {
+    sessionSetup: async (_, { id }) => {
       requireDb();
       await connectToDatabase();
-      const doc = await ExperimentSetupModel.findById(id).lean();
+      const doc = await SessionSetupModel.findById(id).lean();
       return await toSetupGraph(doc);
     },
-    allExperimentSetups: async () => {
+    allSessionSetups: async () => {
       requireDb();
       await connectToDatabase();
-      const docs = await ExperimentSetupModel.find({}).sort({ createdAt: -1 }).lean();
+      const docs = await SessionSetupModel.find({}).sort({ createdAt: -1 }).lean();
       return await Promise.all(docs.map(doc => toSetupGraph(doc)));
     },
     recentSubmissions: async (_, { limit }) => {
       requireDb();
       await connectToDatabase();
-      const docs = await EdgeConfigEntryModel.find({})
+      const docs = await SubmissionModel.find({})
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
@@ -106,7 +106,7 @@ export const resolvers = {
     },
   },
   Mutation: {
-    saveExperimentSetup: async (_, { setup }) => {
+    saveSessionSetup: async (_, { setup }) => {
       requireDb();
       await connectToDatabase();
 
@@ -114,7 +114,7 @@ export const resolvers = {
       // Given the user removed 'key', maybe they want a history.
       // I'll create a new one to be safe, or update the most recent.
       // Let's create a new one as it's cleaner without a key.
-      const doc = await ExperimentSetupModel.create({
+      const doc = await SessionSetupModel.create({
         _id: randomUUID(),
         activeEdgeIds: setup.activeEdgeIds,
         scenarios: setup.scenarios,
@@ -129,7 +129,7 @@ export const resolvers = {
       requireDb();
       await connectToDatabase();
 
-      const doc = await EdgeConfigEntryModel.create({
+      const doc = await SubmissionModel.create({
         sessionId,
         edgeId,
         results: [],
@@ -144,7 +144,7 @@ export const resolvers = {
       validateResults([answer]);
       await connectToDatabase();
 
-      const existing = await EdgeConfigEntryModel.findById(entryId);
+      const existing = await SubmissionModel.findById(entryId);
       if (!existing) {
         throw new Error('Survey entry not found.');
       }
@@ -166,7 +166,7 @@ export const resolvers = {
       requireDb();
       await connectToDatabase();
 
-      const doc = await EdgeConfigEntryModel.findByIdAndUpdate(
+      const doc = await SubmissionModel.findByIdAndUpdate(
         entryId,
         {
           $set: {
@@ -189,7 +189,7 @@ export const resolvers = {
         validateResults(results);
         await connectToDatabase();
 
-        const doc = await EdgeConfigEntryModel.create({
+        const doc = await SubmissionModel.create({
           sessionId,
           edgeId,
           results,
@@ -260,8 +260,8 @@ export const resolvers = {
       requireDb();
       await connectToDatabase();
       try {
-        await ExperimentSetupModel.deleteMany({});
-        await EdgeConfigEntryModel.deleteMany({});
+        await SessionSetupModel.deleteMany({});
+        await SubmissionModel.deleteMany({});
         await SessionReplayModel.deleteMany({});
         return true;
       } catch (error) {

@@ -43,7 +43,7 @@ export const generateDesignMatrix = (activeEdgeIds: string[]): Scenario[] => {
   const scenarios: Scenario[] = [];
 
   for (let i = 0; i < totalScenarios; i++) {
-    const edgeStates: Record<string, 0 | 1> = {};
+    const edgeStates: Record<string, 'not give' | 'give'> = {};
     
     // Convert integer i to binary string, pad with zeros
     // e.g., if k=3, i=5 (101) -> '101'
@@ -51,13 +51,19 @@ export const generateDesignMatrix = (activeEdgeIds: string[]): Scenario[] => {
     for (let j = 0; j < k; j++) {
       // Check if j-th bit is set
       const isHigh = (i >> j) & 1;
-      edgeStates[activeEdgeIds[j]] = isHigh ? 1 : 0;
+      edgeStates[activeEdgeIds[j]] = isHigh ? 'give' : 'not give';
     }
 
     scenarios.push({
       id: i,
       edgeStates,
     });
+  }
+
+  // Fisher-Yates shuffle to randomize scenario order
+  for (let i = scenarios.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [scenarios[i], scenarios[j]] = [scenarios[j], scenarios[i]];
   }
 
   return scenarios;

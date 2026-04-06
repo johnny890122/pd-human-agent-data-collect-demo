@@ -29,7 +29,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1Mo0KYmUbtggjpVpGE1zTpy
 - Vite proxies `/graphql` to backend during frontend development.
 ## Model Collection Spec
 
-### ExperimentSetup
+### SessionSetup
 Stores the core configuration for each experiment run.
 
 | Field | Type | Description |
@@ -43,13 +43,13 @@ Stores the core configuration for each experiment run.
 | `createdAt` | Date | Mongoose timestamp |
 | `updatedAt` | Date | Mongoose timestamp |
 
-### EdgeConfigEntry
+### Submission
 Stores individual participant responses and progress.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `_id` | UUID | Primary Key |
-| `sessionId` | String | References `ExperimentSetup._id` |
+| `sessionId` | String | References `SessionSetup._id` |
 | `edgeId` | String | ID of the specific edge |
 | `results` | `[Object]` | List of `{ scenarioId, cooperationProbability }` |
 | `demographics` | Object | Optional `{ age, gender, education }` |
@@ -63,7 +63,7 @@ Stores RRWeb event chunks for session playback and analysis.
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `_id` | UUID | Primary Key |
-| `sessionId` | String | References `ExperimentSetup._id` |
+| `sessionId` | String | References `SessionSetup._id` |
 | `chunkIndex` | Number | Index of the RRWeb event chunk |
 | `eventCount` | Number | Count of events in this chunk |
 | `events` | `[Mixed]` | Array of RRWeb events |

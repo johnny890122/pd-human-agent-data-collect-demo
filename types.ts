@@ -1,4 +1,4 @@
-export type AgentId = '1' | '2' | '3' | '4';
+export type AgentId = 'A1' | 'A2' | 'B3' | 'B4';
 export type GroupId = 'A' | 'B';
 
 export interface Agent {
@@ -13,7 +13,7 @@ export interface EdgeDef {
   target: AgentId;
 }
 
-export interface ExperimentSetup {
+export interface SessionSetup {
   id?: string;
   activeEdgeIds: string[];
   scenarios: Scenario[];
@@ -24,7 +24,7 @@ export interface ExperimentSetup {
   updatedAt?: string;
 }
 
-export interface EdgeConfigEntry {
+export interface Submission {
   sessionId: string;
   edgeId: string;
   results: SurveyResult[];
@@ -39,7 +39,7 @@ export interface EdgeConfigEntry {
 
 export interface Scenario {
   id: number;
-  edgeStates: Record<string, 0 | 1>; // edgeId -> 0 (Low) or 1 (High)
+  edgeStates: Record<string, 'not give' | 'give'>;
 }
 
 export interface SurveyResult {

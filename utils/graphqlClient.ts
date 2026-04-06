@@ -1,4 +1,4 @@
-import { ExperimentSetup, SurveyResult } from '../types';
+import { SessionSetup, SurveyResult } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -7,7 +7,7 @@ interface GraphQLResponse<TData> {
   errors?: Array<{ message: string }>;
 }
 
-interface GraphExperimentSetup {
+interface GraphSessionSetup {
   id?: string;
   activeEdgeIds: string[];
   scenarios: any[];
@@ -18,12 +18,18 @@ interface GraphExperimentSetup {
   updatedAt?: string;
 }
 
-const CANONICAL_AGENT_IDS = new Set(['1', '2', '3', '4']);
+const CANONICAL_AGENT_IDS = new Set(['A1', 'A2', 'B3', 'B4']);
 
 function normalizeAgentId(id: string | undefined): string {
-  if (!id) return '1';
+  if (!id) return 'A1';
+  // Check if mapping old id formats
+  if (id === '1') return 'A1';
+  if (id === '2') return 'A2';
+  if (id === '3') return 'B3';
+  if (id === '4') return 'B4';
+
   if (CANONICAL_AGENT_IDS.has(id)) return id;
-  return '1';
+  return 'A1';
 }
 
 function normalizeEdgeId(edgeId: string): string {
@@ -59,7 +65,7 @@ function normalizeScenarios(
   });
 }
 
-function setupToGraphInput(setup: ExperimentSetup): GraphExperimentSetup {
+function setupToGraphInput(setup: SessionSetup): GraphSessionSetup {
   return {
     activeEdgeIds: setup.activeEdgeIds,
     scenarios: setup.scenarios,
@@ -69,11 +75,12 @@ function setupToGraphInput(setup: ExperimentSetup): GraphExperimentSetup {
   };
 }
 
-function setupFromGraph(graph: GraphExperimentSetup): ExperimentSetup {
+function setupFromGraph(graph: GraphSessionSetup): SessionSetup {
   const focalNode = normalizeAgentId(graph.focalNode);
+  
   let opponentNode = normalizeAgentId(graph.opponentNode);
   if (opponentNode === focalNode) {
-    opponentNode = focalNode === '1' ? '2' : '1';
+    opponentNode = focalNode === 'A1' ? 'A2' : 'A1';
   }
 
   return {
@@ -114,10 +121,10 @@ async function runGraphQL<TData>(query: string, variables?: Record<string, unkno
   return json.data;
 }
 
-export async function fetchActiveExperimentSetup(): Promise<ExperimentSetup | null> {
+export async function fetchActiveSessionSetup(): Promise<SessionSetup | null> {
   const query = `
-    query ActiveExperimentSetup {
-      activeExperimentSetup {
+    query ActiveSessionSetup {
+      activeSessionSetup {
         id
         activeEdgeIds
         scenarios
@@ -129,17 +136,17 @@ export async function fetchActiveExperimentSetup(): Promise<ExperimentSetup | nu
 
   `;
 
-  const data = await runGraphQL<{ activeExperimentSetup: GraphExperimentSetup | null }>(query);
-  if (!data.activeExperimentSetup) {
+  const data = await runGraphQL<{ activeSessionSetup: GraphSessionSetup | null }>(query);
+  if (!data.activeSessionSetup) {
     return null;
   }
-  return setupFromGraph(data.activeExperimentSetup);
+  return setupFromGraph(data.activeSessionSetup);
 }
  
-export async function fetchExperimentSetup(id: string): Promise<ExperimentSetup | null> {
+export async function fetchSessionSetup(id: string): Promise<SessionSetup | null> {
   const query = `
-    query ExperimentSetup($id: ID!) {
-      experimentSetup(id: $id) {
+    query SessionSetup($id: ID!) {
+      sessionSetup(id: $id) {
         id
         activeEdgeIds
         scenarios
@@ -151,17 +158,17 @@ export async function fetchExperimentSetup(id: string): Promise<ExperimentSetup 
     }
   `;
  
-  const data = await runGraphQL<{ experimentSetup: GraphExperimentSetup | null }>(query, { id });
-  if (!data.experimentSetup) {
+  const data = await runGraphQL<{ sessionSetup: GraphSessionSetup | null }>(query, { id });
+  if (!data.sessionSetup) {
     return null;
   }
-  return setupFromGraph(data.experimentSetup);
+  return setupFromGraph(data.sessionSetup);
 }
  
-export async function fetchAllExperimentSetups(): Promise<ExperimentSetup[]> {
+export async function fetchAllSessionSetups(): Promise<SessionSetup[]> {
   const query = `
-    query AllExperimentSetups {
-      allExperimentSetups {
+    query AllSessionSetups {
+      allSessionSetups {
         id
         activeEdgeIds
         scenarios
@@ -174,14 +181,14 @@ export async function fetchAllExperimentSetups(): Promise<ExperimentSetup[]> {
     }
   `;
  
-  const data = await runGraphQL<{ allExperimentSetups: GraphExperimentSetup[] }>(query);
-  return data.allExperimentSetups.map(setupFromGraph);
+  const data = await runGraphQL<{ allSessionSetups: GraphSessionSetup[] }>(query);
+  return data.allSessionSetups.map(setupFromGraph);
 }
 
-export async function saveExperimentSetup(setup: ExperimentSetup): Promise<ExperimentSetup> {
+export async function saveSessionSetup(setup: SessionSetup): Promise<SessionSetup> {
   const mutation = `
-    mutation SaveExperimentSetup($setup: ExperimentSetupInput!) {
-      saveExperimentSetup(setup: $setup) {
+    mutation SaveSessionSetup($setup: SessionSetupInput!) {
+      saveSessionSetup(setup: $setup) {
         id
         focalNode
         opponentNode
@@ -191,10 +198,10 @@ export async function saveExperimentSetup(setup: ExperimentSetup): Promise<Exper
     }
   `;
 
-  const data = await runGraphQL<{ saveExperimentSetup: GraphExperimentSetup }>(mutation, {
+  const data = await runGraphQL<{ saveSessionSetup: GraphSessionSetup }>(mutation, {
     setup: setupToGraphInput(setup),
   });
-  return setupFromGraph(data.saveExperimentSetup);
+  return setupFromGraph(data.saveSessionSetup);
 }
 
 export async function submitSurvey(
@@ -270,7 +277,7 @@ export async function completeSurveyEntry(
 }
 
 
-export interface EdgeConfigEntry {
+export interface Submission {
   id: string;
   sessionId: string;
   edgeId: string;
@@ -281,7 +288,7 @@ export interface EdgeConfigEntry {
   updatedAt: string;
 }
 
-export async function fetchRecentSubmissions(): Promise<EdgeConfigEntry[]> {
+export async function fetchRecentSubmissions(): Promise<Submission[]> {
   const query = `
     query RecentSubmissions {
       recentSubmissions(limit: 100) {
@@ -294,7 +301,7 @@ export async function fetchRecentSubmissions(): Promise<EdgeConfigEntry[]> {
       }
     }
   `;
-  const data = await runGraphQL<{ recentSubmissions: EdgeConfigEntry[] }>(query);
+  const data = await runGraphQL<{ recentSubmissions: Submission[] }>(query);
   return data.recentSubmissions || [];
 }
 

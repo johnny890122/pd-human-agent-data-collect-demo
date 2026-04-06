@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchRecentSubmissions, EdgeConfigEntry } from '../utils/graphqlClient';
-import { ExperimentSetup } from '../types';
+import { fetchRecentSubmissions, Submission } from '../utils/graphqlClient';
+import { SessionSetup } from '../types';
 
 interface HistoryTableProps {
-  history: ExperimentSetup[];
+  history: SessionSetup[];
   historyPage: number;
   pageSize: number;
   onPageChange: (page: number) => void;
-  onLoadSetup: (setup: ExperimentSetup) => void;
+  onLoadSetup: (setup: SessionSetup) => void;
 }
 
 const HistoryTable: React.FC<HistoryTableProps> = ({
@@ -36,7 +36,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
   const endIdx = startIdx + pageSize;
   const pagedHistory = history.slice(startIdx, endIdx);
 
-  const [submissions, setSubmissions] = useState<EdgeConfigEntry[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loadingSubmissions, setLoadingSubmissions] = useState<boolean>(false);
 
   useEffect(() => {

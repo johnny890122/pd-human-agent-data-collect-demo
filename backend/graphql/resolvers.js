@@ -15,10 +15,6 @@ async function toSetupGraph(doc) {
   if (!doc) return null;
   const submissionCount = await SubmissionModel.countDocuments({
     sessionId: String(doc._id),
-    $or: [
-      { isCompleted: true },
-      { isCompleted: { $exists: false } },
-    ],
   });
   return {
     id: String(doc._id),

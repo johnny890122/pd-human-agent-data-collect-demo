@@ -15,11 +15,46 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 3001;
+const TURNSTILE_COOKIE_NAME = 'turnstile_verified';
+const TURNSTILE_COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 const apolloServer = new ApolloServer({
   typeDefs,
   resolvers,
 });
+
+function parseCookieHeader(cookieHeader = '') {
+  return cookieHeader
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((acc, pair) => {
+      const separatorIndex = pair.indexOf('=');
+      if (separatorIndex <= 0) {
+        return acc;
+      }
+      const key = pair.slice(0, separatorIndex).trim();
+      const value = pair.slice(separatorIndex + 1).trim();
+      acc[key] = decodeURIComponent(value);
+      return acc;
+    }, {});
+}
+
+function setTurnstileVerifiedCookie(res) {
+  const isProduction = process.env.NODE_ENV === 'production';
+  res.cookie(TURNSTILE_COOKIE_NAME, 'true', {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: isProduction,
+    maxAge: TURNSTILE_COOKIE_MAX_AGE_MS,
+    path: '/',
+  });
+}
+
+function isTurnstileVerifiedFromRequest(req) {
+  const cookies = parseCookieHeader(req.headers?.cookie ?? '');
+  return cookies[TURNSTILE_COOKIE_NAME] === 'true';
+}
 
 async function startServer() {
   if (isDbConfigured()) {
@@ -45,7 +80,13 @@ async function startServer() {
       const sizeMB = (parseInt(req.headers['content-length'], 10) / 1024 / 1024).toFixed(3);
     }
     next();
-  }, express.json({ limit: '50mb' }), expressMiddleware(apolloServer));
+  }, express.json({ limit: '50mb' }), expressMiddleware(apolloServer, {
+    context: async ({ req, res }) => ({
+      req,
+      res,
+      isTurnstileVerified: isTurnstileVerifiedFromRequest(req),
+    }),
+  }));
 
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -98,6 +139,7 @@ async function startServer() {
     // In development mode (using test secret), skip Cloudflare API and accept token
     const isTestSecret = turnstileSecretKey === '1x0000000000000000000000000000000AA';
     if (isTestSecret) {
+      setTurnstileVerifiedCookie(res);
       return res.json({ success: true, isDevelopment: true });
     }
 
@@ -127,6 +169,10 @@ async function startServer() {
       const result = await response.json();
       const success = result?.success === true;
 
+      if (success) {
+        setTurnstileVerifiedCookie(res);
+      }
+
       return res.status(success ? 200 : 400).json({
         success,
         errorCodes: Array.isArray(result?.['error-codes']) ? result['error-codes'] : [],
@@ -138,6 +184,13 @@ async function startServer() {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+  });
+
+  app.get('/api/turnstile/status', (req, res) => {
+    return res.json({
+      success: true,
+      verified: isTurnstileVerifiedFromRequest(req),
+    });
   });
 
   // Serve static files from the dist directory when running the production bundle.

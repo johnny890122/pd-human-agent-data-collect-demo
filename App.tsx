@@ -31,6 +31,8 @@ const App: React.FC = () => {
   const [activeSetupId, setActiveSetupId] = useState<string | null>(null);
   const [restoredEntryId, setRestoredEntryId] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
+  const [isTurnstileVerified, setIsTurnstileVerified] = useState(false);
+  const [isTurnstileStatusLoading, setIsTurnstileStatusLoading] = useState(true);
   
   // Initial Setup State
   const [setup, setSetup] = useState<SessionSetup>(INITIAL_SETUP);
@@ -49,6 +51,33 @@ const App: React.FC = () => {
     document.title = 'Experiment';
   }, [location.pathname]);
 
+
+  useEffect(() => {
+    const hydrateTurnstileStatus = async () => {
+      try {
+        const response = await fetch('/api/turnstile/status', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          setIsTurnstileVerified(false);
+          return;
+        }
+
+        const body = await response.json();
+        setIsTurnstileVerified(body?.verified === true);
+      } catch {
+        setIsTurnstileVerified(false);
+      } finally {
+        setIsTurnstileStatusLoading(false);
+      }
+    };
+
+    hydrateTurnstileStatus();
+  }, []);
 
   useEffect(() => {
     const hydrateSetup = async () => {
@@ -189,7 +218,7 @@ const App: React.FC = () => {
       navigate('/admin/setup');
   };
 
-  if (isLoading) {
+  if (isLoading || isTurnstileStatusLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -277,6 +306,8 @@ const App: React.FC = () => {
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
               initialEntryId={restoredEntryId}
+              isTurnstileVerified={isTurnstileVerified}
+              onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
           } 
         />
@@ -290,6 +321,8 @@ const App: React.FC = () => {
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
               initialEntryId={restoredEntryId}
+              isTurnstileVerified={isTurnstileVerified}
+              onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
           } 
         />
@@ -303,6 +336,8 @@ const App: React.FC = () => {
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
               initialEntryId={restoredEntryId}
+              isTurnstileVerified={isTurnstileVerified}
+              onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
           } 
         />

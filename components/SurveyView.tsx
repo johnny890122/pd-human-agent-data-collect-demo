@@ -16,11 +16,22 @@ interface SurveyViewProps {
   onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
   onBack: () => void;
   initialEntryId?: string;
+  isTurnstileVerified: boolean;
+  onTurnstileVerified: () => void;
 }
 
 
 // ─── Main Survey View ─────────────────────────────────────────────────────────
-const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAnswer, onComplete, onBack, initialEntryId }) => {
+const SurveyView: React.FC<SurveyViewProps> = ({
+  setup,
+  onStartSurvey,
+  onSaveAnswer,
+  onComplete,
+  onBack,
+  initialEntryId,
+  isTurnstileVerified,
+  onTurnstileVerified,
+}) => {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
@@ -185,6 +196,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
 
       setEntryId(newEntryId);
       setShowTurnstileGate(false);
+      onTurnstileVerified();
       resetTurnstileWidget('remove');
       navigateWithSetup('/survey/scenarios/0');
     } catch {
@@ -258,6 +270,15 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
   const isIntroStep = location.pathname.startsWith('/survey/intro/');
   const isScenariosStep = location.pathname.startsWith('/survey/scenarios/');
   const isOutroStep = location.pathname === '/survey/outro';
+  const isPostIntroStep = isScenariosStep || isOutroStep;
+
+  useEffect(() => {
+    if (!isPostIntroStep || isTurnstileVerified) {
+      return;
+    }
+
+    navigate(setupId ? `/survey/intro/0?setupId=${setupId}` : '/survey/intro/0', { replace: true });
+  }, [isPostIntroStep, isTurnstileVerified, navigate, setupId]);
   // const isDemographicsStep = location.pathname === '/survey/demographics';
 
   // ── Intro ──────────────────────────────────────────────────────────────────

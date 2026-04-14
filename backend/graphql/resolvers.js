@@ -121,7 +121,11 @@ export const resolvers = {
 
       return await toSetupGraph(doc.toObject());
     },
-    startSurveyEntry: async (_, { sessionId, edgeId }) => {
+    startSurveyEntry: async (_, { sessionId, edgeId }, context) => {
+      if (!context?.isTurnstileVerified) {
+        throw new Error('Turnstile verification required before starting survey.');
+      }
+
       requireDb();
       await connectToDatabase();
 

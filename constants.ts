@@ -25,8 +25,8 @@ export const ALL_EDGES: EdgeDef[] = [
 
 export const DEFAULT_EDGE_CONFIG = {
   label: 'Relationship',
-  low: 'Not Given',
-  high: 'Given',
+  low: '不給予',
+  high: '給予',
 };
 
 export const COLORS = {
@@ -37,8 +37,8 @@ export const COLORS = {
   groupA: '#60a5fa', // blue-400
   groupB: '#f87171', // red-400
   neutral: '#9ca3af', // gray-400
-  coop: '#16a34a', // green-600
-  defect: '#dc2626', // red-600
+  coop: '#404040', // neutral-700
+  defect: '#d1d5db', // gray-300
   highlight: '#f59e0b', // amber-500
 
   // Shared UI tokens used in components

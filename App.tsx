@@ -6,6 +6,7 @@ import SurveyView from './components/SurveyView';
 import Login from './components/Login';
 import NotFound from './components/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
+import SurveyWelcome from './components/SurveyWelcome';
 import { SessionSetup, SurveyResult } from './types';
 import {
   completeSurveyEntry,
@@ -66,7 +67,7 @@ const App: React.FC = () => {
           const setupId = setupIdFromUrl || persistedSetup.id;
           if (setupId) {
             // Check if explicitly trying to restart the survey
-            const isRestarting = location.pathname.startsWith('/survey/intro');
+            const isRestarting = location.pathname.startsWith('/survey/welcome') || location.pathname.startsWith('/survey/intro');
             if (isRestarting) {
               clearSession(setupId);
               setRestoredEntryId(undefined);
@@ -89,7 +90,7 @@ const App: React.FC = () => {
               if (currentFullPath !== fullSessionPath) {
                 navigate(fullSessionPath, { replace: true });
               }
-            } else if (location.pathname.startsWith('/survey') && !location.pathname.includes('/outro') && !location.pathname.startsWith('/survey/intro')) {
+            } else if (location.pathname.startsWith('/survey') && !location.pathname.includes('/outro') && !location.pathname.startsWith('/survey/intro') && !location.pathname.startsWith('/survey/welcome')) {
               try {
                 const edgeId = `${persistedSetup.focalNode}-${persistedSetup.opponentNode}`;
                 const entryId = await startSurveyEntry(setupId, edgeId);
@@ -203,9 +204,9 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8 text-center">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
-          <h2 className="text-2xl font-bold text-gray-900">Session Full</h2>
+          <h2 className="text-2xl font-bold text-gray-900">人數已滿</h2>
           <p className="text-gray-600">
-            The session is full. Thank you for your interest!
+            抱歉，此實驗人數已經額滿。非常感謝您的參與！
           </p>
         </div>
       </div>
@@ -226,7 +227,7 @@ const App: React.FC = () => {
       {isSubmitting && (
         <div className="mx-auto max-w-5xl mt-4 px-4">
           <div className="rounded-lg border border-blue-300 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-            Saving survey results...
+            正在儲存您的結果...
           </div>
         </div>
       )}
@@ -265,6 +266,7 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
+        <Route path="/survey/welcome" element={<SurveyWelcome />} />
         <Route 
           path="/survey/intro/:introStep" 
           element={
@@ -306,16 +308,7 @@ const App: React.FC = () => {
         />
         <Route 
           path="/survey/demographics" 
-          element={
-            <SurveyView 
-              setup={setup} 
-              onStartSurvey={handleSurveyStart}
-              onSaveAnswer={handleSaveAnswer}
-              onComplete={handleSurveyComplete} 
-              onBack={handleBackToAdmin}
-              initialEntryId={restoredEntryId}
-            />
-          } 
+          element={<NotFound />} 
         />
         <Route path="*" element={<NotFound />} />
       </Routes>

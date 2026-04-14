@@ -19,7 +19,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
   const [introSliderInteracted, setIntroSliderInteracted] = useState(false);
 
   const [introGraphRevealed, setIntroGraphRevealed] = useState<Set<string>>(new Set());
-  const [comprehensionAnswer, setComprehensionAnswer] = useState<string>('');
+  const [comprehensionAnswers, setComprehensionAnswers] = useState({ q1: '', q2: '', q3: '', q4: '' });
 
   // Sync introStep with URL param
   useEffect(() => {
@@ -80,9 +80,9 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     // Step 5 (Part 3): Must interact with the slider
     if (introStep === 5) return !introSliderInteracted;
     // Step 6 (Comprehension Check): Must pick the correct answer
-    if (introStep === 6) return comprehensionAnswer !== 'all-history-then-slider';
+    if (introStep === 6) return !(comprehensionAnswers.q1.trim() === '1' && comprehensionAnswers.q2.trim() === '3' && comprehensionAnswers.q3.trim() === '3' && comprehensionAnswers.q4.trim() === '2');
     return false;
-  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, comprehensionAnswer, networkDemoSetup]);
+  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, comprehensionAnswers, networkDemoSetup]);
 
 
 
@@ -152,7 +152,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 <rect x={-45} y="-14" width={90} height="16" rx="8" fill="white" stroke={strokeColor} strokeWidth="2" opacity="0.95" />
                 <text y="-2" textAnchor="middle" fontSize="10" className="font-black pointer-events-none">
                   <tspan fill={role === 'me' ? COLORS.highlight : COLORS.rolePartner} className="uppercase">
-                    {role === 'me' ? 'YOU' : 'Partner'}
+                    {role === 'me' ? '您' : '對手'}
                   </tspan>
                 </text>
               </g>
@@ -204,7 +204,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               <g className="animate-in zoom-in duration-300 origin-center">
                 <rect x="-26" y="-10" width="52" height="20" rx="10" fill={COOP_COLOR} stroke="white" strokeWidth="1.5" />
                 <text textAnchor="middle" y="4" className="text-[10px] font-black fill-white uppercase tracking-tighter" style={{ fontFamily: 'sans-serif' }}>
-                  GIVE
+                  給予
                 </text>
               </g>
             ) : (
@@ -226,23 +226,23 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
     const introSteps = [
       {
-        title: "Groups & Your Role",
+        title: "關於參與者的背景與角色",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
             <p className="text-center text-sm text-gray-500">
-              There are <span className="font-bold text-gray-800">4 participants</span> in this game. Each of them belongs to one of <span className="font-bold text-gray-800">two groups</span>.
+              <span className="font-bold text-gray-800">總共有四位參與者（包含您），來自於兩個團體</span>
             </p>
 
             <div className="bg-white p-4 md:p-6 rounded-3xl border border-gray-200 shadow-sm">
-              <p className="text-center text-sm font-bold text-gray-700 mb-6 uppercase tracking-wide">Two Groups</p>
+              <p className="text-center text-sm font-bold text-gray-700 mb-6 uppercase tracking-wide">兩個團體</p>
               <div className="flex flex-col sm:flex-row justify-center items-center sm:items-stretch gap-4 md:gap-8">
                 {/* Model Group A */}
-                <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-100 min-w-[140px] max-w-[200px]">
+                <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-200 min-w-[140px] max-w-[200px]">
                   <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['1'], label: 'A' }} role="none" /></div>
-                    <span className="text-xl font-black text-blue-400">× 2</span>
+                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['A1'], label: 'A' }} role="none" /></div>
+                    <span className="text-xl font-black text-blue-500">× 2</span>
                   </div>
-                  <span className="text-xs font-bold text-blue-900 bg-blue-50 px-2 py-1 rounded mt-auto">Group A</span>
+                  <span className="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded mt-auto">國民黨</span>
                 </div>
 
                 <div className="hidden sm:block w-px bg-gray-200 self-stretch mx-2"></div>
@@ -250,31 +250,31 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Model Group B */}
                 <div className="flex-1 flex flex-col items-center p-2 bg-green-50/30 rounded-xl border border-green-100 min-w-[140px] max-w-[200px]">
                   <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['3'], label: 'B' }} role="none" /></div>
+                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['BB3'], label: 'B' }} role="none" /></div>
                     <span className="text-xl font-black text-green-400">× 2</span>
                   </div>
-                  <span className="text-xs font-bold text-green-900 bg-green-50 px-2 py-1 rounded mt-auto">Group B</span>
+                  <span className="text-xs font-bold text-green-900 bg-green-50 px-2 py-1 rounded mt-auto">民進黨</span>
                 </div>
               </div>
             </div>
 
             <p className="text-center text-sm text-gray-500">
-              The 4 participants are paired <span className="font-bold text-gray-900">two-by-two</span>. Each pair plays a separate <span className="font-bold text-gray-900">2-person game</span>.
+              <span className="font-bold text-gray-900">四位參與者將會兩兩成對進行遊戲。在接下來的實驗中，您會和其他三位參與者分別進行兩人之間的遊戲。這些參與者都是真人。</span>
             </p>
 
             <div className="bg-white p-4 md:p-6 rounded-3xl border border-gray-200 shadow-sm">
-              <p className="text-center text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">Your Pair</p>
+              <p className="text-center text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">您的配對</p>
 
 
               <div className="flex flex-col sm:flex-row justify-center items-center sm:items-stretch gap-4 md:gap-8 mb-6">
                 {/* You Card */}
                 <div className={`flex-1 flex flex-col items-center justify-center gap-4 p-4 rounded-2xl border shadow-sm relative overflow-hidden min-w-[140px]`}>
                   <div className={`absolute top-0 left-0 w-full h-1.5`}></div>
-                  <p className={`text-center text-sm font-bold ${meTitleClass}`}>You</p>
+                  <p className={`text-center text-sm font-bold ${meTitleClass}`}>您</p>
                   <div className="flex flex-col items-center transform scale-100">
                     <InlineNode agent={agentMe} role="me" />
                     <span className={`font-black ${meGroupClass} text-lg mt-2 tracking-tight`}>
-                      {agentMe.group === 'A' ? 'Group A' : 'Group B'}
+                      {agentMe.group === 'A' ? '國民黨' : '民進黨'}
                     </span>
                   </div>
                 </div>
@@ -282,11 +282,11 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Partner Card */}
                 <div className={`flex-1 flex flex-col items-center justify-center gap-4 p-4 rounded-2xl border ${opponentBorderClass} shadow-sm relative overflow-hidden min-w-[140px]`}>
                    <div className={`absolute top-0 left-0 w-full h-1.5`}></div>
-                   <p className={`text-center text-sm font-bold ${opponentTitleClass}`}>Partner</p>
+                   <p className={`text-center text-sm font-bold ${opponentTitleClass}`}>對手</p>
                    <div className="flex flex-col items-center transform scale-100">
                      <InlineNode agent={agentOpponent} role="opponent" />
                      <span className={`font-black ${opponentGroupClass} text-lg mt-2 tracking-tight`}>
-                       {agentOpponent.group === 'A' ? 'Group A' : 'Group B'}
+                       {agentOpponent.group === 'A' ? '國民黨' : '民進黨'}
                      </span>
                    </div>
                 </div>
@@ -296,31 +296,25 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         )
       },
       {
-        title: "Game Payoffs",
+        title: "遊戲點數",
         content: (
           <div className="space-y-4 text-gray-600 leading-relaxed text-sm animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
-            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
-              <h3 className="text-xl font-bold text-gray-800 text-center mb-6">How Points Are Awarded</h3>
-              <p className="text-center mb-6 text-base text-gray-600">
-                [More Info Here]
-              </p>
-              <p className="text-center mb-6 text-base text-gray-600">
-                Your score depends on <span className="font-bold text-indigo-600">your decision</span> and <span className="font-bold text-indigo-600">your partner's decision</span>.
-              </p>
-              <div className="transform scale-100 flex justify-center mb-6">
-                <PayoffMatrix />
+            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col items-center">
+              <h3 className="text-xl font-bold text-gray-800 text-center mb-6">點數計算方法</h3>
+              <div className="w-full max-w-2xl transform scale-100 flex justify-center mb-2">
+                <PayoffMatrix compact={false} />
               </div>
             </div>
           </div>
         )
       },
       {
-        title: "The Network",
+        title: "關係結構",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
             <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm text-center">
               <p className="text-gray-600 mb-8 max-w-lg mx-auto">
-                The network displays the <span className="font-bold text-gray-800">history</span> decisions from past rounds between all participants.
+                下面這張圖展示的是四位參與者彼此之間的<span className="font-bold text-gray-800">互動記錄</span>。
               </p>
 
               <div className="bg-gray-50/50 rounded-2xl p-4 md:p-8 border border-gray-100 flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-12">
@@ -337,7 +331,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 </div>
 
                 <div className="w-full max-w-lg md:max-w-sm flex-1">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center md:text-left">History Description</p>
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center md:text-left">歷史紀錄說明</p>
                   <div className="grid grid-cols-1 gap-3 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {networkDemoSetup.activeEdgeIds.filter(edgeId => {
                       const [source, target] = edgeId.split('-');
@@ -348,10 +342,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                       const isYou = source === setup.focalNode;
                       
                       const getName = (id: string, agent: any) => {
-                        if (id === setup.focalNode) return "You";
-                        if (id === setup.opponentNode) return "Partner";
+                        if (id === setup.focalNode) return "您";
+                        if (id === setup.opponentNode) return "對手";
 
-                        return `Agent ${agent.group}`;
+                        return `參與者 ${agent.group}`;
                       };
                       
                       const sourceName = getName(source, AGENTS[source as AgentId]);
@@ -363,8 +357,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                             <span className="text-gray-300">➜</span>
                             <span className="text-gray-600">{targetName}</span>
                           </div>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-green-100 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                            {isGive ? 'Gave' : 'Not Give'}
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                            {isGive ? '給予' : '不給予'}
                           </span>
                         </div>
                       );
@@ -377,17 +371,17 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         )
       },
       {
-        title: "Onboarding",
+        title: "實驗介面提示",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-sm w-full max-w-4xl h-full flex flex-col justify-center">
             <div className="bg-blue-50 border border-blue-200 p-4 md:p-8 rounded-3xl shadow-sm text-center relative overflow-hidden flex flex-col items-center min-h-[520px]">
-              <h3 className="font-bold text-blue-900 text-2xl mb-4">Step 1: Reveal History</h3>
+              <h3 className="font-bold text-blue-900 text-2xl mb-4">提示1：點閱參與者的互動記錄</h3>
               <p className="text-blue-800 text-base mb-6">
-                In each scenario, network connections start as <strong>hidden</strong>. You must reveal them to see what happened.
+                若要瞭解其他參與者之前的互動記錄，請點擊虛弧線上的「問號」。
               </p>
 
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 mb-2 shadow-inner border border-blue-100 w-full max-w-md flex flex-col items-center justify-center flex-1">
-                <p className="text-xs text-blue-700 font-bold uppercase tracking-wider mb-2">Try it now:</p>
+                <p className="text-xs text-blue-700 font-bold uppercase tracking-wider mb-2">現在請試試：</p>
                 <InteractiveInlineEdge
                   isRevealed={introEdgeRevealed}
                   onReveal={() => setIntroEdgeRevealed(true)}
@@ -396,7 +390,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
               {!introEdgeRevealed && (
                 <div className="mt-auto pt-4 p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700 font-bold animate-pulse w-full max-w-md">
-                  👆 Please click the question mark to continue
+                  👆 請點擊問號以繼續
                 </div>
               )}
             </div>
@@ -404,13 +398,13 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         )
       },
       {
-        title: "Onboarding",
+        title: "實驗介面提示",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-sm w-full max-w-4xl h-full flex flex-col justify-center">
             <div className="bg-blue-50 border border-blue-200 p-4 md:p-8 rounded-3xl shadow-sm text-center relative overflow-hidden flex flex-col items-center min-h-[520px]">
-              <h3 className="font-bold text-blue-900 text-2xl mb-4">Step 2: Observe History</h3>
+              <h3 className="font-bold text-blue-900 text-2xl mb-4">提示2：瞭解其他參與者彼此之間的互動</h3>
               <p className="text-blue-800 text-base mb-6">
-                Once revealed, you can see the full history of interactions between all agents.
+                每一條虛弧線上的「問號」都可以點閱
               </p>
 
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 md:p-6 mb-2 shadow-inner border border-blue-100 w-full h-full flex-1">
@@ -429,21 +423,49 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               </div>
 
               <div className="mt-4 p-2 bg-blue-100/50 rounded-lg text-xs text-blue-700 font-bold">
-                Tap the question marks to reveal who gave to whom.
+                請點擊問號以閱讀歷史紀錄
               </div>
             </div>
           </div>
         )
       },
       {
-        title: "Onboarding",
+        title: "實驗介面提示",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-sm animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
             <div className="bg-blue-50 border border-blue-200 p-4 md:p-8 rounded-3xl shadow-sm text-center relative overflow-hidden min-h-[520px] flex flex-col items-center">
-              <h3 className="font-bold text-blue-900 text-2xl mb-4">Step 3: Decide</h3>
-              <p className="text-blue-800 text-base mb-6">
-                Based on the history you revealed, decide the probability that you will <strong>Give</strong> to your opponent.
-              </p>
+              <h3 className="font-bold text-blue-900 text-2xl mb-4">提示3：您要做的決定</h3>
+              
+              <div className="w-full max-w-3xl mb-8 space-y-4 px-4 flex flex-col items-center">
+                <p className="text-blue-900 text-lg md:text-xl font-bold text-center">
+                  根據我們給您參考的所有參與者的互動記錄，請您告訴我們：
+                </p>
+                
+                <div className="bg-white p-5 md:p-6 rounded-2xl border border-blue-100 shadow-sm text-left relative overflow-hidden w-full max-w-2xl">
+                  <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
+                  <div className="pl-3 space-y-3">
+                    <p className="text-gray-800 text-lg md:text-xl font-bold">
+                      從 0 到 100，您有多少意願把點數給對方？
+                    </p>
+                    <p className="text-gray-500 text-sm">
+                      （0 代表絕對不會給予對方，100 代表絕對會給對方）
+                    </p>
+                    <div className="h-px bg-gray-100 my-2 w-full"></div>
+                    <p className="text-gray-700 text-base leading-relaxed">
+                      我們將會根據您輸入的數字，透過<span className="font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md mx-1 border border-blue-100 shadow-inner inline-flex items-center gap-1">電腦骰子</span>幫您做決定。
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-blue-100/50 p-4 md:p-5 rounded-xl text-left text-sm md:text-base text-blue-800 border border-blue-200 shadow-sm w-full max-w-2xl">
+                  <div className="font-bold flex items-center gap-2 mb-2 text-blue-900">
+                    舉例來說：
+                  </div>
+                  <p className="leading-relaxed pl-7 text-blue-800/90">
+                    當您輸入 50 時，您給或不給對方點數，將各有一半的機率；當您輸入 90 時，將有 90% 的機率電腦會幫您將點數給對方。其他的數字以此類推。
+                  </p>
+                </div>
+              </div>
 
               <div className="bg-white/80 backdrop-blur rounded-2xl p-4 md:p-6 mb-2 shadow-inner border border-indigo-100 w-full flex-1 flex flex-col md:flex-row items-center gap-8 justify-center">
                 <div className="h-[350px] md:h-[400px] w-full max-w-lg relative flex-1">
@@ -459,7 +481,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 </div>
 
                 <div className="w-full max-w-sm flex-shrink-0 px-4 md:px-0 bg-white/50 rounded-xl p-6 border border-indigo-50">
-                  <p className="text-center font-bold text-indigo-900 mb-6 uppercase tracking-wider text-xs">Your Decision</p>
+                  <p className="text-center font-bold text-indigo-900 mb-6 uppercase tracking-wider text-xs">您的決定</p>
                   <DecisionSlider
                     value={introSliderValue}
                     onChange={(val) => { setIntroSliderValue(val); setIntroSliderInteracted(true); }}
@@ -471,68 +493,81 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         )
       },
       {
-        title: "Comprehension Check",
+        title: "理解測試",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
             <div className="bg-amber-50 border border-amber-200 p-6 md:p-8 rounded-3xl shadow-sm">
-              <h3 className="text-2xl font-bold text-amber-900 text-center mb-3">Quick Check</h3>
+              <h3 className="text-2xl font-bold text-amber-900 text-center mb-3">理解測驗</h3>
               <p className="text-center text-amber-800 mb-8">
-                Before you start, answer this one question to make sure the instructions are clear.
+                請填答下面的問題，確保您充分瞭解這個遊戲的規則。
               </p>
 
-              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm space-y-4">
-                <p className="font-bold text-gray-900">
-                  In each scenario, what do you do first?
-                </p>
+              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm space-y-6">
+                
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <span className="text-sm font-bold text-gray-800">1. 若是您不給對方點數，對方也不給您，那麼您會拿到</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        value={comprehensionAnswers.q1}
+                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q1: e.target.value }))}
+                      />
+                      <span className="text-sm text-gray-800">點</span>
+                    </div>
+                  </div>
 
-                <div className="space-y-3">
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'move-slider-first' ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-                    <input
-                      type="radio"
-                      name="comprehension-check"
-                      value="move-slider-first"
-                      checked={comprehensionAnswer === 'move-slider-first'}
-                      onChange={(e) => setComprehensionAnswer(e.target.value)}
-                      className="mt-1"
-                    />
-                    <span className="text-sm text-gray-700">Move the decision slider first, then reveal history if needed.</span>
-                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <span className="text-sm font-bold text-gray-800">2. 若是您給對方點數，對方不給您，那麼對方會拿到</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        value={comprehensionAnswers.q2}
+                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q2: e.target.value }))}
+                      />
+                      <span className="text-sm text-gray-800">點</span>
+                    </div>
+                  </div>
 
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'all-history-then-slider' ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-                    <input
-                      type="radio"
-                      name="comprehension-check"
-                      value="all-history-then-slider"
-                      checked={comprehensionAnswer === 'all-history-then-slider'}
-                      onChange={(e) => setComprehensionAnswer(e.target.value)}
-                      className="mt-1"
-                    />
-                    <span className="text-sm text-gray-700">Reveal all history edges first, then enter decision phase and move the slider.</span>
-                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <span className="text-sm font-bold text-gray-800">3. 若是您不給對方點數，對方給您，那麼您最後會拿到</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        value={comprehensionAnswers.q3}
+                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q3: e.target.value }))}
+                      />
+                      <span className="text-sm text-gray-800">點</span>
+                    </div>
+                  </div>
 
-                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${comprehensionAnswer === 'skip-history-random' ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
-                    <input
-                      type="radio"
-                      name="comprehension-check"
-                      value="skip-history-random"
-                      checked={comprehensionAnswer === 'skip-history-random'}
-                      onChange={(e) => setComprehensionAnswer(e.target.value)}
-                      className="mt-1"
-                    />
-                    <span className="text-sm text-gray-700">Skip history and make a random choice for faster completion.</span>
-                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <span className="text-sm font-bold text-gray-800">4. 若是您給對方點數，對方也給您，那麼對方最後會拿到</span>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                        value={comprehensionAnswers.q4}
+                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q4: e.target.value }))}
+                      />
+                      <span className="text-sm text-gray-800">點</span>
+                    </div>
+                  </div>
                 </div>
 
-                {comprehensionAnswer && comprehensionAnswer !== 'all-history-then-slider' && (
-                  <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                    Please review the onboarding steps and choose the option that matches the instructions.
-                  </p>
-                )}
-
-                {comprehensionAnswer === 'all-history-then-slider' && (
-                  <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                    Correct. You are ready to continue.
-                  </p>
+                {comprehensionAnswers.q1 && comprehensionAnswers.q2 && comprehensionAnswers.q3 && comprehensionAnswers.q4 && (
+                  comprehensionAnswers.q1.trim() === '1' && comprehensionAnswers.q2.trim() === '3' && comprehensionAnswers.q3.trim() === '3' && comprehensionAnswers.q4.trim() === '2' ? (
+                    <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mt-4">
+                      正確。您已經準備好可以繼續了。
+                    </p>
+                  ) : (
+                    <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-4">
+                      有部分答案不正確，請回顧遊戲點數規則並重新作答。
+                    </p>
+                  )
                 )}
               </div>
             </div>
@@ -540,18 +575,33 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         )
       },
       {
-        title: "Ready to Begin",
+        title: "點數兌換報酬說明",
+        content: (
+          <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
+            <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm text-center">
+              <p className="text-lg text-gray-600 mb-4">
+                在實驗中，您將會參與數次的兩人遊戲。在所有遊戲結束後，電腦將隨機抽出其中的一次遊戲，根據您和對方在該遊戲中所做的決定所得到的點數，換算成現金報酬給您。
+              </p>
+              <div className="inline-block bg-green-50 border border-green-200 rounded-xl px-6 py-3 mt-4">
+                <span className="text-xl font-bold text-green-700">1點 = 100元台幣</span>
+              </div>
+            </div>
+          </div>
+        )
+      },
+      {
+        title: "準備開始",
         content: (
           <div className="space-y-8 text-gray-600 leading-relaxed text-base text-center animate-in fade-in slide-in-from-bottom-2 duration-500 py-8">
             <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border-4 border-white ring-2 ring-green-50">
               <span className="text-5xl">🚀</span>
             </div>
-            <h3 className="text-3xl font-bold text-gray-800">You're all set!</h3>
+            <h3 className="text-3xl font-bold text-gray-800">一切準備就緒！</h3>
             <p className="text-lg">
-              There are <strong className="text-indigo-600 text-2xl bg-indigo-50 px-3 py-1 rounded-xl shadow-sm mx-1">{Math.pow(2, setup.activeEdgeIds.length)}</strong> unique scenarios in total.
+              總共有 <strong className="text-indigo-600 text-2xl bg-indigo-50 px-3 py-1 rounded-xl shadow-sm mx-1">{Math.pow(2, setup.activeEdgeIds.length)}</strong> 個不同的情境。
             </p>
             <p className="text-gray-500 max-w-sm mx-auto p-4 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
-              Take your time to analyze the history before making each decision. Good luck!
+              在做出每個決定之前，請花時間分析歷史紀錄。祝您好運！
             </p>
           </div>
         )
@@ -601,7 +651,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   }}
                   className="flex-1 py-4 text-base font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-2xl transition-colors"
                 >
-                  Back
+                  上一步
                 </button>
               ) : (
                 <></>
@@ -619,14 +669,14 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                     : 'bg-indigo-600 text-white hover:bg-indigo-700'
                     }`}
                 >
-                   {isNextDisabled ? 'Interact to Continue' : 'Next \u2192'}
+                   {isNextDisabled ? '請互動以繼續' : '下一步 \u2192'}
                 </button>
               ) : (
                 <button
                   onClick={() => onFinish()}
                   className="flex-[2] py-4 bg-green-600 text-white text-base font-black rounded-2xl shadow-xl hover:bg-green-700 transition-all active:scale-95 animate-pulse tracking-wide"
                 >
-                  Begin Experiment!
+                  開始實驗！
                 </button>
               )}
             </div>

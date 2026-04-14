@@ -18,10 +18,14 @@ View your app in AI Studio: https://ai.studio/apps/drive/1Mo0KYmUbtggjpVpGE1zTpy
    - `GEMINI_API_KEY`
    - `MONGODB_URI`
    - `ADMIN_PASSWORD`
+   - `VITE_TURNSTILE_SITE_KEY`
+   - `TURNSTILE_SECRET_KEY`
 3. Start backend (GraphQL + Express):
    `npm run dev:server`
 4. Start frontend (Vite):
    `npm run dev`
+
+Local development automatically uses Cloudflare Turnstile testing keys on `localhost`, so you do not need to add `localhost` to the production widget hostname allowlist.
 
 ## GraphQL Endpoint
 

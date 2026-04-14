@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { SessionSetup, SurveyResult } from '../types';
 import { AgentId } from '../types';
@@ -26,6 +26,10 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
   const params = useParams();
   const [searchParams] = useSearchParams();
   const setupId = searchParams.get('setupId');
+  const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const turnstileSiteKey = isLocalHost
+    ? '1x00000000000000000000AA'
+    : (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '0x4AAAAAAC2vj0xOA6Fpx2cd');
 
   const navigateWithSetup = (path: string) => {
     navigate(setupId ? `${path}?setupId=${setupId}` : path);
@@ -59,6 +63,13 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
   const [demographics, setDemographics] = useState({ age: 25, gender: 'other', education: 'university' });
   const [showDemographics, setShowDemographics] = useState(false);
   const [entryId, setEntryId] = useState<string | undefined>(initialEntryId);
+  const [showTurnstileGate, setShowTurnstileGate] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState<string | null>(null);
+  const [isTurnstileScriptReady, setIsTurnstileScriptReady] = useState(false);
+  const [isVerifyingTurnstile, setIsVerifyingTurnstile] = useState(false);
+  const turnstileContainerRef = useRef<HTMLDivElement | null>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
 
   // Sync initialEntryId when it loads asynchronously
   useEffect(() => {
@@ -66,6 +77,123 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
       setEntryId(initialEntryId);
     }
   }, [initialEntryId, entryId]);
+
+  useEffect(() => {
+    if (!showTurnstileGate) {
+      return;
+    }
+
+    const existingScript = document.getElementById('cf-turnstile-script') as HTMLScriptElement | null;
+    if ((window as any).turnstile) {
+      setIsTurnstileScriptReady(true);
+      return;
+    }
+
+    if (existingScript) {
+      const onLoad = () => setIsTurnstileScriptReady(true);
+      existingScript.addEventListener('load', onLoad);
+      return () => {
+        existingScript.removeEventListener('load', onLoad);
+      };
+    }
+
+    const script = document.createElement('script');
+    script.id = 'cf-turnstile-script';
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setIsTurnstileScriptReady(true);
+    document.head.appendChild(script);
+  }, [showTurnstileGate]);
+
+  useEffect(() => {
+    if (!showTurnstileGate || !isTurnstileScriptReady || !turnstileContainerRef.current || turnstileWidgetIdRef.current) {
+      return;
+    }
+
+    const turnstile = (window as any).turnstile;
+    if (!turnstile) {
+      return;
+    }
+
+    turnstileWidgetIdRef.current = turnstile.render(turnstileContainerRef.current, {
+      sitekey: turnstileSiteKey,
+      callback: (token: string) => {
+        setTurnstileToken(token);
+        setTurnstileError(null);
+      },
+      'expired-callback': () => {
+        setTurnstileToken(null);
+      },
+      'error-callback': () => {
+        setTurnstileToken(null);
+        setTurnstileError(
+          isLocalHost
+            ? '本地端測試被 Turnstile 阻擋。請將 localhost 加入白名單，或設定本機測試金鑰。'
+            : '驗證載入失敗，請重試。'
+        );
+      },
+    });
+  }, [showTurnstileGate, isTurnstileScriptReady, turnstileSiteKey, isLocalHost]);
+
+  const resetTurnstileWidget = (mode: 'reset' | 'remove' = 'reset') => {
+    const turnstile = (window as any).turnstile;
+    if (turnstile && turnstileWidgetIdRef.current) {
+      if (mode === 'remove') {
+        turnstile.remove(turnstileWidgetIdRef.current);
+      } else {
+        turnstile.reset(turnstileWidgetIdRef.current);
+      }
+    }
+    if (mode === 'remove') {
+      turnstileWidgetIdRef.current = null;
+    }
+    setTurnstileToken(null);
+  };
+
+  const handleVerifyTurnstileAndStart = async () => {
+    if (!turnstileToken) {
+      setTurnstileError('請先完成機器人驗證。');
+      return;
+    }
+
+    setIsVerifyingTurnstile(true);
+    setTurnstileError(null);
+
+    try {
+      const verifyResponse = await fetch('/api/turnstile/verify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token: turnstileToken }),
+      });
+
+      const verifyBody = await verifyResponse.json();
+
+      if (!verifyResponse.ok || !verifyBody.success) {
+        setTurnstileError('驗證未通過，請再試一次。');
+        resetTurnstileWidget();
+        return;
+      }
+
+      const newEntryId = await onStartSurvey();
+      if (!newEntryId) {
+        setTurnstileError('無法建立測驗連線，請重試。');
+        return;
+      }
+
+      setEntryId(newEntryId);
+      setShowTurnstileGate(false);
+      resetTurnstileWidget('remove');
+      navigateWithSetup('/survey/scenarios/0');
+    } catch {
+      setTurnstileError('驗證失敗，請再試一次。');
+      resetTurnstileWidget();
+    } finally {
+      setIsVerifyingTurnstile(false);
+    }
+  };
 
 
   // Gradual reveal state — which active edges the user has clicked to reveal
@@ -117,11 +245,11 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
       }
       navigateWithSetup(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      const nextPath = `/survey/demographics${setupId ? `?setupId=${setupId}` : ''}`;
+      const nextPath = `/survey/outro${setupId ? `?setupId=${setupId}` : ''}`;
       if (entryId) {
         saveSession(setupId || setup.id || '', entryId, nextPath);
       }
-      navigateWithSetup('/survey/demographics');
+      navigateWithSetup('/survey/outro');
     }
   };
 
@@ -130,21 +258,65 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
   const isIntroStep = location.pathname.startsWith('/survey/intro/');
   const isScenariosStep = location.pathname.startsWith('/survey/scenarios/');
   const isOutroStep = location.pathname === '/survey/outro';
-  const isDemographicsStep = location.pathname === '/survey/demographics';
+  // const isDemographicsStep = location.pathname === '/survey/demographics';
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (isIntroStep) {
     return (
-      <SurveyIntro 
-        setup={setup} 
-        currentStep={introStep}
-        onNavigateIntro={(step) => navigateWithSetup(`/survey/intro/${step}`)}
-        onFinish={async () => {
-          const newEntryId = await onStartSurvey();
-          setEntryId(newEntryId);
-          navigateWithSetup('/survey/scenarios/0');
-        }} 
-      />
+      <>
+        <SurveyIntro 
+          setup={setup} 
+          currentStep={introStep}
+          onNavigateIntro={(step) => navigateWithSetup(`/survey/intro/${step}`)}
+          onFinish={() => {
+            setTurnstileError(null);
+            setShowTurnstileGate(true);
+          }} 
+        />
+        {showTurnstileGate && (
+          <div className="fixed inset-0 z-50 bg-black/45 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+              <div className="space-y-2">
+                <h3 className="text-xl font-bold text-gray-900">進入測驗前請先驗證</h3>
+                <p className="text-sm text-gray-600">請完成安全性驗證以進入測驗。</p>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 p-4 min-h-[90px] flex items-center justify-center bg-gray-50">
+                {!isTurnstileScriptReady ? (
+                  <span className="text-sm text-gray-500">驗證載入中...</span>
+                ) : (
+                  <div ref={turnstileContainerRef} />
+                )}
+              </div>
+
+              {turnstileError && (
+                <p className="text-sm text-red-600 font-medium">{turnstileError}</p>
+              )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setShowTurnstileGate(false);
+                    setTurnstileError(null);
+                    resetTurnstileWidget('remove');
+                  }}
+                  className="flex-1 py-2.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors"
+                  disabled={isVerifyingTurnstile}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleVerifyTurnstileAndStart}
+                  className="flex-1 py-2.5 rounded-lg bg-indigo-600 text-white font-semibold hover:bg-indigo-700 transition-colors disabled:bg-indigo-300 disabled:cursor-not-allowed"
+                  disabled={isVerifyingTurnstile || Boolean(turnstileError)}
+                >
+                  {isVerifyingTurnstile ? '驗證中...' : '進入測驗'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
     );
   }
 
@@ -155,58 +327,58 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
 
   // ── Demographics ──────────────────────────────────────────────────────────
 
-  if (isDemographicsStep) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8">
-        <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full space-y-6">
-          <h2 className="text-2xl font-bold text-center">About You</h2>
-          <p className="text-gray-500 text-sm text-center">Please provide some basic info to help our research.</p>
+  // if (isDemographicsStep) {
+  //   return (
+  //     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8">
+  //       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full space-y-6">
+  //         <h2 className="text-2xl font-bold text-center">關於您</h2>
+  //         <p className="text-gray-500 text-sm text-center">請提供一些基本資料以協助我們的研究。</p>
           
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Age</label>
-              <input 
-                type="number" 
-                value={demographics.age} 
-                onChange={e => setDemographics({...demographics, age: parseInt(e.target.value)})}
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Gender</label>
-              <select 
-                value={demographics.gender} 
-                onChange={e => setDemographics({...demographics, gender: e.target.value})}
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-              >
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-                <option value="prefer_not_to_say">Prefer not to say</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700">Education</label>
-              <input 
-                type="text" 
-                value={demographics.education} 
-                onChange={e => setDemographics({...demographics, education: e.target.value})}
-                className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-                placeholder="e.g. University"
-              />
-            </div>
-          </div>
+  //         <div className="space-y-4">
+  //           <div>
+  //             <label className="block text-sm font-medium text-gray-700">年齡</label>
+  //             <input 
+  //               type="number" 
+  //               value={demographics.age} 
+  //               onChange={e => setDemographics({...demographics, age: parseInt(e.target.value)})}
+  //               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+  //             />
+  //           </div>
+  //           <div>
+  //             <label className="block text-sm font-medium text-gray-700">性別</label>
+  //             <select 
+  //               value={demographics.gender} 
+  //               onChange={e => setDemographics({...demographics, gender: e.target.value})}
+  //               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+  //             >
+  //               <option value="male">男</option>
+  //               <option value="female">女</option>
+  //               <option value="other">其他</option>
+  //               <option value="prefer_not_to_say">不願透露</option>
+  //             </select>
+  //           </div>
+  //           <div>
+  //             <label className="block text-sm font-medium text-gray-700">教育程度</label>
+  //             <input 
+  //               type="text" 
+  //               value={demographics.education} 
+  //               onChange={e => setDemographics({...demographics, education: e.target.value})}
+  //               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
+  //               placeholder="例如：大學"
+  //             />
+  //           </div>
+  //         </div>
           
-          <button
-            onClick={() => onComplete(entryId ?? '', results, demographics)}
-            className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
-          >
-            Submit & Finish
-          </button>
-        </div>
-      </div>
-    );
-  }
+  //         <button
+  //           onClick={() => onComplete(entryId ?? '', results, demographics)}
+  //           className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
+  //         >
+  //           送出並結束
+  //         </button>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   // ── Scenarios ──────────────────────────────────────────────────────────────
 
@@ -239,8 +411,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
       {/* ── Block 1: Progress Bar ──────────────────────────────────────────── */}
       <div className="w-full max-w-5xl mb-6 mt-12 lg:mt-0">
         <div className="flex justify-between text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">
-          <span>Scenario {scenarioIdx + 1} of {scenarios.length}</span>
-          <span>Progress: {Math.round(((scenarioIdx + 1) / scenarios.length) * 100)}%</span>
+          <span>第 {scenarioIdx + 1} 題，共 {scenarios.length} 題</span>
+          <span>進度：{Math.round(((scenarioIdx + 1) / scenarios.length) * 100)}%</span>
         </div>
         <div className="w-full bg-gray-300 rounded-full h-2 overflow-hidden">
           <div
@@ -258,16 +430,16 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
           {/* ── Block 2: Network History (always Graph; location can be randomized) ── */}
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
             <div className="bg-gray-50 border-b border-gray-100 p-3 md:p-4 flex items-center justify-between">
-              <h3 className="text-xs md:text-sm font-bold text-gray-500 uppercase tracking-wider">Network History</h3>
+              <h3 className="text-xs md:text-sm font-bold text-gray-500 uppercase tracking-wider">互動記錄</h3>
             </div>
             <div className="p-4 md:p-6 flex-1 flex flex-col bg-white overflow-hidden">
               {/* ── Gradual reveal prompt — shown while edges remain hidden ── */}
               {!allRevealed && (
                 <div className="mx-4 mt-4 flex items-center justify-center gap-2 bg-blue-50 border border-blue-200 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-top-4 duration-700">
                   <p className="text-xs text-blue-800 font-medium text-center">
-                    Click the <span className="font-bold border-b border-blue-400 border-dashed">dashed edges</span> to reveal history.
+                    請點擊以下虛弧線上的「問號」，來閱覽互動記錄
                     <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600">
-                      {setup.activeEdgeIds.length - revealedEdgeIds.size} left
+                      剩下 {setup.activeEdgeIds.length - revealedEdgeIds.size} 個
                     </span>
                   </p>
                 </div>
@@ -275,20 +447,15 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
 
               {/* ── Gradual reveal debrief — shown once all edges revealed, but BEFORE decision phase ── */}
               {allRevealed && !isDecisionPhase && (
-                <div className="mx-4 mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-amber-50 border-2 border-amber-200 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-500 animate-glow-amber">
-                  <div className="flex items-start gap-3">
-                    <div>
-                      <p className="text-xs font-bold text-amber-800">Review the history below carefully.</p>
-                    </div>
-                  </div>
+                <div className="mx-4 mt-4 flex flex-col sm:flex-row items-center justify-center bg-amber-50 border-2 border-amber-200 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-500 animate-glow-amber">
                   <button
                     onClick={() => {
                       setIsDecisionPhase(true);
                       setHasInteracted(false);
                     }}
-                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-2 px-4 rounded-lg shadow-sm transition-colors whitespace-nowrap"
+                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold py-2 px-6 rounded-lg shadow-sm transition-colors whitespace-nowrap"
                   >
-                    Enter Decision Phase
+                    閱覽完互動記錄之後，請按此鍵解鎖右方的決定鍵
                   </button>
                 </div>
               )}
@@ -320,9 +487,9 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-700">
                 <div className="text-center space-y-2">
                   <h3 className="text-xl font-medium text-gray-800">
-                    Will you give to your partner?
+                    給或不給？
                   </h3>
-                  <p className="text-sm text-gray-500">Drag the slider to indicate your probability.</p>
+                  <p className="text-sm text-gray-500">從0到100，請輸入一個（機率）值代表您的決定<br/>（0代表絕對不會給予對方，100代表絕對會給對方）</p>
                   <div className="pt-2">
                     <DecisionSlider value={sliderValue} onChange={(v) => { setSliderValue(v); setHasInteracted(true); }} />
                   </div>
@@ -334,7 +501,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
                     onClick={() => setShowPayoffTable(!showPayoffTable)}
                     className="w-full py-3 bg-gray-50 border border-gray-200 text-gray-700 font-bold rounded-xl shadow-sm hover:bg-gray-100 transition-colors flex items-center justify-center gap-2"
                   >
-                    <span>{showPayoffTable ? 'Hide' : 'Show'} Payoff Table</span>
+                    <span>{showPayoffTable ? '隱藏' : '顯示'}點數計算方法</span>
                     <span className="text-gray-400 text-xs">{showPayoffTable ? '▲' : '▼'}</span>
                   </button>
                   {showPayoffTable && <PayoffMatrix userProb={sliderValue} compact={false} />}
@@ -343,9 +510,9 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
             ) : (
               <div className="text-center py-12 px-4 border-2 border-dashed border-gray-100 rounded-2xl bg-gray-50/50 animate-in fade-in duration-700">
                 <span className="text-4xl">🔒</span>
-                <h3 className="mt-4 text-sm font-bold text-gray-400 uppercase tracking-widest">Decision Locked</h3>
+                <h3 className="mt-4 text-sm font-bold text-gray-400 uppercase tracking-widest">目前無法做決定</h3>
                 <p className="mt-2 text-xs text-gray-500 leading-relaxed">
-                  Please reveal all network history edges <br /> before making your decision.
+                  尚未閱覽左邊的互動記錄之前，<br/>您暫時無法在此做決定
                 </p>
               </div>
             )}
@@ -359,12 +526,12 @@ const SurveyView: React.FC<SurveyViewProps> = ({ setup, onStartSurvey, onSaveAns
                 }`}
             >
               {!allRevealed
-                ? `Reveal all edges first (${revealedEdgeIds.size}/${setup.activeEdgeIds.length})`
+                ? `請先點擊並閱覽所有的互動記錄 (${revealedEdgeIds.size}/${setup.activeEdgeIds.length})` 
                 : !isDecisionPhase
-                  ? 'Enter decision phase first'
+                  ? '請先按解鎖決定鍵'
                   : !hasInteracted
-                    ? 'Interact with Slider first'
-                    : scenarioIdx === scenarios.length - 1 ? 'Submit Results' : 'Confirm & Next'
+                    ? '請拉動上方滑桿做出決定'
+                    : scenarioIdx === scenarios.length - 1 ? '確認並送出' : '確認並前往下一題'
               }
             </button>
           </div>

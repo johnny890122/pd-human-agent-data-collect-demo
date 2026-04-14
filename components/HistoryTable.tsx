@@ -137,7 +137,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                     {s.id ? (
                       <button
                         type="button"
-                        onClick={() => window.open(`/survey/intro/0?setupId=${s.id}`, '_blank')}
+                        onClick={() => window.open(`/survey/welcome?setupId=${s.id}`, '_blank')}
                         className="text-green-600 hover:text-green-800 hover:underline font-medium text-[11px]"
                       >
                         Open Study

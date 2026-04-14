@@ -85,7 +85,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
     setSetup(updatedSetup);
     const id = await onSave(updatedSetup);
     if (id) {
-      const url = `${window.location.origin}/survey/intro/0?setupId=${id}`;
+      const url = `${window.location.origin}/survey/welcome?setupId=${id}`;
       setGeneratedUrl(url);
     }
     setIsSaving(false);

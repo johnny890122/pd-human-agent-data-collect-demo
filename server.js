@@ -35,6 +35,10 @@ async function startServer() {
 
   await apolloServer.start();
 
+  const turnstileSecretKey = process.env.NODE_ENV === 'production'
+    ? process.env.TURNSTILE_SECRET_KEY
+    : '1x0000000000000000000000000000000AA';
+
   // 📝 在抵達 JSON body parser 之前，先中途攔截並印出大小
   app.use('/graphql', (req, res, next) => {
     if (req.headers['content-length']) {
@@ -72,6 +76,68 @@ async function startServer() {
       success: false,
       message: 'Invalid password',
     });
+  });
+
+  app.post('/api/turnstile/verify', async (req, res) => {
+    const token = req.body?.token;
+
+    if (!turnstileSecretKey) {
+      return res.status(500).json({
+        success: false,
+        message: 'Turnstile secret is not configured on the server.',
+      });
+    }
+
+    if (typeof token !== 'string' || token.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Turnstile token is required.',
+      });
+    }
+
+    // In development mode (using test secret), skip Cloudflare API and accept token
+    const isTestSecret = turnstileSecretKey === '1x0000000000000000000000000000000AA';
+    if (isTestSecret) {
+      return res.json({ success: true, isDevelopment: true });
+    }
+
+    const forwardedFor = req.headers['x-forwarded-for'];
+    const remoteIp = Array.isArray(forwardedFor)
+      ? forwardedFor[0]
+      : typeof forwardedFor === 'string'
+        ? forwardedFor.split(',')[0]?.trim()
+        : undefined;
+
+    const payload = new URLSearchParams();
+    payload.set('secret', turnstileSecretKey);
+    payload.set('response', token);
+    if (remoteIp) {
+      payload.set('remoteip', remoteIp);
+    }
+
+    try {
+      const response = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: payload.toString(),
+      });
+
+      const result = await response.json();
+      const success = result?.success === true;
+
+      return res.status(success ? 200 : 400).json({
+        success,
+        errorCodes: Array.isArray(result?.['error-codes']) ? result['error-codes'] : [],
+      });
+    } catch (error) {
+      return res.status(502).json({
+        success: false,
+        message: 'Failed to verify Turnstile token.',
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   });
 
   // Serve static files from the dist directory when running the production bundle.

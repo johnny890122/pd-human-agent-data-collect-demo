@@ -37,7 +37,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   onNodeClick,
   className = '',
   positionOverrides,
-  groupNames = { A: 'KMT', B: 'DPP' },
+  groupNames = { A: '國民黨', B: '民進黨' },
   decision = 50,
   onDecisionChange,
   revealedEdgeIds,
@@ -432,7 +432,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         if (isActive && mode === 'survey' && scenario && isRevealed) {
           const state = scenario.edgeStates[edge.id];
           showBubble = true;
-          bubbleLabel = state === 'give' ? 'GIVE' : 'NOT GIVE';
+          bubbleLabel = state === 'give' ? '給予' : '不給予';
           bubbleColor = state === 'give' ? COLORS.coop : COLORS.defect;
         }
 
@@ -460,7 +460,12 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {showBubble && (
               <g transform={`translate(${midX}, ${midY})`}>
                 <rect x="-30" y="-12" width="60" height="24" rx="12" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
-                <text textAnchor="middle" y="5" className="text-[12px] md:text-[10px] font-black fill-black uppercase tracking-tighter">
+                <text 
+                  textAnchor="middle" 
+                  y="5" 
+                  className="text-[12px] md:text-[10px] font-black uppercase tracking-tighter"
+                  fill={bubbleLabel === '給予' ? 'white' : '#374151'}
+                >
                   {bubbleLabel}
                 </text>
               </g>
@@ -604,10 +609,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               <text
                 textAnchor="middle"
                 y="5"
-                className="text-[12px] md:text-[10px] font-black fill-black pointer-events-none uppercase tracking-tighter"
+                className="text-[12px] md:text-[10px] font-black pointer-events-none uppercase tracking-tighter"
+                fill={visualDecision > 50 ? 'white' : (visualDecision < 50 ? '#374151' : 'white')}
                 style={{ transition: 'all 0.2s ease' }}
               >
-                {visualDecision > 50 ? 'GIVE' : visualDecision < 50 ? 'NOT GIVE' : '?'}
+                {visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '?'}
               </text>
             </g>
           </g>
@@ -770,7 +776,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                   <text y="-2" textAnchor="middle" fontSize="10" className="font-[800] md:text-[8px] pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
                     {roleTag ? (
                       <>
-                        <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag}</tspan>
+                        <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag === 'YOU' ? '您' : '對手'}</tspan>
                         <tspan className="opacity-50 font-normal mx-1" fill={COLORS.neutral}> · </tspan>
                         <tspan className="uppercase tracking-widest" fill={groupColor}>{baseName}</tspan>
                       </>
@@ -786,7 +792,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {hoveredNode === agent.id && (
               <foreignObject x="-60" y="-90" width="120" height="52" className="pointer-events-none overflow-visible">
                 <div style={{ background: 'white', border: `2px solid ${groupColor}`, borderRadius: '10px', padding: '5px 8px', boxShadow: `0 4px 12px ${COLORS.blackShadow15}`, textAlign: 'center', fontSize: '11px', fontWeight: 700, color: groupColor, whiteSpace: 'nowrap', lineHeight: 1.4 }}>
-                  <div style={{ fontSize: '9px', fontWeight: 600, color: COLORS.neutral, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Group</div>
+                  <div style={{ fontSize: '9px', fontWeight: 600, color: COLORS.neutral, textTransform: 'uppercase', letterSpacing: '0.05em' }}>群組</div>
                   <div>{agent.group === 'A' ? groupNames.A : groupNames.B}</div>
                 </div>
                 <svg style={{ position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)' }} width="12" height="6">

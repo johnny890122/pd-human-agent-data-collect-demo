@@ -6,6 +6,8 @@ import { generateDesignMatrix } from '../utils/math';
 import { fetchAllSessionSetups, clearDatabase } from '../utils/graphqlClient';
 import HistoryTable from './HistoryTable';
 import SetupPanel from './SetupPanel';
+import GroupsTable from './GroupsTable';
+import GroupDetailView from './GroupDetailView';
 
 interface AdminViewProps {
   setup: SessionSetup;
@@ -16,7 +18,10 @@ interface AdminViewProps {
 const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const activeTab: 'setup' | 'history' = location.pathname === '/admin/history' ? 'history' : 'setup';
+  const activeTab: 'setup' | 'history' | 'groups' =
+    location.pathname === '/admin/history' ? 'history' :
+    location.pathname.startsWith('/admin/groups') ? 'groups' :
+    'setup';
   const isReadOnly = location.state?.readOnly === true;
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -28,7 +33,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     if (activeTab === 'history') {
       const loadHistory = async () => {
         try {
-          const data = await fetchAllSessionSetups();
+          const data = await fetchAllSessionSetups(true);  // 只獲取 manual sessions
           setHistory(data);
           setHistoryPage(1);
         } catch (error) {
@@ -120,7 +125,14 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
                 onClick={() => navigate('/admin/history')}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
               >
-                Session
+                View Single Session
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/admin/groups')}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'groups' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
+              >
+                View Session Batchs 
               </button>
               {import.meta.env.DEV && (
                 <button
@@ -151,6 +163,12 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
                 onPageChange={setHistoryPage}
                 onLoadSetup={handleLoadHistorySetup}
               />
+            ) : activeTab === 'groups' ? (
+              location.pathname.includes('/admin/groups/') ? (
+                <GroupDetailView />
+              ) : (
+                <GroupsTable />
+              )
             ) : (
               <SetupPanel
                 setup={setup}

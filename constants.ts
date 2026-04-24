@@ -84,7 +84,6 @@ export const INITIAL_SETUP: SessionSetup = {
   focalNode: 'A1',
   opponentNode: 'A2',
   sampleSize: 20,
-  submissionCount: 0,
 };
 
 export const TOAST_DURATION_MS = 2000;

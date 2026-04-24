@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchRecentSubmissions, Submission } from '../utils/graphqlClient';
 import { SessionSetup } from '../types';
+import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 
 interface HistoryTableProps {
   history: SessionSetup[];
@@ -56,26 +57,28 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
   }, [expandedRows]);
 
   return (
-    <div className="rounded-2xl border border-indigo-100 bg-white shadow-sm">
-      <div className="border-b border-indigo-100 px-4 py-4 md:px-6">
-        <h2 className="text-sm font-semibold text-indigo-800 uppercase tracking-wider">
+    <div className="rounded-2xl border border-emerald-100 bg-white shadow-sm">
+      <div className="border-b border-emerald-100 px-4 py-4 md:px-6">
+        <h2 className="text-sm font-semibold text-emerald-800 uppercase tracking-wider">
           Sessions & Progress
         </h2>
       </div>
       <div className="overflow-x-auto px-4 py-4 md:px-6">
         <table className="w-full text-left text-xs">
           <thead>
-            <tr className="text-gray-400 border-b border-indigo-100">
+            <tr className="text-gray-400 border-b border-emerald-100">
               <th className="pb-3 w-8"></th>
               <th className="pb-3 font-bold uppercase">Date</th>
               <th className="pb-3 font-bold uppercase">Session ID</th>
-              <th className="pb-3 font-bold uppercase">Roles</th>
-              <th className="pb-3 font-bold uppercase">k + Active Edges</th>
+              <th className="pb-3 font-bold uppercase">Focal</th>
+              <th className="pb-3 font-bold uppercase">Partner</th>
+              <th className="pb-3 font-bold uppercase">k</th>
+              <th className="pb-3 font-bold uppercase">Active Edges</th>
               <th className="pb-3 font-bold uppercase">Progress</th>
               <th className="pb-3 font-bold uppercase">Study URL</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-indigo-50">
+          <tbody className="divide-y divide-emerald-50">
             {pagedHistory.map((s) => {
               const submissionCount = s.submissionCount ?? 0;
               const progress = s.sampleSize > 0 ? Math.min(100, (submissionCount / s.sampleSize) * 100) : 0;
@@ -89,14 +92,13 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                 const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
                 displayDate = `${year}/${month}/${day} ${hours}:${minutes}`;
               }
-              const activeEdges = s.activeEdgeIds.length > 0 ? s.activeEdgeIds.join(', ') : '-';
               const isExpanded = s.id ? expandedRows.has(s.id) : false;
 
               return (
                 <React.Fragment key={s.id || Math.random()}>
-                  <tr className="group hover:bg-indigo-50/40 transition-colors">
+                  <tr className="group hover:bg-emerald-50/40 transition-colors">
                     <td className="py-3 pl-2 cursor-pointer" onClick={() => s.id && toggleRow(s.id)}>
-                      <button className="text-gray-400 hover:text-indigo-600 focus:outline-none">
+                      <button className="text-gray-400 hover:text-emerald-600 focus:outline-none">
                         <svg className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
@@ -110,7 +112,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                       <button
                         type="button"
                         onClick={() => onLoadSetup(s)}
-                        className="text-indigo-700 hover:text-indigo-900 hover:underline"
+                        className="text-emerald-700 hover:text-emerald-900 hover:underline"
                       >
                         {s.id}
                       </button>
@@ -118,18 +120,33 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                       <span className="text-gray-600">-</span>
                     )}
                   </td>
-                  <td className="py-3 font-medium pr-2">
-                    {s.focalNode} vs {s.opponentNode}
+                  <td className="py-3 pr-2">
+                    <span className="inline-flex px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-medium">
+                      {getFocalGroupLabel(s.focalNode)}
+                    </span>
                   </td>
                   <td className="py-3 pr-2">
-                    <span className="font-semibold text-gray-700">{s.activeEdgeIds.length}</span>
-                    <span className="ml-2 text-gray-500">{activeEdges}</span>
+                    <span className="inline-flex px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[10px] font-medium">
+                      {getPartnerGroupLabel(s.opponentNode)}
+                    </span>
+                  </td>
+                  <td className="py-3 pr-2">
+                    <span className="font-semibold text-emerald-700">{s.activeEdgeIds.length}</span>
+                  </td>
+                  <td className="py-3 pr-2">
+                    <div className="flex flex-col gap-0.5">
+                      {s.activeEdgeIds.length > 0 ? s.activeEdgeIds.map(edgeId => (
+                        <span key={edgeId} className="text-gray-500 text-[10px] whitespace-nowrap">
+                          {getEdgeDisplayName(edgeId, s.focalNode, s.opponentNode)}
+                        </span>
+                      )) : <span className="text-gray-400">-</span>}
+                    </div>
                   </td>
                   <td className="py-3">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-indigo-600 whitespace-nowrap">{submissionCount}/{s.sampleSize}</span>
-                      <div className="flex-1 min-w-[60px] bg-indigo-100 rounded-full h-1.5">
-                        <div className="bg-indigo-500 h-1.5 rounded-full" style={{ width: `${progress}%` }} />
+                      <span className="font-bold text-emerald-600 whitespace-nowrap">{submissionCount}/{s.sampleSize}</span>
+                      <div className="flex-1 min-w-[60px] bg-emerald-100 rounded-full h-1.5">
+                        <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${progress}%` }} />
                       </div>
                     </div>
                   </td>
@@ -148,16 +165,16 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                   </td>
                 </tr>
                 {isExpanded && (
-                  <tr className="bg-indigo-50/20">
-                    <td colSpan={7} className="px-4 py-4 border-b border-indigo-50">
+                  <tr className="bg-emerald-50/20">
+                    <td colSpan={10} className="px-4 py-4 border-b border-emerald-50">
                       {loadingSubmissions ? (
                         <div className="text-gray-500 text-xs text-center">Loading submissions...</div>
                       ) : (
                         <div className="flex flex-col gap-2">
                           <span className="font-semibold text-gray-700 text-xs mb-2">Participant Submissions:</span>
                           {submissions.filter(sub => sub.sessionId === s.id).length > 0 ? (
-                            <table className="w-full text-left text-xs bg-white rounded-md border border-indigo-100 overflow-hidden">
-                              <thead className="bg-indigo-50">
+                            <table className="w-full text-left text-xs bg-white rounded-md border border-emerald-100 overflow-hidden">
+                              <thead className="bg-emerald-50">
                                 <tr>
                                   <th className="px-3 py-2 font-medium text-gray-600">ID</th>
                                   <th className="px-3 py-2 font-medium text-gray-600">Status</th>
@@ -170,7 +187,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                                 {submissions
                                   .filter((sub) => sub.sessionId === s.id)
                                   .map((sub) => (
-                                    <tr key={sub.id} className="border-t border-indigo-50 hover:bg-slate-50">
+                                    <tr key={sub.id} className="border-t border-emerald-50 hover:bg-slate-50">
                                       <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub.id}</td>
                                       <td className="px-3 py-2">
                                         {sub.isCompleted ? (
@@ -193,7 +210,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                                         <button
                                           type="button"
                                           onClick={() => navigate(`/admin/replay/${sub.id}`)}
-                                          className="flex items-center gap-1 text-indigo-600 hover:text-indigo-800 hover:underline font-medium px-2 py-1 bg-indigo-50 rounded border border-indigo-100 transition-colors"
+                                          className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 hover:underline font-medium px-2 py-1 bg-emerald-50 rounded border border-emerald-100 transition-colors"
                                         >
                                           <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -219,7 +236,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
             })}
             {history.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-6 text-center text-gray-400 italic">No session found</td>
+                <td colSpan={9} className="py-6 text-center text-gray-400 italic">No session found</td>
               </tr>
             )}
           </tbody>
@@ -235,7 +252,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                 type="button"
                 onClick={() => onPageChange(Math.max(1, historyPage - 1))}
                 disabled={historyPage === 1}
-                className={`rounded-md px-3 py-1 border ${historyPage === 1 ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-indigo-700 border-indigo-200 hover:bg-indigo-50'}`}
+                className={`rounded-md px-3 py-1 border ${historyPage === 1 ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'}`}
               >
                 Previous
               </button>
@@ -246,7 +263,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                 type="button"
                 onClick={() => onPageChange(Math.min(totalPages, historyPage + 1))}
                 disabled={historyPage === totalPages}
-                className={`rounded-md px-3 py-1 border ${historyPage === totalPages ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-indigo-700 border-indigo-200 hover:bg-indigo-50'}`}
+                className={`rounded-md px-3 py-1 border ${historyPage === totalPages ? 'text-gray-400 border-gray-200 cursor-not-allowed' : 'text-emerald-700 border-emerald-200 hover:bg-emerald-50'}`}
               >
                 Next
               </button>

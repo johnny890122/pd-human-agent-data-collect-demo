@@ -7,6 +7,8 @@ import Login from './components/Login';
 import NotFound from './components/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import SurveyWelcome from './components/SurveyWelcome';
+import GroupsTable from './components/GroupsTable';
+import GroupDetailView from './components/GroupDetailView';
 import { SessionSetup, SurveyResult } from './types';
 import {
   completeSurveyEntry,
@@ -227,7 +229,7 @@ const App: React.FC = () => {
   }
 
   const isSurveyRoute = location.pathname.startsWith('/survey') && !location.pathname.startsWith('/survey/outro');
-  const isSessionFull = setup.submissionCount >= setup.sampleSize;
+  const isSessionFull = (setup.submissionCount || 0) >= setup.sampleSize;
 
   if (isSurveyRoute && isSessionFull && !restoredEntryId) {
     return (
@@ -279,8 +281,24 @@ const App: React.FC = () => {
             </ProtectedRoute>
           }
         />
-        <Route 
+        <Route
           path="/admin/history"
+          element={
+            <ProtectedRoute>
+              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/groups"
+          element={
+            <ProtectedRoute>
+              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/groups/:groupId"
           element={
             <ProtectedRoute>
               <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />

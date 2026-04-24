@@ -27,6 +27,7 @@ export const typeDefs = `#graphql
 
   type SessionSetup {
     id: ID!
+    groupId: String
     activeEdgeIds: [String!]!
     scenarios: [JSON!]!
     focalNode: String!
@@ -55,13 +56,47 @@ export const typeDefs = `#graphql
     cooperationProbability: Float!
   }
 
+  type SessionGroup {
+    id: ID!
+    name: String!
+    description: String
+    batchMode: Boolean!
+    edgeCount: Int!
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
+    totalSessions: Int!
+    completedSessions: Int!
+    status: String!
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  input SessionGroupInput {
+    name: String!
+    description: String
+    edgeCount: Int!
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
+  }
+
+  type BatchLaunchResult {
+    groupId: ID!
+    sessionsCreated: Int!
+    sessionIds: [String!]!
+  }
+
   type Query {
     health: String!
     activeSessionSetup: SessionSetup
     sessionSetup(id: ID!): SessionSetup
-    allSessionSetups: [SessionSetup!]!
+    allSessionSetups(excludeBatchSessions: Boolean): [SessionSetup!]!
     recentSubmissions(limit: Int = 20): [Submission!]!
     getSessionReplay(sessionId: String!): [JSON!]!
+    sessionGroup(id: ID!): SessionGroup
+    allSessionGroups: [SessionGroup!]!
+    sessionsByGroup(groupId: ID!): [SessionSetup!]!
   }
 
   type Mutation {
@@ -71,6 +106,9 @@ export const typeDefs = `#graphql
     completeSurveyEntry(entryId: ID!, demographics: DemographicInput!): Submission!
     submitSurvey(sessionId: String!, edgeId: String!, results: [SurveyAnswerInput!]!, demographics: DemographicInput!): Submission!
     saveSessionEvents(sessionId: String!, events: [JSON!]!): Boolean!
+    createBatchSessions(input: SessionGroupInput!): BatchLaunchResult!
+    updateSessionGroupStatus(groupId: ID!, status: String!): SessionGroup!
+    deleteSessionGroup(groupId: ID!): Boolean!
     clearDatabase: Boolean!
   }
 `;

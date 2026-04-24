@@ -165,11 +165,12 @@ export async function fetchSessionSetup(id: string): Promise<SessionSetup | null
   return setupFromGraph(data.sessionSetup);
 }
  
-export async function fetchAllSessionSetups(): Promise<SessionSetup[]> {
+export async function fetchAllSessionSetups(excludeBatchSessions = false): Promise<SessionSetup[]> {
   const query = `
-    query AllSessionSetups {
-      allSessionSetups {
+    query AllSessionSetups($excludeBatchSessions: Boolean) {
+      allSessionSetups(excludeBatchSessions: $excludeBatchSessions) {
         id
+        groupId
         activeEdgeIds
         scenarios
         focalNode
@@ -181,7 +182,7 @@ export async function fetchAllSessionSetups(): Promise<SessionSetup[]> {
     }
   `;
  
-  const data = await runGraphQL<{ allSessionSetups: GraphSessionSetup[] }>(query);
+  const data = await runGraphQL<{ allSessionSetups: GraphSessionSetup[] }>(query, { excludeBatchSessions });
   return data.allSessionSetups.map(setupFromGraph);
 }
 
@@ -316,6 +317,172 @@ export async function clearDatabase(): Promise<boolean> {
     return data.clearDatabase || false;
   } catch (error) {
     console.error("Failed to clear database via GraphQL:", error);
+    return false;
+  }
+}
+
+// ============= 批次功能 API =============
+
+export interface SessionGroup {
+  id: string;
+  name: string;
+  description?: string;
+  batchMode: boolean;
+  edgeCount: number;
+  focalNode: string;
+  opponentNode: string;
+  sampleSize: number;
+  totalSessions: number;
+  completedSessions: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BatchLaunchResult {
+  groupId: string;
+  sessionsCreated: number;
+  sessionIds: string[];
+}
+
+export async function createBatchSessions(
+  name: string,
+  edgeCount: number,
+  focalNode: string,
+  opponentNode: string,
+  sampleSize: number,
+  description?: string
+): Promise<BatchLaunchResult> {
+  const mutation = `
+    mutation CreateBatchSessions($input: SessionGroupInput!) {
+      createBatchSessions(input: $input) {
+        groupId
+        sessionsCreated
+        sessionIds
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ createBatchSessions: BatchLaunchResult }>(mutation, {
+    input: {
+      name,
+      description: description || null,
+      edgeCount,
+      focalNode,
+      opponentNode,
+      sampleSize,
+    },
+  });
+
+  return data.createBatchSessions;
+}
+
+export async function fetchAllSessionGroups(): Promise<SessionGroup[]> {
+  const query = `
+    query AllSessionGroups {
+      allSessionGroups {
+        id
+        name
+        description
+        batchMode
+        edgeCount
+        focalNode
+        opponentNode
+        sampleSize
+        totalSessions
+        completedSessions
+        status
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ allSessionGroups: SessionGroup[] }>(query);
+  return data.allSessionGroups || [];
+}
+
+export async function fetchSessionGroup(id: string): Promise<SessionGroup | null> {
+  const query = `
+    query SessionGroup($id: ID!) {
+      sessionGroup(id: $id) {
+        id
+        name
+        description
+        batchMode
+        edgeCount
+        focalNode
+        opponentNode
+        sampleSize
+        totalSessions
+        completedSessions
+        status
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ sessionGroup: SessionGroup | null }>(query, { id });
+  return data.sessionGroup;
+}
+
+export async function fetchSessionsByGroup(groupId: string): Promise<SessionSetup[]> {
+  const query = `
+    query SessionsByGroup($groupId: ID!) {
+      sessionsByGroup(groupId: $groupId) {
+        id
+        groupId
+        activeEdgeIds
+        scenarios
+        focalNode
+        opponentNode
+        sampleSize
+        submissionCount
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ sessionsByGroup: any[] }>(query, { groupId });
+  return data.sessionsByGroup.map(setupFromGraph);
+}
+
+export async function updateSessionGroupStatus(
+  groupId: string,
+  status: string
+): Promise<SessionGroup> {
+  const mutation = `
+    mutation UpdateSessionGroupStatus($groupId: ID!, $status: String!) {
+      updateSessionGroupStatus(groupId: $groupId, status: $status) {
+        id
+        name
+        status
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ updateSessionGroupStatus: SessionGroup }>(mutation, {
+    groupId,
+    status,
+  });
+
+  return data.updateSessionGroupStatus;
+}
+
+export async function deleteSessionGroup(groupId: string): Promise<boolean> {
+  const mutation = `
+    mutation DeleteSessionGroup($groupId: ID!) {
+      deleteSessionGroup(groupId: $groupId)
+    }
+  `;
+
+  try {
+    const data = await runGraphQL<{ deleteSessionGroup: boolean }>(mutation, { groupId });
+    return data.deleteSessionGroup;
+  } catch (error) {
+    console.error("Failed to delete session group:", error);
     return false;
   }
 }

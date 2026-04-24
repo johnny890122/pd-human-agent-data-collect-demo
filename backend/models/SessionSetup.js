@@ -4,6 +4,10 @@ import { randomUUID } from 'crypto';
 const sessionSetupSchema = new mongoose.Schema(
   {
     _id: { type: String, default: () => randomUUID() },
+    
+    // 關聯到 SessionGroup（批次模式）
+    groupId: { type: String, required: false, default: null },
+    
     activeEdgeIds: { type: [String], required: true },
     scenarios: { type: [Object], required: true },
     focalNode: { type: String, required: true },
@@ -12,6 +16,10 @@ const sessionSetupSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// 索引優化：加速按 groupId 查詢
+sessionSetupSchema.index({ groupId: 1 });
+sessionSetupSchema.index({ createdAt: -1 });
 
 const submissionSchema = new mongoose.Schema(
   {

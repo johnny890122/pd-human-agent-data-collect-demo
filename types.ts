@@ -15,12 +15,13 @@ export interface EdgeDef {
 
 export interface SessionSetup {
   id?: string;
+  groupId?: string;
   activeEdgeIds: string[];
   scenarios: Scenario[];
   focalNode: string;
   opponentNode: string;
   sampleSize: number;
-  submissionCount: number;
+  submissionCount?: number;
   updatedAt?: string;
 }
 

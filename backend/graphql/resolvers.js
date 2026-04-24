@@ -1,8 +1,11 @@
 import { connectToDatabase, isDbConfigured } from '../db.js';
 import { SessionSetupModel, SubmissionModel } from '../models/SessionSetup.js';
 import { SessionReplayModel } from '../models/SessionReplay.js';
+import { SessionGroupModel } from '../models/SessionGroup.js';
 import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
+import { generateEdgeCombinations, combinationCount, validateBatchParams } from '../../utils/combinations.js';
+import { generateDesignMatrix } from '../../utils/mathBackend.js';
 
 
 function requireDb() {
@@ -18,12 +21,32 @@ async function toSetupGraph(doc) {
   });
   return {
     id: String(doc._id),
+    groupId: doc.groupId || null,
     activeEdgeIds: doc.activeEdgeIds,
     scenarios: doc.scenarios,
     focalNode: doc.focalNode,
     opponentNode: doc.opponentNode,
     sampleSize: doc.sampleSize || 20,
     submissionCount,
+    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
+  };
+}
+
+function toGroupGraph(doc) {
+  if (!doc) return null;
+  return {
+    id: String(doc._id),
+    name: doc.name,
+    description: doc.description || null,
+    batchMode: doc.batchMode,
+    edgeCount: doc.edgeCount,
+    focalNode: doc.focalNode,
+    opponentNode: doc.opponentNode,
+    sampleSize: doc.sampleSize,
+    totalSessions: doc.totalSessions,
+    completedSessions: doc.completedSessions,
+    status: doc.status,
+    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
 }
@@ -67,10 +90,16 @@ export const resolvers = {
       const doc = await SessionSetupModel.findById(id).lean();
       return await toSetupGraph(doc);
     },
-    allSessionSetups: async () => {
+    allSessionSetups: async (_, { excludeBatchSessions = false }) => {
       requireDb();
       await connectToDatabase();
-      const docs = await SessionSetupModel.find({}).sort({ createdAt: -1 }).lean();
+      
+      // 構建查詢條件
+      const query = excludeBatchSessions
+        ? { groupId: null }  // 只返回 manual sessions
+        : {};                 // 返回所有 sessions
+      
+      const docs = await SessionSetupModel.find(query).sort({ createdAt: -1 }).lean();
       return await Promise.all(docs.map(doc => toSetupGraph(doc)));
     },
     recentSubmissions: async (_, { limit }) => {
@@ -99,6 +128,24 @@ export const resolvers = {
         }
       }
       return allEvents;
+    },
+    sessionGroup: async (_, { id }) => {
+      requireDb();
+      await connectToDatabase();
+      const doc = await SessionGroupModel.findById(id).lean();
+      return toGroupGraph(doc);
+    },
+    allSessionGroups: async () => {
+      requireDb();
+      await connectToDatabase();
+      const docs = await SessionGroupModel.find({}).sort({ createdAt: -1 }).lean();
+      return docs.map(doc => toGroupGraph(doc));
+    },
+    sessionsByGroup: async (_, { groupId }) => {
+      requireDb();
+      await connectToDatabase();
+      const docs = await SessionSetupModel.find({ groupId }).sort({ createdAt: 1 }).lean();
+      return await Promise.all(docs.map(doc => toSetupGraph(doc)));
     },
   },
   Mutation: {
@@ -253,6 +300,114 @@ export const resolvers = {
 
       return true;
     },
+    createBatchSessions: async (_, { input }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      const { name, description, edgeCount, focalNode, opponentNode, sampleSize } = input;
+      
+      // 驗證參數
+      const validation = validateBatchParams(edgeCount, 1000);
+      if (!validation.valid) {
+        throw new Error(validation.message);
+      }
+      
+      const totalCombinations = validation.count;
+      
+      // 創建 SessionGroup
+      const group = await SessionGroupModel.create({
+        _id: randomUUID(),
+        name,
+        description: description || null,
+        batchMode: true,
+        edgeCount,
+        focalNode,
+        opponentNode,
+        sampleSize,
+        totalSessions: totalCombinations,
+        completedSessions: 0,
+        status: 'creating',
+      });
+      
+      const groupId = String(group._id);
+      
+      // 生成所有邊緣組合
+      const allEdges = [
+        { id: 'A1-A2' }, { id: 'A1-B3' }, { id: 'A1-B4' },
+        { id: 'A2-A1' }, { id: 'A2-B3' }, { id: 'A2-B4' },
+        { id: 'B3-A1' }, { id: 'B3-A2' }, { id: 'B3-B4' },
+        { id: 'B4-A1' }, { id: 'B4-A2' }, { id: 'B4-B3' },
+      ];
+      const combinations = generateEdgeCombinations(allEdges, edgeCount);
+      
+      // 批次準備文檔
+      const sessionDocs = combinations.map(activeEdgeIds => {
+        const scenarios = generateDesignMatrix(activeEdgeIds);
+        return {
+          _id: randomUUID(),
+          groupId,
+          activeEdgeIds,
+          scenarios,
+          focalNode,
+          opponentNode,
+          sampleSize,
+        };
+      });
+      
+      // 批次插入（效能優化）
+      const insertedDocs = await SessionSetupModel.insertMany(sessionDocs);
+      const sessionIds = insertedDocs.map(doc => String(doc._id));
+      
+      // 更新群組狀態
+      await SessionGroupModel.updateOne(
+        { _id: groupId },
+        { $set: { status: 'active' } }
+      );
+      
+      return {
+        groupId,
+        sessionsCreated: sessionIds.length,
+        sessionIds,
+      };
+    },
+    updateSessionGroupStatus: async (_, { groupId, status }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      const validStatuses = ['creating', 'active', 'completed', 'archived'];
+      if (!validStatuses.includes(status)) {
+        throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
+      }
+      
+      const doc = await SessionGroupModel.findByIdAndUpdate(
+        groupId,
+        { $set: { status } },
+        { new: true }
+      );
+      
+      if (!doc) {
+        throw new Error('SessionGroup not found');
+      }
+      
+      return toGroupGraph(doc);
+    },
+    deleteSessionGroup: async (_, { groupId }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      // 刪除群組關聯的所有 sessions
+      await SessionSetupModel.deleteMany({ groupId });
+      
+      // 刪除所有關聯的 submissions
+      const sessions = await SessionSetupModel.find({ groupId });
+      const sessionIds = sessions.map(s => String(s._id));
+      await SubmissionModel.deleteMany({ sessionId: { $in: sessionIds } });
+      
+      // 刪除群組
+      const result = await SessionGroupModel.deleteOne({ _id: groupId });
+      
+      return result.deletedCount > 0;
+    },
     clearDatabase: async () => {
       if (process.env.NODE_ENV === 'production') {
         throw new Error('Action denied: You cannot clear the database in production.');
@@ -263,6 +418,7 @@ export const resolvers = {
         await SessionSetupModel.deleteMany({});
         await SubmissionModel.deleteMany({});
         await SessionReplayModel.deleteMany({});
+        await SessionGroupModel.deleteMany({});
         return true;
       } catch (error) {
         console.error("Failed to clean database:", error);

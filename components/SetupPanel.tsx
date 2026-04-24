@@ -1,13 +1,21 @@
 import React from 'react';
 import { toast } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
 import { SessionSetup, AgentId } from '../types';
 import { AGENTS, ALL_EDGES } from '../constants';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
+import { combinationCount } from '../utils/combinations';
+import { createBatchSessions } from '../utils/graphqlClient';
+import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
+import BatchModeConfig from './BatchModeConfig';
+import BatchConfirmModal from './BatchConfirmModal';
 
 import AgentAvatar from './AgentAvatar';
+
+type LaunchMode = 'manual' | 'batch';
 
 interface SetupPanelProps {
   setup: SessionSetup;
@@ -23,28 +31,6 @@ interface SetupPanelProps {
   onBack?: () => void;
 }
 
-const getNodeDisplayName = (nodeId: string, focalNode: string, opponentNode: string): string => {
-  if (nodeId === focalNode) return 'Focal';
-  if (nodeId === opponentNode) return 'Partner';
-  
-  const focalGroup = AGENTS[focalNode as AgentId].group;
-  const isSameGroup = AGENTS[nodeId as AgentId].group === focalGroup;
-  
-  const categoryNodes = Object.values(AGENTS).filter(a => {
-    if (a.id === focalNode || a.id === opponentNode) return false;
-    return (a.group === focalGroup) === isSameGroup;
-  }).sort((a, b) => a.id.localeCompare(b.id));
-
-  const baseName = isSameGroup ? 'In-Group' : 'Out-Group';
-  
-  if (categoryNodes.length > 1) {
-    const index = categoryNodes.findIndex(a => a.id === nodeId) + 1;
-    return `${baseName} ${index}`;
-  }
-  
-  return baseName;
-};
-
 const SetupPanel: React.FC<SetupPanelProps> = ({
   setup,
   setSetup,
@@ -58,11 +44,23 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   readOnly = false,
   onBack,
 }) => {
+  const navigate = useNavigate();
   const [showConfirmModal, setShowConfirmModal] = React.useState(false);
+  
+  // Batch mode state
+  const [launchMode, setLaunchMode] = React.useState<LaunchMode>('manual');
+  const [batchEdgeCount, setBatchEdgeCount] = React.useState(3);
+  const [groupName, setGroupName] = React.useState('');
+  const [groupDescription, setGroupDescription] = React.useState('');
+  const [showBatchConfirmModal, setShowBatchConfirmModal] = React.useState(false);
+  const [isBatchCreating, setIsBatchCreating] = React.useState(false);
 
   const k = setup.activeEdgeIds.length;
   const scenariosCount = Math.pow(2, k);
   const isHighLoad = k > 4;
+  
+  // Batch mode combination count
+  const batchCombinationCount = combinationCount(12, batchEdgeCount);
 
   const handleFocalGroupChange = (group: string) => {
     setSetup((prev) => ({
@@ -91,6 +89,42 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
     setIsSaving(false);
   };
 
+  const handleBatchLaunch = async () => {
+    setIsBatchCreating(true);
+    setShowBatchConfirmModal(false);
+    
+    try {
+      const finalGroupName = groupName || `Batch k=${batchEdgeCount} (${new Date().toLocaleDateString('en-US')})`;
+      
+      const result = await createBatchSessions(
+        finalGroupName,
+        batchEdgeCount,
+        setup.focalNode,
+        setup.opponentNode,
+        setup.sampleSize,
+        groupDescription || undefined
+      );
+      
+      toast.success(
+        `Successfully created ${result.sessionsCreated} sessions!`,
+        { duration: 5000 }
+      );
+      
+      // Navigate to group details page
+      navigate(`/admin/groups/${result.groupId}`);
+      
+      // Reset batch parameters
+      setGroupName('');
+      setGroupDescription('');
+      
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Batch creation failed: ${message}`);
+    } finally {
+      setIsBatchCreating(false);
+    }
+  };
+
   const SummaryWidget = () => (
     <div className="w-full">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
@@ -104,14 +138,14 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-emerald-700">Focal Node:</span>
               <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-900 bg-white px-2 py-0.5 rounded shadow-sm">
-                <AgentAvatar agent={AGENTS[setup.focalNode]} size={16} />
+                <AgentAvatar agent={AGENTS[setup.focalNode as AgentId]} size={16} />
                 {getNodeDisplayName(setup.focalNode, setup.focalNode, setup.opponentNode)}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-emerald-700">Partner Node:</span>
               <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-900 bg-white px-2 py-0.5 rounded shadow-sm">
-                <AgentAvatar agent={AGENTS[setup.opponentNode]} size={16} />
+                <AgentAvatar agent={AGENTS[setup.opponentNode as AgentId]} size={16} />
                 {getNodeDisplayName(setup.opponentNode, setup.focalNode, setup.opponentNode)}
               </span>
             </div>
@@ -148,17 +182,74 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
       
       {/* Column 1 (Left): Session Configuration & Graph */}
       <div className="w-full xl:w-1/2 flex flex-col gap-4 xl:overflow-y-auto pr-2">
+        
+        {/* Launch Mode Selector */}
+        {!readOnly && (
+          <div className={`p-4 bg-gradient-to-r rounded-xl border ${
+            launchMode === 'manual'
+              ? 'from-green-50 to-emerald-50 border-green-200'
+              : 'from-purple-50 to-indigo-50 border-purple-200'
+          }`}>
+            <label className={`block text-sm font-semibold mb-3 uppercase ${
+              launchMode === 'manual' ? 'text-green-900' : 'text-purple-900'
+            }`}>
+              Launch Mode
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setLaunchMode('manual')}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  launchMode === 'manual'
+                    ? 'border-green-500 bg-green-50 shadow-md'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                  </svg>
+                  <span className="font-bold text-sm">Manual</span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Manually select edges, launch single session
+                </p>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setLaunchMode('batch')}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  launchMode === 'batch'
+                    ? 'border-purple-500 bg-purple-50 shadow-md'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
+                  </svg>
+                  <span className="font-bold text-sm">Batch</span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Auto-enumerate all combinations, batch launch
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
+        
         <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-            Configuration
+          <h3 className="text-sm font-semibold text-gray-500 tracking-wider mb-3 uppercase">
+            {launchMode === 'batch' ? 'Basic Configuration' : 'Configuration'}
           </h3>
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Focal Node Group</label>
+                <label className="block text-xs text-gray-500 mb-1">Focal Node</label>
                 <div className={`grid grid-cols-2 gap-1.5 ${readOnly ? 'opacity-80 pointer-events-none' : ''}`}>
                   {['A', 'B'].map((group) => {
-                    const isSelected = AGENTS[setup.focalNode].group === group;
+                    const isSelected = AGENTS[setup.focalNode as AgentId].group === group;
                     const representativeAgent = AGENTS[group === 'A' ? 'A1' : 'B3'];
                     return (
                       <button
@@ -171,17 +262,17 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                         `}
                       >
                         <AgentAvatar agent={representativeAgent} size={28} />
-                        <span className={`text-xs font-semibold ${isSelected ? 'text-amber-800' : 'text-gray-600'}`}>Group {group}</span>
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-amber-800' : 'text-gray-600'}`}>{group === 'A' ? '國民黨' : '民進黨'}</span>
                       </button>
                     );
                   })}
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Partner Node Group</label>
+                <label className="block text-xs text-gray-500 mb-1">Partner Node</label>
                 <div className={`grid grid-cols-2 gap-1.5 ${readOnly ? 'opacity-80 pointer-events-none' : ''}`}>
                    {['A', 'B'].map((group) => {
-                    const isSelected = AGENTS[setup.opponentNode].group === group;
+                    const isSelected = AGENTS[setup.opponentNode as AgentId].group === group;
                     const representativeAgent = AGENTS[group === 'A' ? 'A2' : 'B4'];
                     return (
                       <button
@@ -194,7 +285,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                         `}
                       >
                         <AgentAvatar agent={representativeAgent} size={28} />
-                        <span className={`text-xs font-semibold ${isSelected ? 'text-gray-800' : 'text-gray-600'}`}>Group {group}</span>
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-gray-800' : 'text-gray-600'}`}>{group === 'A' ? '國民黨' : '民進黨'}</span>
                       </button>
                     );
                   })}
@@ -203,7 +294,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             </div>
 
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Target Sample Size</label>
+              <label className="block text-xs text-gray-500 mb-1">Target Size</label>
               <div className="flex items-center gap-3">
                 <div className={`flex-1 mx-2 flex items-center h-full pt-[2px] ${readOnly ? 'opacity-50 cursor-not-allowed' : ''}`}>
                   <Slider
@@ -226,46 +317,110 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           </div>
         </div>
 
-        <div className={`flex-1 bg-gray-100 rounded-2xl relative flex items-center justify-center p-4 overflow-hidden transition-all duration-300 min-h-[400px] border border-gray-200 shadow-inner ${generatedUrl ? 'blur-sm pointer-events-none' : ''}`}>
-          <div className="w-full h-full bg-white rounded-2xl shadow-sm p-4 md:p-8 flex items-center justify-center overflow-hidden mx-auto">
-            <NetworkGraph
-              mode="admin"
-              setup={setup}
-              onEdgeClick={readOnly ? () => { } : onEdgeToggle}
-              // Node click interactions disabled in admin mode as requested
-            />
+        {/* Batch Mode Configuration */}
+        {launchMode === 'batch' && !readOnly && (
+          <BatchModeConfig
+            batchEdgeCount={batchEdgeCount}
+            setBatchEdgeCount={setBatchEdgeCount}
+            groupName={groupName}
+            setGroupName={setGroupName}
+            groupDescription={groupDescription}
+            setGroupDescription={setGroupDescription}
+            sampleSize={setup.sampleSize}
+          />
+        )}
+
+        {/* Network Graph (Manual Mode Only) */}
+        {launchMode === 'manual' && (
+          <div className={`flex-1 bg-gray-100 rounded-2xl relative flex items-center justify-center p-4 overflow-hidden transition-all duration-300 min-h-[400px] border border-gray-200 shadow-inner ${generatedUrl ? 'blur-sm pointer-events-none' : ''}`}>
+            <div className="w-full h-full bg-white rounded-2xl shadow-sm p-4 md:p-8 flex items-center justify-center overflow-hidden mx-auto">
+              <NetworkGraph
+                mode="admin"
+                setup={setup}
+                onEdgeClick={readOnly ? () => { } : onEdgeToggle}
+                // Node click interactions disabled in admin mode as requested
+              />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Column 2 (Right): Summary Preview & Complexity Check & Generate Button */}
       <div className="w-full xl:w-1/2 flex flex-col gap-6 xl:overflow-y-auto pr-2 xl:border-l border-gray-200 xl:px-6">
-        <div className="p-5 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl border border-emerald-100 shadow-inner">
-          <h3 className="text-sm font-semibold text-emerald-800 uppercase tracking-wider mb-4">
-            Setting Preview
-          </h3>
-          <SummaryWidget />
-        </div>
+        {/* Display Setting Preview in Manual Mode Only */}
+        {launchMode === 'manual' && (
+          <div className="p-5 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl border border-emerald-100 shadow-inner">
+            <h3 className="text-sm font-semibold text-emerald-800 uppercase tracking-wider mb-4">
+              Setting Preview
+            </h3>
+            <SummaryWidget />
+          </div>
+        )}
 
-        <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
-          <h3 className="text-sm font-semibold text-blue-800 uppercase tracking-wider mb-2">
-            Complexity Check
-          </h3>
-          <div className="flex justify-between items-center text-sm mb-1">
-            <span># of Active Edges (k):</span>
-            <span className="font-mono font-bold">{k}</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span># of Total Scenarios (2^k):</span>
-            <span className="font-mono font-bold">{scenariosCount}</span>
-          </div>
-          {isHighLoad && (
-            <div className="mt-3 p-2 bg-red-100 text-red-700 text-xs rounded border border-red-200 flex items-start">
-              <span className="mr-2">!</span>
-              Cognitive Load Alert: {scenariosCount} scenarios may be too fatiguing for a single session.
+        {launchMode === 'manual' && (
+          <div className="p-4 bg-green-50 rounded-lg border border-green-100">
+            <h3 className="text-sm font-semibold text-green-800 uppercase tracking-wider mb-2">
+              Complexity Check
+            </h3>
+            <div className="flex justify-between items-center text-sm mb-1">
+              <span># of Active Edges (k):</span>
+              <span className="font-mono font-bold">{k}</span>
             </div>
-          )}
-        </div>
+            <div className="flex justify-between items-center text-sm">
+              <span># of Total Scenarios (2^k):</span>
+              <span className="font-mono font-bold">{scenariosCount}</span>
+            </div>
+            {isHighLoad && (
+              <div className="mt-3 p-2 bg-red-100 text-red-700 text-xs rounded border border-red-200 flex items-start">
+                <span className="mr-2">!</span>
+                Cognitive Load Alert: {scenariosCount} scenarios may be too fatiguing for a single session.
+              </div>
+            )}
+          </div>
+        )}
+
+        {launchMode === 'batch' && (
+          <div className="p-4 bg-purple-50 rounded-lg border border-purple-100">
+           <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider mb-2">
+             Batch Information
+           </h3>
+           <div className="space-y-1.5">
+             <div className="flex justify-between items-center text-sm">
+               <span>Focal Group:</span>
+               <span className="font-mono font-bold text-purple-700">{getFocalGroupLabel(setup.focalNode)}</span>
+             </div>
+             <div className="flex justify-between items-center text-sm">
+               <span>Partner Group:</span>
+               <span className="font-mono font-bold text-purple-700">{getPartnerGroupLabel(setup.opponentNode)}</span>
+             </div>
+             <div className="flex justify-between items-center text-sm">
+               <span>Target Size per Session:</span>
+               <span className="font-mono font-bold text-purple-700">{setup.sampleSize}</span>
+             </div>
+             {/* Add a divider  */}
+             <div className="border-t border-purple-200 my-2"></div>
+             <div className="flex justify-between items-center text-sm">
+               <span>Edge Count (k):</span>
+               <span className="font-mono font-bold text-purple-700">{batchEdgeCount}</span>
+             </div>
+             <div className="flex justify-between items-center text-sm">
+               <span>Sessions to Create:</span>
+               <span className="font-mono font-bold text-purple-700">{batchCombinationCount}</span>
+             </div>
+             <div className="border-t border-purple-200 my-2"></div>
+             <div className="flex justify-between items-center text-sm">
+               <span>Total Participants:</span>
+               <span className="font-mono font-bold text-purple-700">{batchCombinationCount * setup.sampleSize}</span>
+             </div>
+           </div>
+            {batchEdgeCount >= 5 && (
+              <div className="mt-3 p-2 bg-amber-100 text-amber-700 text-xs rounded border border-amber-200 flex items-start">
+                <span className="mr-2">!</span>
+                Warning: High combination count, creation may take longer.
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="pt-2 mt-auto">
           {readOnly ? (
@@ -278,14 +433,30 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           ) : (
             <>
               <button
-                onClick={() => setShowConfirmModal(true)}
-                disabled={k === 0 || isSaving}
-                className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${k === 0 || isSaving
-                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
-                  }`}
+                onClick={() => {
+                  if (launchMode === 'batch') {
+                    setShowBatchConfirmModal(true);
+                  } else {
+                    setShowConfirmModal(true);
+                  }
+                }}
+                disabled={
+                  (launchMode === 'manual' && k === 0) || 
+                  isSaving || 
+                  isBatchCreating
+                }
+                className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
+                  ((launchMode === 'manual' && k === 0) || isSaving || isBatchCreating)
+                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    : launchMode === 'batch'
+                    ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-purple-200'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+                }`}
               >
-                {isSaving ? 'Generating...' : 'Launch Session'}
+                {isBatchCreating ? 'Creating Batch...' :
+                 isSaving ? 'Generating...' : 
+                 launchMode === 'batch' ? 'Batch Launch Sessions' :
+                 'Launch Session'}
               </button>
 
               {showConfirmModal && !generatedUrl && (
@@ -315,6 +486,19 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                   </div>
                 </div>
               )}
+              
+              {/* Batch Confirmation Modal */}
+              <BatchConfirmModal
+                show={showBatchConfirmModal || isBatchCreating}
+                onClose={() => setShowBatchConfirmModal(false)}
+                onConfirm={handleBatchLaunch}
+                batchEdgeCount={batchEdgeCount}
+                groupName={groupName}
+                sampleSize={setup.sampleSize}
+                focalNode={setup.focalNode}
+                opponentNode={setup.opponentNode}
+                isBatchCreating={isBatchCreating}
+              />
               
               {generatedUrl && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4 transition-all opacity-100 visible">
@@ -363,7 +547,13 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             </>
           )}
 
-          {!readOnly && k === 0 && !generatedUrl && <p className="text-center text-xs text-gray-400 mt-2">Select at least one edge on the graph to begin.</p>}
+          {!readOnly && !generatedUrl && (
+            launchMode === 'manual' && k === 0 ? (
+              <p className="text-center text-xs text-gray-400 mt-2">
+                Select at least one edge on the graph to begin.
+              </p>
+            ) : null
+          )}
         </div>
       </div>
     </div>

@@ -7,8 +7,6 @@ import Login from './components/Login';
 import NotFound from './components/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import SurveyWelcome from './components/SurveyWelcome';
-import GroupsTable from './components/GroupsTable';
-import GroupDetailView from './components/GroupDetailView';
 import { SessionSetup, SurveyResult } from './types';
 import {
   completeSurveyEntry,
@@ -20,8 +18,6 @@ import {
 } from './utils/graphqlClient';
 import { loadSession, saveSession, clearSession } from './utils/surveySession';
 import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
-import { SessionRecorder } from './components/SessionRecorder';
-import { SessionPlayback } from './components/SessionPlayback';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -246,7 +242,6 @@ const App: React.FC = () => {
 
   return (
     <div className="antialiased text-gray-900">
-      {(location.pathname.startsWith('/survey') && restoredEntryId) && <SessionRecorder sessionId={restoredEntryId} />}
       <Toaster position="top-center" toastOptions={{ duration: TOAST_DURATION_MS }} />
       {backendNotice && (
         <div className="mx-auto max-w-5xl mt-4 px-4">
@@ -270,14 +265,6 @@ const App: React.FC = () => {
           element={
             <ProtectedRoute>
               <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
-            </ProtectedRoute>
-          }
-        />
-        <Route 
-          path="/admin/replay/:sessionId"
-          element={
-            <ProtectedRoute>
-              <SessionPlayback />
             </ProtectedRoute>
           }
         />

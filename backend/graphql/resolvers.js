@@ -8,6 +8,7 @@ import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
 import { generateEdgeCombinations, validateBatchParams } from '../../utils/combinations.js';
 import { generateDesignMatrix } from '../../utils/mathBackend.js';
+import { balancedSelect } from '../../utils/scenarioSelection.js';
 
 function requireDb() {
   if (!isDbConfigured()) {
@@ -446,6 +447,232 @@ export const resolvers = {
     },
     
     // ========================================================================
+    // Mode 3: Mixed Mode (NEW)
+    // ========================================================================
+    
+    createMixedGroup: async (_, { input, name, description }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      const { maxK, scenariosPerSession, targetSizePerScenario, focalNode, opponentNode } = input;
+      
+      // 驗證參數
+      if (!maxK || maxK < 1 || maxK > 12) {
+        throw new Error('maxK must be between 1 and 12');
+      }
+      
+      if (!scenariosPerSession || scenariosPerSession < 1) {
+        throw new Error('scenariosPerSession must be at least 1');
+      }
+      
+      if (!targetSizePerScenario || targetSizePerScenario < 1) {
+        throw new Error('targetSizePerScenario must be at least 1');
+      }
+      
+      console.log(`[createMixedGroup] Creating Mixed Mode group: maxK=${maxK}, scenariosPerSession=${scenariosPerSession}, targetSize=${targetSizePerScenario}`);
+      
+      // 1. 建立 SessionGroup
+      const group = await SessionGroupModel.create({
+        _id: randomUUID(),
+        name,
+        description: description || null,
+        config: {
+          maxK,
+          scenariosPerSession,
+          targetSizePerScenario,
+          focalNode,
+          opponentNode,
+          sampleSize: 1, // Mixed mode: 每個 session 一個參與者
+        },
+        totalSessions: 0, // 動態創建，初始為 0
+        totalScenarios: 0, // 稍後更新
+        status: 'creating',
+      });
+      
+      const groupId = String(group._id);
+      
+      // 2. 生成 scenario pool: 所有 k=1..maxK 的組合
+      const allEdges = [
+        { id: 'A1-A2' }, { id: 'A1-B3' }, { id: 'A1-B4' },
+        { id: 'A2-A1' }, { id: 'A2-B3' }, { id: 'A2-B4' },
+        { id: 'B3-A1' }, { id: 'B3-A2' }, { id: 'B3-B4' },
+        { id: 'B4-A1' }, { id: 'B4-A2' }, { id: 'B4-B3' },
+      ];
+      
+      const scenariosPool = [];
+      
+      for (let k = 1; k <= maxK; k++) {
+        const combinations = generateEdgeCombinations(allEdges, k);
+        console.log(`[createMixedGroup] k=${k}: ${combinations.length} combinations`);
+        
+        for (const combo of combinations) {
+          const designMatrix = generateDesignMatrix(combo);
+          
+          for (let index = 0; index < designMatrix.length; index++) {
+            const scenario = designMatrix[index];
+            scenariosPool.push({
+              _id: randomUUID(),
+              focalNode,
+              opponentNode,
+              activeEdgeIds: combo,
+              edgeStates: scenario.edgeStates,
+              scenarioIndex: index,
+              groupId,
+              setupId: null,
+              targetSize: targetSizePerScenario,
+              responseCount: 0,
+              status: 'active',
+            });
+          }
+        }
+      }
+      
+      console.log(`[createMixedGroup] Generated ${scenariosPool.length} scenarios`);
+      
+      // 3. 批量插入 scenarios
+      await ScenarioModel.insertMany(scenariosPool);
+      console.log(`[createMixedGroup] ✓ Inserted ${scenariosPool.length} Scenario documents`);
+      
+      // 4. 更新 group 統計並啟動
+      await SessionGroupModel.updateOne(
+        { _id: groupId },
+        {
+          $set: {
+            totalScenarios: scenariosPool.length,
+            status: 'active'
+          }
+        }
+      );
+      
+      // 5. 估算需要多少參與者
+      const estimatedSessions = Math.ceil(
+        (scenariosPool.length * targetSizePerScenario) / scenariosPerSession
+      );
+      
+      // 6. 生成 master URL
+      const origin = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
+      const masterUrl = `${origin}/survey/welcome?groupId=${groupId}&mode=mixed`;
+      
+      console.log(`[createMixedGroup] ✓ Group created: ${groupId}`);
+      console.log(`[createMixedGroup] Total scenarios: ${scenariosPool.length}`);
+      console.log(`[createMixedGroup] Estimated sessions: ${estimatedSessions}`);
+      console.log(`[createMixedGroup] Master URL: ${masterUrl}`);
+      
+      return {
+        groupId,
+        totalScenarios: scenariosPool.length,
+        estimatedSessions,
+        masterUrl,
+      };
+    },
+    
+    startMixedSession: async (_, { groupId, participantId }, context) => {
+      if (!context?.isTurnstileVerified) {
+        throw new Error('Turnstile verification required before starting survey.');
+      }
+      
+      requireDb();
+      await connectToDatabase();
+      
+      console.log(`[startMixedSession] Starting session for participant: ${participantId || 'anonymous'}`);
+      
+      // 1. 檢查 group 是否存在且為 active
+      const group = await SessionGroupModel.findById(groupId);
+      if (!group) {
+        throw new Error('Group not found');
+      }
+      
+      if (group.status !== 'active') {
+        throw new Error(`Group is ${group.status}, cannot create new sessions`);
+      }
+      
+      const config = group.config || {};
+      const scenariosPerSession = config.scenariosPerSession || 20;
+      
+      // 2. 檢查是否已有該參與者的 session (resume capability)
+      if (participantId) {
+        const existingSession = await SessionModel.findOne({
+          groupId,
+          'metadata.participantId': participantId,
+        });
+        
+        if (existingSession) {
+          console.log(`[startMixedSession] Found existing session: ${existingSession._id}`);
+          
+          // 返回現有 session 的 scenarios
+          const scenarioDocs = await ScenarioModel.find({
+            _id: { $in: existingSession.scenarioIds }
+          }).lean();
+          const scenarios = await Promise.all(scenarioDocs.map(s => toScenarioGraph(s)));
+          
+          return {
+            sessionId: String(existingSession._id),
+            assignedScenarios: scenarios,
+          };
+        }
+      }
+      
+      // 3. 使用 balanced selection 策略選擇 scenarios
+      console.log(`[startMixedSession] Selecting ${scenariosPerSession} scenarios...`);
+      
+      const candidateScenarios = await ScenarioModel
+        .find({
+          groupId,
+          status: 'active'
+        })
+        .lean();
+      
+      console.log(`[startMixedSession] Found ${candidateScenarios.length} active scenarios`);
+      
+      if (candidateScenarios.length === 0) {
+        throw new Error('No active scenarios available in this group');
+      }
+      
+      // 使用 balanced selection 策略
+      const selectedScenarioIds = balancedSelect(candidateScenarios, scenariosPerSession);
+      
+      if (selectedScenarioIds.length === 0) {
+        throw new Error('Failed to select scenarios');
+      }
+      
+      console.log(`[startMixedSession] Selected ${selectedScenarioIds.length} scenarios`);
+      
+      // 4. 建立個人 session
+      const session = await SessionModel.create({
+        _id: randomUUID(),
+        scenarioIds: selectedScenarioIds,
+        focalNode: config.focalNode,
+        opponentNode: config.opponentNode,
+        sampleSize: 1, // Mixed mode: 每個 session 只有一個參與者
+        groupId,
+        submissionCount: 0,
+        metadata: {
+          participantId: participantId || null,
+          createdFor: 'mixed',
+        },
+      });
+      
+      console.log(`[startMixedSession] ✓ Created session: ${session._id}`);
+      
+      // 5. 更新 group 的 totalSessions
+      await SessionGroupModel.updateOne(
+        { _id: groupId },
+        { $inc: { totalSessions: 1 } }
+      );
+      
+      // 6. 返回 session 和分配的 scenarios
+      const scenarioDocs = await ScenarioModel.find({
+        _id: { $in: selectedScenarioIds }
+      }).lean();
+      const scenarios = await Promise.all(scenarioDocs.map(s => toScenarioGraph(s)));
+      
+      return {
+        sessionId: String(session._id),
+        assignedScenarios: scenarios,
+      };
+    },
+    
+    // ========================================================================
     // Unified Survey Flow (REFACTORED)
     // ========================================================================
     
@@ -546,6 +773,34 @@ export const resolvers = {
         submission.sessionId,
         { $inc: { submissionCount: 1 } }
       );
+      
+      // ** Mixed Mode: 檢查 group completion (REQ-309) **
+      const session = await SessionModel.findById(submission.sessionId);
+      if (session && session.groupId && session.metadata?.createdFor === 'mixed') {
+        console.log(`[completeSurvey] Checking Mixed Mode group completion for group: ${session.groupId}`);
+        
+        const group = await SessionGroupModel.findById(session.groupId);
+        if (group && group.config?.targetSizePerScenario) {
+          const targetSize = group.config.targetSizePerScenario;
+          
+          // 檢查有多少 scenarios 還沒達到 targetSize
+          const incompleteCount = await ScenarioModel.countDocuments({
+            groupId: session.groupId,
+            responseCount: { $lt: targetSize }
+          });
+          
+          console.log(`[completeSurvey] Incomplete scenarios: ${incompleteCount}`);
+          
+          // 如果所有 scenarios 都達到 targetSize，標記 group 為 completed
+          if (incompleteCount === 0 && group.status === 'active') {
+            await SessionGroupModel.updateOne(
+              { _id: session.groupId },
+              { $set: { status: 'completed' } }
+            );
+            console.log(`[completeSurvey] ✓ Group ${session.groupId} marked as completed!`);
+          }
+        }
+      }
       
       return toSubmissionGraph(submission);
     },

@@ -114,7 +114,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     if (mode === 'admin') {
       return setup.activeEdgeIds.includes(edgeId) ? COLORS.highlight : COLORS.edgeInactive;
     }
-    if (setup.activeEdgeIds.includes(edgeId) && scenario) {
+    // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
+    const activeEdges = scenario?.activeEdgeIds || setup.activeEdgeIds;
+    if (activeEdges.includes(edgeId) && scenario) {
       return scenario.edgeStates[edgeId] === 'give' ? COLORS.coop : COLORS.defect;
     }
     return 'transparent';
@@ -122,7 +124,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const getEdgeOpacity = (edgeId: string) => {
     if (mode === 'admin') return 1;
-    return setup.activeEdgeIds.includes(edgeId) ? 1 : 0;
+    // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
+    const activeEdges = scenario?.activeEdgeIds || setup.activeEdgeIds;
+    return activeEdges.includes(edgeId) ? 1 : 0;
   };
 
   const RADIUS = 42; // Larger nodes for better visibility
@@ -274,7 +278,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       {ALL_EDGES.map(edge => {
         const start = positions[edge.source];
         const end = positions[edge.target];
-        const isActive = setup.activeEdgeIds.includes(edge.id);
+        // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
+        const activeEdges = mode === 'survey' && scenario?.activeEdgeIds ? scenario.activeEdgeIds : setup.activeEdgeIds;
+        const isActive = activeEdges.includes(edge.id);
         const color = getEdgeColor(edge.id);
         const opacity = getEdgeOpacity(edge.id);
 
@@ -405,7 +411,9 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       {ALL_EDGES.map(edge => {
         const start = positions[edge.source];
         const end = positions[edge.target];
-        const isActive = setup.activeEdgeIds.includes(edge.id);
+        // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
+        const activeEdges = mode === 'survey' && scenario?.activeEdgeIds ? scenario.activeEdgeIds : setup.activeEdgeIds;
+        const isActive = activeEdges.includes(edge.id);
         const opacity = getEdgeOpacity(edge.id);
 
         const cp = edgeControlPoints[edge.id];

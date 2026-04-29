@@ -145,6 +145,18 @@ export const typeDefs = `#graphql
     scenariosCreated: Int!
   }
 
+  type MixedGroupResult {
+    groupId: ID!
+    totalScenarios: Int!
+    estimatedSessions: Int!
+    masterUrl: String!
+  }
+
+  type MixedSessionResult {
+    sessionId: ID!
+    assignedScenarios: [Scenario!]!
+  }
+
   # ============================================================================
   # Queries
   # ============================================================================
@@ -183,6 +195,10 @@ export const typeDefs = `#graphql
     
     # Mode 2: Batch (REFACTORED)
     createBatchSessions(input: GroupConfigInput!, name: String!, description: String): BatchLaunchResult!
+    
+    # Mode 3: Mixed (NEW)
+    createMixedGroup(input: GroupConfigInput!, name: String!, description: String): MixedGroupResult!
+    startMixedSession(groupId: ID!, participantId: String): MixedSessionResult!
     
     # Unified survey flow
     startSurvey(sessionId: ID!): Submission!

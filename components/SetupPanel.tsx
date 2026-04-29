@@ -8,14 +8,15 @@ import { AGENTS, ALL_EDGES } from '../constants';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
 import { combinationCount } from '../utils/combinations';
-import { createBatchSessions, createManualSession } from '../utils/graphqlClient';
+import { createBatchSessions, createManualSession, createMixedGroup } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import BatchModeConfig from './BatchModeConfig';
 import BatchConfirmModal from './BatchConfirmModal';
+import MixedModeConfig from './MixedModeConfig';
 
 import AgentAvatar from './AgentAvatar';
 
-type LaunchMode = 'manual' | 'batch';
+type LaunchMode = 'manual' | 'batch' | 'mixed';
 
 interface SetupPanelProps {
   setup: SessionSetup;
@@ -54,6 +55,12 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const [groupDescription, setGroupDescription] = React.useState('');
   const [showBatchConfirmModal, setShowBatchConfirmModal] = React.useState(false);
   const [isBatchCreating, setIsBatchCreating] = React.useState(false);
+  
+  // Mixed mode state
+  const [maxK, setMaxK] = React.useState(2);
+  const [scenariosPerSession, setScenariosPerSession] = React.useState(20);
+  const [targetSizePerScenario, setTargetSizePerScenario] = React.useState(30);
+  const [isMixedCreating, setIsMixedCreating] = React.useState(false);
 
   const k = setup.activeEdgeIds?.length || 0;
   const scenariosCount = Math.pow(2, k);
@@ -147,6 +154,42 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
     }
   };
 
+  const handleMixedLaunch = async () => {
+    setIsMixedCreating(true);
+    
+    try {
+      const finalGroupName = groupName || `Mixed k≤${maxK} (${new Date().toLocaleDateString('en-US')})`;
+      
+      const result = await createMixedGroup(
+        finalGroupName,
+        maxK,
+        scenariosPerSession,
+        targetSizePerScenario,
+        setup.focalNode,
+        setup.opponentNode,
+        groupDescription || undefined
+      );
+      
+      toast.success(
+        `✅ Created Mixed Mode group with ${result.totalScenarios} scenarios!`,
+        { duration: 5000 }
+      );
+      
+      // Navigate to group details page
+      navigate(`/admin/groups/${result.groupId}`);
+      
+      // Reset parameters
+      setGroupName('');
+      setGroupDescription('');
+      
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Mixed Mode creation failed: ${message}`);
+    } finally {
+      setIsMixedCreating(false);
+    }
+  };
+
   const SummaryWidget = () => (
     <div className="w-full">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
@@ -210,14 +253,16 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           <div className={`p-4 bg-gradient-to-r rounded-xl border ${
             launchMode === 'manual'
               ? 'from-green-50 to-emerald-50 border-green-200'
-              : 'from-purple-50 to-indigo-50 border-purple-200'
+              : launchMode === 'batch'
+              ? 'from-purple-50 to-indigo-50 border-purple-200'
+              : 'from-teal-50 to-cyan-50 border-teal-200'
           }`}>
             <label className={`block text-sm font-semibold mb-3 uppercase ${
-              launchMode === 'manual' ? 'text-green-900' : 'text-purple-900'
+              launchMode === 'manual' ? 'text-green-900' : launchMode === 'batch' ? 'text-purple-900' : 'text-teal-900'
             }`}>
               Launch Mode
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => setLaunchMode('manual')}
@@ -234,7 +279,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                   <span className="font-bold text-sm">Manual</span>
                 </div>
                 <p className="text-xs text-gray-600">
-                  Manually select edges, launch single session
+                  Select edges, single session
                 </p>
               </button>
               
@@ -254,7 +299,27 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                   <span className="font-bold text-sm">Batch</span>
                 </div>
                 <p className="text-xs text-gray-600">
-                  Auto-enumerate all combinations, batch launch
+                  All combinations sweep
+                </p>
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setLaunchMode('mixed')}
+                className={`p-4 rounded-lg border-2 transition-all ${
+                  launchMode === 'mixed'
+                    ? 'border-teal-500 bg-teal-50 shadow-md'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                  </svg>
+                  <span className="font-bold text-sm">Mixed</span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Cross-k balanced sampling
                 </p>
               </button>
             </div>
@@ -349,6 +414,22 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             groupDescription={groupDescription}
             setGroupDescription={setGroupDescription}
             sampleSize={setup.sampleSize}
+          />
+        )}
+
+        {/* Mixed Mode Configuration */}
+        {launchMode === 'mixed' && !readOnly && (
+          <MixedModeConfig
+            maxK={maxK}
+            setMaxK={setMaxK}
+            scenariosPerSession={scenariosPerSession}
+            setScenariosPerSession={setScenariosPerSession}
+            targetSizePerScenario={targetSizePerScenario}
+            setTargetSizePerScenario={setTargetSizePerScenario}
+            groupName={groupName}
+            setGroupName={setGroupName}
+            groupDescription={groupDescription}
+            setGroupDescription={setGroupDescription}
           />
         )}
 
@@ -458,26 +539,33 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                 onClick={() => {
                   if (launchMode === 'batch') {
                     setShowBatchConfirmModal(true);
+                  } else if (launchMode === 'mixed') {
+                    handleMixedLaunch();
                   } else {
                     setShowConfirmModal(true);
                   }
                 }}
                 disabled={
-                  (launchMode === 'manual' && k === 0) || 
-                  isSaving || 
-                  isBatchCreating
+                  (launchMode === 'manual' && k === 0) ||
+                  isSaving ||
+                  isBatchCreating ||
+                  isMixedCreating
                 }
                 className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
-                  ((launchMode === 'manual' && k === 0) || isSaving || isBatchCreating)
+                  ((launchMode === 'manual' && k === 0) || isSaving || isBatchCreating || isMixedCreating)
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : launchMode === 'batch'
                     ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-purple-200'
+                    : launchMode === 'mixed'
+                    ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-teal-200'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
                 }`}
               >
-                {isBatchCreating ? 'Creating Batch...' :
-                 isSaving ? 'Generating...' : 
+                {isMixedCreating ? 'Creating Mixed Group...' :
+                 isBatchCreating ? 'Creating Batch...' :
+                 isSaving ? 'Generating...' :
                  launchMode === 'batch' ? 'Batch Launch Sessions' :
+                 launchMode === 'mixed' ? 'Create Mixed Mode Group' :
                  'Launch Session'}
               </button>
 

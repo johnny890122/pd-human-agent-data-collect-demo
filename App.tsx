@@ -13,17 +13,21 @@ import {
   fetchSession,
   saveSurveyAnswer,
   startSurvey,
+  startMixedSession,
 } from './utils/graphqlClient';
 import { loadSession, saveSession, clearSession } from './utils/surveySession';
+import { getParticipantId } from './utils/participantId';
 import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
 
 const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   
-  // URL params: only sessionId (setupId removed)
+  // URL params: sessionId for Manual/Batch, groupId+mode for Mixed
   const sessionIdFromUrl = searchParams.get('sessionId');
+  const groupIdFromUrl = searchParams.get('groupId');
+  const modeFromUrl = searchParams.get('mode');
   
   const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,6 +87,23 @@ const App: React.FC = () => {
   useEffect(() => {
     const hydrateSession = async () => {
       try {
+        // Mixed Mode: Handle groupId + mode=mixed
+        if (groupIdFromUrl && modeFromUrl === 'mixed') {
+          console.log('[App] Mixed Mode URL detected:', groupIdFromUrl);
+          
+          // Get participant ID
+          const participantId = getParticipantId();
+          console.log('[App] Participant ID:', participantId);
+          
+          // Start or resume mixed session
+          const result = await startMixedSession(groupIdFromUrl, participantId);
+          console.log('[App] Mixed session result:', result.sessionId);
+          
+          // Redirect to sessionId URL for unified flow
+          setSearchParams({ sessionId: result.sessionId });
+          return; // Let next useEffect iteration handle sessionId
+        }
+        
         if (sessionIdFromUrl) {
           // Fetch session with populated scenarios
           const fetchedSession = await fetchSession(sessionIdFromUrl);
@@ -147,7 +168,7 @@ const App: React.FC = () => {
     };
 
     hydrateSession();
-  }, [sessionIdFromUrl, navigate, location.pathname, location.search]);
+  }, [sessionIdFromUrl, groupIdFromUrl, modeFromUrl, navigate, location.pathname, location.search]);
 
   const handleSurveyStart = async (): Promise<string | undefined> => {
     try {

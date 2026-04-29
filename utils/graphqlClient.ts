@@ -274,6 +274,89 @@ export async function createBatchSessions(
 }
 
 // ============================================================================
+// Mode 3: Mixed Mode (NEW)
+// ============================================================================
+
+export interface MixedGroupResult {
+  groupId: string;
+  totalScenarios: number;
+  estimatedSessions: number;
+  masterUrl: string;
+}
+
+export interface MixedSessionResult {
+  sessionId: string;
+  assignedScenarios: Scenario[];
+}
+
+export async function createMixedGroup(
+  name: string,
+  maxK: number,
+  scenariosPerSession: number,
+  targetSizePerScenario: number,
+  focalNode: string,
+  opponentNode: string,
+  description?: string
+): Promise<MixedGroupResult> {
+  const mutation = `
+    mutation CreateMixedGroup($input: GroupConfigInput!, $name: String!, $description: String) {
+      createMixedGroup(input: $input, name: $name, description: $description) {
+        groupId
+        totalScenarios
+        estimatedSessions
+        masterUrl
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ createMixedGroup: MixedGroupResult }>(mutation, {
+    input: {
+      maxK,
+      scenariosPerSession,
+      targetSizePerScenario,
+      focalNode,
+      opponentNode,
+      sampleSize: 1, // Mixed mode: each session has one participant
+    },
+    name,
+    description: description || null,
+  });
+
+  return data.createMixedGroup;
+}
+
+export async function startMixedSession(
+  groupId: string,
+  participantId?: string
+): Promise<MixedSessionResult> {
+  const mutation = `
+    mutation StartMixedSession($groupId: ID!, $participantId: String) {
+      startMixedSession(groupId: $groupId, participantId: $participantId) {
+        sessionId
+        assignedScenarios {
+          _id
+          focalNode
+          opponentNode
+          activeEdgeIds
+          edgeStates
+          scenarioIndex
+          targetSize
+          responseCount
+          status
+        }
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ startMixedSession: MixedSessionResult }>(mutation, {
+    groupId,
+    participantId: participantId || null,
+  });
+
+  return data.startMixedSession;
+}
+
+// ============================================================================
 // NEW API: SessionGroup (Refactored)
 // ============================================================================
 

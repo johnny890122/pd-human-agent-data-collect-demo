@@ -212,7 +212,13 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const [revealedEdgeIds, setRevealedEdgeIds] = useState<Set<string>>(new Set());
   const [isDecisionPhase, setIsDecisionPhase] = useState(false);
   const [showPayoffTable, setShowPayoffTable] = useState(false);
-  const activeEdgeIds = setup.activeEdgeIds || [];
+
+  // Define scenarios and currentScenario FIRST
+  const scenarios = setup.scenarios || [];
+  const currentScenario = scenarios[scenarioIdx];
+
+  // Mixed Mode: Use currentScenario.activeEdgeIds, fallback to setup.activeEdgeIds for Manual/Batch
+  const activeEdgeIds = currentScenario?.activeEdgeIds || setup.activeEdgeIds || [];
   const allRevealed = revealedEdgeIds.size >= activeEdgeIds.length;
 
   // Reset reveal/decision state on each new scenario
@@ -220,7 +226,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     setRevealedEdgeIds(new Set());
     setIsDecisionPhase(false);
     setHasInteracted(false);
-    setSliderValue(50);
+   setSliderValue(50);
   }, [scenarioIdx]);
 
   const handleEdgeReveal = (edgeId: string) => {
@@ -234,8 +240,27 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     setRandomPositions(generateTrianglePositions(setup.focalNode as AgentId));
   }, [scenarioIdx, setup.focalNode]);
 
-  const scenarios = setup.scenarios || [];
-  const currentScenario = scenarios[scenarioIdx];
+  // Debug: Log scenarios to check for duplicates
+  React.useEffect(() => {
+    console.log('[SurveyView] Total scenarios:', scenarios.length);
+    console.log('[SurveyView] Current index:', scenarioIdx);
+    if (currentScenario) {
+      const scenarioId = '_id' in currentScenario ? currentScenario._id : String(currentScenario.id);
+      console.log('[SurveyView] Current scenario ID:', scenarioId);
+      console.log('[SurveyView] Current scenario activeEdgeIds:', currentScenario.activeEdgeIds);
+      console.log('[SurveyView] Current scenario edgeStates:', currentScenario.edgeStates);
+    }
+    
+    // Check if all scenarios are unique
+    const scenarioIds = scenarios.map(s => ('_id' in s ? s._id : String(s.id)));
+    const uniqueIds = [...new Set(scenarioIds)];
+    if (uniqueIds.length !== scenarioIds.length) {
+      console.warn('[SurveyView] ⚠️  WARNING: Duplicate scenario IDs detected!', {
+        total: scenarioIds.length,
+        unique: uniqueIds.length
+      });
+    }
+  }, [scenarioIdx, currentScenario, scenarios.length]);
 
   const handleNext = async () => {
     // Handle both Scenario (_id) and ScenarioPreview (id) types

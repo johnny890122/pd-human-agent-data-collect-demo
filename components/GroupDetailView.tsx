@@ -105,6 +105,9 @@ const GroupDetailView: React.FC = () => {
     ? group.completionPercentage
     : 0;
 
+  const isMixedMode = group.mode === 'mixed';
+  const masterUrl = isMixedMode ? `${window.location.origin}/survey/welcome?groupId=${groupId}&mode=mixed` : null;
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -140,31 +143,76 @@ const GroupDetailView: React.FC = () => {
               <div className="text-lg font-bold text-purple-700">{getPartnerGroupLabel(group.config.opponentNode)}</div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
-              <div className="text-xs text-gray-500 mb-1">Edge Count (k)</div>
-              <div className="text-2xl font-bold text-purple-700">{group.config.edgeCount || 'N/A'}</div>
+              <div className="text-xs text-gray-500 mb-1">{isMixedMode ? 'Max Edge Count (k)' : 'Edge Count (k)'}</div>
+              <div className="text-2xl font-bold text-purple-700">
+                {isMixedMode ? `≤${group.config.maxK || 'N/A'}` : (group.config.edgeCount || 'N/A')}
+              </div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
-              <div className="text-xs text-gray-500 mb-1">Total Sessions</div>
-              <div className="text-2xl font-bold text-purple-700">{group.totalSessions}</div>
+              <div className="text-xs text-gray-500 mb-1">{isMixedMode ? 'Total Scenarios' : 'Total Sessions'}</div>
+              <div className="text-2xl font-bold text-purple-700">
+                {isMixedMode ? group.totalScenarios : group.totalSessions}
+              </div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
-              <div className="text-xs text-gray-500 mb-1">Sample Size per Session</div>
-              <div className="text-2xl font-bold text-purple-700">{group.config.sampleSize}</div>
+              <div className="text-xs text-gray-500 mb-1">
+                {isMixedMode ? 'Scenarios/Session' : 'Sample Size per Session'}
+              </div>
+              <div className="text-2xl font-bold text-purple-700">
+                {isMixedMode ? group.config.scenariosPerSession : group.config.sampleSize}
+              </div>
             </div>
           </div>
 
         </div>
+
+        {/* Mixed Mode Master URL */}
+        {group.mode === 'mixed' && (
+          <div className="bg-teal-50 rounded-2xl border border-teal-200 p-6 mb-6 shadow-sm">
+            <h3 className="text-lg font-bold text-teal-900 mb-3">🔗 Master URL (Mixed Mode)</h3>
+            <p className="text-sm text-teal-700 mb-3">
+              分發此 URL 給所有參與者。每個參與者將自動獲得 {group.config.scenariosPerSession} 個平衡選擇的 scenarios。
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={`${window.location.origin}/survey/welcome?groupId=${groupId}&mode=mixed`}
+                readOnly
+                className="flex-1 px-4 py-3 bg-white border border-teal-300 rounded-lg text-sm font-mono"
+              />
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`${window.location.origin}/survey/welcome?groupId=${groupId}&mode=mixed`);
+                  toast.success('URL 已複製！');
+                }}
+                className="px-6 py-3 bg-teal-600 text-white rounded-lg text-sm font-semibold hover:bg-teal-700 transition-colors"
+              >
+                複製
+              </button>
+            </div>
+            <div className="mt-4 p-3 bg-white rounded-lg border border-teal-200">
+              <div className="text-xs text-teal-800 font-semibold mb-1">📊 Scenario Pool Information:</div>
+              <div className="text-xs text-gray-600 space-y-1">
+                <div>• Total Scenarios: <span className="font-bold">{group.totalScenarios}</span></div>
+                <div>• Target Size per Scenario: <span className="font-bold">{group.config.targetSizePerScenario}</span></div>
+                <div>• 預估參與者數: <span className="font-bold">~{Math.ceil((group.totalScenarios * (group.config.targetSizePerScenario || 1)) / (group.config.scenariosPerSession || 1))}</span></div>
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Sessions List */}
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
           <div className="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
             <h2 className="text-lg font-bold text-gray-900">
-              All Sessions ({sessions.length})
+              {group.mode === 'mixed' ? '動態創建的 Sessions' : 'All Sessions'} ({sessions.length})
             </h2>
             <button
               onClick={handleExportCSV}
               disabled={sessions.length === 0}
-              className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className={`px-4 py-2 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
+                isMixedMode ? 'bg-teal-600 hover:bg-teal-700' : 'bg-purple-600 hover:bg-purple-700'
+              }`}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -173,20 +221,31 @@ const GroupDetailView: React.FC = () => {
             </button>
           </div>
           
-          <div className="overflow-x-auto px-6 py-4">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="pb-3 font-bold text-gray-600">#</th>
-                  <th className="pb-3 font-bold text-gray-600">Session ID</th>
-                  <th className="pb-3 font-bold text-gray-600">Active Edges</th>
-                  <th className="pb-3 font-bold text-gray-600">Scenarios</th>
-                  <th className="pb-3 font-bold text-gray-600">Progress</th>
-                  <th className="pb-3 font-bold text-gray-600">Study URL</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {sessions.map((session, index) => {
+          {sessions.length === 0 && group.mode === 'mixed' ? (
+            <div className="px-6 py-12 text-center">
+              <div className="text-teal-600 text-sm font-medium mb-2">🎲 Mixed Mode: Sessions 動態創建</div>
+              <p className="text-gray-500 text-xs mb-1">
+                當參與者打開 master URL 時，系統會自動為他們創建個人 session
+              </p>
+              <p className="text-gray-400 text-xs">
+                Scenario Pool: {group.totalScenarios} scenarios
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto px-6 py-4">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="pb-3 font-bold text-gray-600">#</th>
+                    <th className="pb-3 font-bold text-gray-600">Session ID</th>
+                    <th className="pb-3 font-bold text-gray-600">Active Edges</th>
+                    <th className="pb-3 font-bold text-gray-600">Scenarios</th>
+                    <th className="pb-3 font-bold text-gray-600">Progress</th>
+                    <th className="pb-3 font-bold text-gray-600">Study URL</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {sessions.map((session, index) => {
                   const subProgress = session.sampleSize > 0
                     ? ((session.submissionCount || 0) / session.sampleSize) * 100
                     : 0;
@@ -244,6 +303,7 @@ const GroupDetailView: React.FC = () => {
               </tbody>
             </table>
           </div>
+          )}
         </div>
       </div>
     </div>

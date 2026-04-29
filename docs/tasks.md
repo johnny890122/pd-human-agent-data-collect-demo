@@ -198,7 +198,7 @@ Format: `- [ ] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
   - Creates scenarios + sessions for all C(12,k) combinations
   - [REQ-301]
 
-- [ ] **TASK-1304**: Implement Mode 3 (Mixed) resolvers ⏸️ **DEFERRED**
+- [x] **TASK-1304**: Implement Mode 3 (Mixed) resolvers ✅ **COMPLETED 2026-04-29**
   - `createMixedGroup`: generate scenario pool for k=1..maxK
   - `startMixedSession`: balanced scenario selection + session creation
   - [REQ-306, REQ-307]
@@ -232,7 +232,7 @@ Format: `- [ ] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 > **Actual effort**: 1 day
 > **Dependencies**: Phase 13 complete ✅
 
-- [ ] **TASK-1401**: Create `utils/scenarioSelection.js` ⏸️ **DEFERRED (Mixed Mode)**
+- [x] **TASK-1401**: Create `utils/scenarioSelection.js` ✅ **COMPLETED 2026-04-29**
   - `balancedSelect(scenarios, count)`: priority to low responseCount
   - `randomSelect(scenarios, count)`: pure random
   - Add configurable strategy switching
@@ -253,8 +253,8 @@ Format: `- [ ] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
   - No changes needed - pure math functions
   - [REQ-301, REQ-306]
 
-- [ ] **TASK-1404**: Add `utils/participantId.ts` ⏸️ **DEFERRED (Mixed Mode)**
-  - Generate stable participant IDs (cookie-based or fingerprint)
+- [x] **TASK-1404**: Add `utils/participantId.ts` ✅ **COMPLETED 2026-04-29**
+  - Generate stable participant IDs (localStorage-based)
   - Handle Mixed Mode uniqueness checks
   - [REQ-307]
 
@@ -276,17 +276,16 @@ Format: `- [ ] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
   - All session URLs use sessionId format
   - [REQ-301]
 
-- [ ] **TASK-1503**: Create `components/MixedModeConfig.tsx` (Mode 3)
+- [x] **TASK-1503**: Create `components/MixedModeConfig.tsx` (Mode 3) ✅ **COMPLETED 2026-04-29**
   - Form: maxK, scenariosPerSession, targetSizePerScenario
   - Real-time estimates: totalScenarios, estimatedParticipants
-  - Call `createMixedGroup` mutation
-  - Display master URL
+  - Integrated into SetupPanel
   - [REQ-306]
 
-- [ ] **TASK-1504**: Update `components/AdminView.tsx`
-  - Add "Mixed Mode" tab
-  - Update routing
-  - Add mode detection logic
+- [x] **TASK-1504**: Update `components/SetupPanel.tsx` ✅ **COMPLETED 2026-04-29**
+  - Add "Mixed Mode" launch option (3-way selector)
+  - Add Mixed Mode state management
+  - Implement handleMixedLaunch()
   - [REQ-306]
 
 - [ ] **TASK-1505**: Update `components/GroupsTable.tsx`
@@ -481,7 +480,13 @@ Format: `- [ ] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 - **Manual Mode E2E Tests**: ✅ All new API tests passing (5/5)
 - **Batch Mode E2E Tests**: ✅ All new API tests passing (66 sessions, 264 scenarios)
 - **GroupDetailView Fixed**: ✅ Updated to use group.config structure
-- **Mixed Mode (Phase 17)** ready to implement
+- **Mixed Mode CORE COMPLETED 2026-04-29**: ✅ Backend + Frontend核心功能實作完成
+  - createMixedGroup, startMixedSession resolvers
+  - Balanced selection strategy
+  - MixedModeConfig UI component
+  - App.tsx URL routing support
+  - API tests passing (288 scenarios generated)
+  - Remaining: Scenario heatmap visualization (REQ-310)
 
 ## Implementation Strategy
 

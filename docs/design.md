@@ -2,6 +2,8 @@
 
 This document describes how the PD Human-Agent Data Collect Demo is built using a **scenario-centric architecture**. Every section traces back to the requirements in [`requirements.md`](requirements.md).
 
+**Implementation Status**: 🟢 **Backend Complete** (Phase 12-14) | 🟡 **Frontend In Progress** (Phase 15-16)
+
 ---
 
 ## Overview
@@ -103,9 +105,11 @@ Submission → responses to a session's scenarios
 
 ## Data Models
 
+**Implementation Status**: ✅ **COMPLETED 2026-04-28** - All models implemented and tested
+
 UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID() }`) for `Scenario`, `Session`, and `SessionGroup`. `Submission` uses Mongoose default ObjectId.
 
-### `Scenario` (New Model - Atomic Unit)
+### `Scenario` (New Model - Atomic Unit) ✅
 
 ```javascript
 // backend/models/Scenario.js
@@ -142,7 +146,7 @@ UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID(
 
 **Maps to**: REQ-321 (Scenario as Atomic Unit)
 
-### `Session` (Refactored - Lightweight Container)
+### `Session` (Refactored - Lightweight Container) ✅
 
 ```javascript
 // backend/models/Session.js (renamed from SessionSetup)
@@ -189,7 +193,7 @@ SessionSchema.virtual('scenarios', {
 
 **Maps to**: REQ-322 (Session as Scenario Container)
 
-### `Submission` (Updated - References Scenarios by ID)
+### `Submission` (Updated - References Scenarios by ID) ✅
 
 ```javascript
 // backend/models/Submission.js
@@ -227,7 +231,7 @@ SessionSchema.virtual('scenarios', {
 
 **Maps to**: REQ-402 (Per-scenario response capture)
 
-### `SessionGroup` (Simplified - Unified Config)
+### `SessionGroup` (Simplified - Unified Config) ✅
 
 ```javascript
 // backend/models/SessionGroup.js
@@ -283,7 +287,7 @@ function getGroupMode(group) {
 
 ## Three Modes Implementation
 
-### Mode 1: Manual (Single Session)
+### Mode 1: Manual (Single Session) ✅ Backend Implemented
 
 **Admin Action**: Configure focal, opponent, edges, sampleSize
 
@@ -326,7 +330,7 @@ async function createManualSession(input) {
 
 **Maps to**: REQ-201, REQ-202
 
-### Mode 2: Batch (Multiple Sessions, Factorial Sweep)
+### Mode 2: Batch (Multiple Sessions, Factorial Sweep) ✅ Backend Implemented
 
 **Admin Action**: Configure name, k, focal, opponent, sampleSize
 
@@ -391,7 +395,7 @@ async function createBatchSessions(input) {
 
 **Maps to**: REQ-301
 
-### Mode 3: Mixed (Dynamic Session per Participant)
+### Mode 3: Mixed (Dynamic Session per Participant) ⏸️ Deferred
 
 **Admin Action**: Configure name, maxK, scenariosPerSession (S), targetSizePerScenario, focal, opponent
 
@@ -501,11 +505,13 @@ async function startMixedSession(groupId, participantId) {
 
 ---
 
-## Unified Survey Flow (All Modes)
+## Unified Survey Flow (All Modes) ✅ Backend Implemented
 
 **Critical Design Win**: The survey completion logic is **identical** for all three modes.
 
-### Start Survey
+**Implementation Status**: ✅ Resolvers completed, 15/15 tests passing. Frontend integration pending.
+
+### Start Survey ✅
 
 ```javascript
 // Unified: works for Manual, Batch, AND Mixed
@@ -534,7 +540,7 @@ async function startSurvey(sessionId) {
 
 **Maps to**: REQ-401
 
-### Save Scenario Answer
+### Save Scenario Answer ✅
 
 ```javascript
 // Unified: scenarioId is now a UUID reference
@@ -573,7 +579,7 @@ async function saveSurveyAnswer(submissionId, scenarioId, probability) {
 
 **Maps to**: REQ-402, REQ-308
 
-### Complete Survey
+### Complete Survey ✅
 
 ```javascript
 // Unified: works for all modes
@@ -621,7 +627,9 @@ async function completeSurvey(submissionId, demographics) {
 
 ## GraphQL API
 
-### New Types
+**Implementation Status**: ✅ **Backend Complete** - All types and resolvers implemented and tested
+
+### New Types ✅
 
 ```graphql
 # New: Scenario as first-class entity
@@ -1062,6 +1070,55 @@ Unchanged from previous design:
 
 ---
 
+## Implementation Progress Summary
+
+| Phase | Component | Status | Test Coverage |
+|-------|-----------|--------|---------------|
+| **Phase 12** | Data Models | ✅ **Complete** | 15/15 tests pass |
+| 12.1 | `Scenario` model | ✅ Implemented | UUID, virtual fields, atomic ops |
+| 12.2 | `Session` model | ✅ Implemented | Container, virtual populate |
+| 12.3 | `Submission` schema | ✅ Updated | UUID scenarioId, participantId |
+| 12.4 | `SessionGroup` model | ✅ Simplified | Unified config, mode detection |
+| 12.5 | TypeScript types | ✅ Updated | `types.ts`, `constants.ts` |
+| **Phase 13** | GraphQL API | ✅ **Complete** | 15/15 tests pass |
+| 13.1 | typeDefs | ✅ Implemented | New Schema with backward compat |
+| 13.2 | Manual Mode resolvers | ✅ Implemented | `createManualSession` |
+| 13.3 | Batch Mode resolvers | ✅ Refactored | `createBatchSessions` |
+| 13.4 | Unified survey flow | ✅ Implemented | startSurvey, saveSurveyAnswer, completeSurvey |
+| 13.5 | Session queries | ✅ Implemented | session, allSessions, populate |
+| **Phase 14** | Utils Layer | ✅ **Complete** | Verified |
+| 14.1 | `graphqlClient.ts` | ✅ Updated | New API functions added |
+| 14.2 | `combinations.ts` | ✅ Verified | No changes needed |
+| **Phase 15** | Admin UI | 🟡 **In Progress** | Pending |
+| 15.1 | SetupPanel | 🔄 Planning | Need to update API calls |
+| 15.2 | BatchModeConfig | ⏳ Pending | — |
+| 15.3 | GroupsTable | ⏳ Pending | — |
+| 15.4 | GroupDetailView | ⏳ Pending | — |
+| 15.5 | HistoryTable | ⏳ Pending | — |
+| **Phase 16** | Survey Flow | ⏳ **Pending** | — |
+| 16.1 | App.tsx routing | ⏳ Pending | setupId → sessionId |
+| 16.2 | SurveyView | ⏳ Pending | Use session.scenarios |
+| 16.3 | surveySession.ts | ⏳ Pending | Update storage keys |
+| 16.4 | Session Full gate | ⏳ Pending | — |
+| 16.5 | Session resume | ⏳ Pending | — |
+
+**Legend**: ✅ Complete | 🔄 In Progress | ⏳ Pending | ⏸️ Deferred
+
+**Test Results**:
+- Backend: ✅ **15/15 tests passing**
+- Frontend: 🟡 6 tests failing (expected - using old data model)
+
+---
+
 ## Next Steps (Implementation)
+
+### Immediate (Phase 15-16): Frontend Integration
+1. Update Admin UI to call new `createManualSession` API
+2. Update Survey Flow to use `sessionId` instead of `setupId`
+3. Verify all frontend components work with new data model
+4. Update and fix frontend tests
+
+### Future (Phase 17): Mixed Mode
+After Manual and Batch modes are verified, implement Mixed Mode resolver and UI.
 
 See [`tasks.md`](tasks.md) Phase 12-17 for detailed implementation checklist.

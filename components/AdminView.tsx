@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { SessionSetup, AgentId } from '../types';
 import { AGENTS } from '../constants';
 import { generateDesignMatrix } from '../utils/math';
-import { fetchAllSessionSetups, clearDatabase } from '../utils/graphqlClient';
+import { fetchAllSessions, fetchAllSessionSetups, clearDatabase } from '../utils/graphqlClient';
 import HistoryTable from './HistoryTable';
 import SetupPanel from './SetupPanel';
 import GroupsTable from './GroupsTable';
@@ -33,7 +33,25 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     if (activeTab === 'history') {
       const loadHistory = async () => {
         try {
-          const data = await fetchAllSessionSetups(true);  // 只獲取 manual sessions
+          // Fetch from NEW API (sessions collection) with populated scenarios
+          const sessions = await fetchAllSessions(true);  // excludeGroupSessions = true
+          
+          // Convert to SessionSetup format for compatibility
+          const data = sessions.map(session => ({
+            _id: session._id,
+            id: session._id,
+            scenarioIds: session.scenarioIds,
+            scenarios: session.scenarios || [],
+            focalNode: session.focalNode,
+            opponentNode: session.opponentNode,
+            activeEdgeIds: session.scenarios?.[0]?.activeEdgeIds || [],
+            sampleSize: session.sampleSize,
+            submissionCount: session.submissionCount,
+            groupId: session.groupId,
+            createdAt: session.createdAt,
+            updatedAt: session.updatedAt,
+          }));
+          
           setHistory(data);
           setHistoryPage(1);
         } catch (error) {

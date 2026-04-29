@@ -13,6 +13,8 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-04-28 | Documented i18n (REQ-501) | Reflects merged i18n commit `89a1e5d`. Specifics of supported locales TBD — flag for clarification. |
 | 2026-04-28 | **Open decision**: pending request in `plan.md` to remove RRWeb session-recording functionality entirely (citing network-blocking concerns). REQ-401, REQ-402, REQ-403 are currently documented as **implemented** but flagged for removal pending user confirmation. | See "Open Questions" below. |
 | 2026-04-28 | **MAJOR ARCHITECTURE CHANGE**: Scenario-centric data model refactor + Mixed Mode launch capability (REQ-305..REQ-309) | Bottom-up redesign: Scenario becomes the atomic unit, Session becomes a container. Enables unified handling of three launch modes without mode-specific branches. Database is clean slate — no backward compatibility required. |
+| 2026-04-28 | **BACKEND REFACTOR COMPLETE** ✅ Phase 12-14 finished | All data models implemented and tested. GraphQL API refactored for Manual & Batch modes with new Scenario-centric architecture. 15/15 backend unit tests passing. REQ-321, REQ-322, REQ-323 fully implemented. Frontend integration pending (Phase 15-16). |
+| 2026-04-29 | **LEGACY API REMOVAL COMPLETE** ✅ Phase 15-16 finished | All setupId-based legacy API removed. Manual & Batch modes now exclusively use new Session/Scenario API. URL format changed from `?setupId=` to `?sessionId=`. All frontend components updated. ~500 lines of legacy code removed. API tests passing. |
 
 ---
 
@@ -114,14 +116,14 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 ### REQ-320 — Scenario-Centric Data Model (Architecture Requirement)
 
-- **REQ-321 — Scenario as Atomic Unit.** The system MUST model `Scenario` as an independent, first-class entity with its own collection, lifecycle, and tracking. Each scenario encapsulates: (a) experiment configuration (focalNode, opponentNode, activeEdgeIds), (b) specific state (edgeStates map), (c) data collection progress (responseCount vs targetSize), (d) status (active/completed/paused).
-  - *Acceptance:* `Scenario` collection exists with UUID primary keys. Can be queried independently of `Session`. Supports scenario-level analytics and filtering.
+- **REQ-321 — Scenario as Atomic Unit.** ✅ **IMPLEMENTED 2026-04-28** The system MUST model `Scenario` as an independent, first-class entity with its own collection, lifecycle, and tracking. Each scenario encapsulates: (a) experiment configuration (focalNode, opponentNode, activeEdgeIds), (b) specific state (edgeStates map), (c) data collection progress (responseCount vs targetSize), (d) status (active/completed/paused).
+  - *Acceptance:* ✅ `Scenario` collection exists with UUID primary keys. Can be queried independently of `Session`. Supports scenario-level analytics and filtering. Implemented in `backend/models/Scenario.js`. Tested in 15/15 backend unit tests.
 
-- **REQ-322 — Session as Scenario Container.** `Session` MUST be a lightweight container that references scenarios via `scenarioIds: [String]` rather than embedding scenario data. Sessions define the participant experience (which scenarios in what order) but scenarios exist independently.
-  - *Acceptance:* `Session` documents contain only IDs, not full scenario objects. GraphQL queries populate scenarios on-demand via virtual fields or explicit populate. Multiple sessions can reference the same scenario (e.g., in testing or re-use scenarios).
+- **REQ-322 — Session as Scenario Container.** ✅ **IMPLEMENTED 2026-04-28** `Session` MUST be a lightweight container that references scenarios via `scenarioIds: [String]` rather than embedding scenario data. Sessions define the participant experience (which scenarios in what order) but scenarios exist independently.
+  - *Acceptance:* ✅ `Session` documents contain only IDs, not full scenario objects. GraphQL queries populate scenarios on-demand via `toSessionGraph` helper. Implemented in `backend/models/Session.js`. Verified with unit tests.
 
-- **REQ-323 — Unified Survey Flow.** The survey completion logic MUST be identical across all three modes (Manual, Batch, Mixed). No mode-specific conditional branches in resolvers or UI components.
-  - *Acceptance:* `startSurvey`, `saveSurveyAnswer`, `completeSurvey` resolvers handle all modes without checking a `launchMode` field. Mode differences are emergent from session composition, not explicit switches.
+- **REQ-323 — Unified Survey Flow.** ✅ **IMPLEMENTED 2026-04-28** The survey completion logic MUST be identical across all three modes (Manual, Batch, Mixed). No mode-specific conditional branches in resolvers or UI components.
+  - *Acceptance:* ✅ `startSurvey`, `saveSurveyAnswer`, `completeSurvey` resolvers handle all modes without checking a `launchMode` field. Mode differences are emergent from session composition, not explicit switches. Implemented in `backend/graphql/resolvers.js`. Tested with unified survey flow tests.
 
 ### REQ-330 — Submissions, Replay, and Database Control
 

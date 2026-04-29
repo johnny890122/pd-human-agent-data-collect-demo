@@ -37,7 +37,7 @@ const GroupsTable: React.FC = () => {
       const success = await deleteSessionGroup(groupId);
       if (success) {
         toast.success('Group deleted');
-        setGroups(groups.filter(g => g.id !== groupId));
+        setGroups(groups.filter(g => g._id !== groupId));
       } else {
         toast.error('Failed to delete');
       }
@@ -100,12 +100,11 @@ const GroupsTable: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-purple-50">
               {groups.map(group => {
-                const progress = group.totalSessions > 0 
-                  ? (group.completedSessions / group.totalSessions) * 100 
-                  : 0;
+                // Calculate completion based on completionPercentage if available
+                const progress = group.completionPercentage ?? 0;
                 
                 return (
-                  <tr key={group.id} className="hover:bg-purple-50/40 transition-colors">
+                  <tr key={group._id} className="hover:bg-purple-50/40 transition-colors">
                     <td className="py-3 font-medium text-gray-900 max-w-xs">
                       <div className="truncate" title={group.name}>
                         {group.name}
@@ -118,16 +117,16 @@ const GroupsTable: React.FC = () => {
                     </td>
                     <td className="py-3">
                       <span className="inline-flex px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-medium">
-                        {getFocalGroupLabel(group.focalNode)}
+                        {getFocalGroupLabel(group.config.focalNode)}
                       </span>
                     </td>
                     <td className="py-3">
                       <span className="inline-flex px-2 py-0.5 rounded bg-purple-100 text-purple-800 text-[10px] font-medium">
-                        {getPartnerGroupLabel(group.opponentNode)}
+                        {getPartnerGroupLabel(group.config.opponentNode)}
                       </span>
                     </td>
                     <td className="py-3 font-mono text-purple-700 font-bold text-base">
-                      {group.edgeCount}
+                      {group.config.edgeCount || '-'}
                     </td>
                     <td className="py-3">
                       <span className="font-bold text-gray-700 text-sm">
@@ -137,12 +136,12 @@ const GroupsTable: React.FC = () => {
                     <td className="py-3">
                       <div className="flex items-center gap-2 min-w-[120px]">
                         <span className="text-xs font-bold text-purple-600 whitespace-nowrap">
-                          {group.completedSessions}/{group.totalSessions}
+                          {Math.round(progress)}%
                         </span>
                         <div className="flex-1 min-w-[60px] bg-purple-100 rounded-full h-2">
-                          <div 
-                            className="bg-purple-500 h-2 rounded-full transition-all" 
-                            style={{ width: `${progress}%` }} 
+                          <div
+                            className="bg-purple-500 h-2 rounded-full transition-all"
+                            style={{ width: `${progress}%` }}
                           />
                         </div>
                       </div>
@@ -159,7 +158,7 @@ const GroupsTable: React.FC = () => {
                     <td className="py-3">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => navigate(`/admin/groups/${group.id}`)}
+                          onClick={() => navigate(`/admin/groups/${group._id}`)}
                           className="text-purple-600 hover:text-purple-800 hover:underline font-medium"
                         >
                           View

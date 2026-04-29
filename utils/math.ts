@@ -2,6 +2,12 @@ import { Scenario } from '../types';
 
 export type Point = { x: number; y: number };
 
+// Lightweight scenario representation for design matrix generation (frontend preview)
+export interface ScenarioPreview {
+  id: number;
+  edgeStates: Record<string, 'not give' | 'give'>;
+}
+
 export const clamp = (value: number, min: number, max: number): number =>
   Math.min(max, Math.max(min, value));
 
@@ -33,14 +39,14 @@ export const getBezierPoint = (t: number, p0: Point, p1: Point, p2: Point): Poin
 });
 
 /**
- * Generates a Full Factorial Design Matrix (2^k)
+ * Generates a Full Factorial Design Matrix (2^k) for frontend preview
  * @param activeEdgeIds List of edge IDs that are active factors
- * @returns Array of Scenarios
+ * @returns Array of ScenarioPreview objects (lightweight, for display only)
  */
-export const generateDesignMatrix = (activeEdgeIds: string[]): Scenario[] => {
+export const generateDesignMatrix = (activeEdgeIds: string[]): ScenarioPreview[] => {
   const k = activeEdgeIds.length;
   const totalScenarios = Math.pow(2, k);
-  const scenarios: Scenario[] = [];
+  const scenarios: ScenarioPreview[] = [];
 
   for (let i = 0; i < totalScenarios; i++) {
     const edgeStates: Record<string, 'not give' | 'give'> = {};

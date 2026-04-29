@@ -13,27 +13,34 @@ const sessionGroupSchema = new mongoose.Schema(
     name: { type: String, required: true },
     description: { type: String, required: false, default: null },
     
-    // 批次模式標記
-    batchMode: { type: Boolean, default: true },
+    // 統一配置（mode 由哪些欄位被設定來隱含判斷）
+    config: {
+      // Batch Mode 欄位
+      edgeCount: { type: Number, required: false, min: 1, max: 12 },
+      
+      // Mixed Mode 欄位
+      maxK: { type: Number, required: false, min: 1, max: 12 },
+      scenariosPerSession: { type: Number, required: false },
+      targetSizePerScenario: { type: Number, required: false },
+      
+      // 共用欄位
+      focalNode: { type: String, required: true },
+      opponentNode: { type: String, required: true },
+      sampleSize: { type: Number, required: true, default: 20 }  // Per-session target (Batch/Manual)
+    },
     
-    // 批次參數
-    edgeCount: { type: Number, required: true, min: 1, max: 12 },
-    focalNode: { type: String, required: true },
-    opponentNode: { type: String, required: true },
-    sampleSize: { type: Number, required: true, default: 20 },
-    
-    // 統計資訊
-    totalSessions: { type: Number, default: 0 },
-    completedSessions: { type: Number, default: 0 },
+    // 快取統計
+    totalSessions: { type: Number, default: 0 },       // Sessions 已建立
+    totalScenarios: { type: Number, default: 0 },      // Scenarios 已建立（Mixed Mode）
     
     // 狀態管理
-    status: { 
-      type: String, 
+    status: {
+      type: String,
       enum: ['creating', 'active', 'completed', 'archived'],
       default: 'creating'
     },
   },
-  { 
+  {
     timestamps: true,
     collection: 'sessiongroups'
   }
@@ -42,21 +49,38 @@ const sessionGroupSchema = new mongoose.Schema(
 // 索引優化
 sessionGroupSchema.index({ createdAt: -1 });
 sessionGroupSchema.index({ status: 1 });
-sessionGroupSchema.index({ batchMode: 1 });
 
-// 虛擬欄位：完成百分比
-sessionGroupSchema.virtual('completionPercentage').get(function() {
-  if (this.totalSessions === 0) return 0;
-  return (this.completedSessions / this.totalSessions) * 100;
+// 虛擬欄位：mode 偵測
+sessionGroupSchema.virtual('mode').get(function() {
+  if (this.config.maxK) return 'mixed';
+  if (this.config.edgeCount) return 'batch';
+  return 'manual';  // 或 null for standalone sessions
 });
 
-// 實例方法：更新完成數量
+// 虛擬欄位：完成百分比（依 mode 而定）
+sessionGroupSchema.virtual('completionPercentage').get(function() {
+  const mode = this.mode;
+  
+  if (mode === 'mixed') {
+    // Mixed mode: 基於 scenario-level 完成度
+    // 需要從 Scenario collection 查詢，這裡只提供 session-level 的估算
+    if (this.totalScenarios === 0) return 0;
+    // 實際計算需要在 resolver 中進行
+    return 0; // placeholder
+  } else {
+    // Batch/Manual mode: 基於 session-level 完成度
+    if (this.totalSessions === 0) return 0;
+    return (this.completedSessions / this.totalSessions) * 100;
+  }
+});
+
+// 實例方法：更新完成數量（Batch/Manual mode）
 sessionGroupSchema.methods.updateCompletedCount = async function() {
-  const SessionSetupModel = mongoose.model('SessionSetup');
+  const SessionModel = mongoose.model('Session');
   const SubmissionModel = mongoose.model('Submission');
   
   // 獲取此群組的所有 sessions
-  const sessions = await SessionSetupModel.find({ groupId: String(this._id) });
+  const sessions = await SessionModel.find({ groupId: String(this._id) });
   
   let completed = 0;
   for (const session of sessions) {
@@ -80,6 +104,10 @@ sessionGroupSchema.methods.updateCompletedCount = async function() {
   await this.save();
   return this;
 };
+
+// 確保虛擬欄位在 JSON 轉換時包含
+sessionGroupSchema.set('toJSON', { virtuals: true });
+sessionGroupSchema.set('toObject', { virtuals: true });
 
 export const SessionGroupModel =
   mongoose.models.SessionGroup ||

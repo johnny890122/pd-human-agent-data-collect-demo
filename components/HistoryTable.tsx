@@ -154,7 +154,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                     {s.id ? (
                       <button
                         type="button"
-                        onClick={() => window.open(`/survey/welcome?setupId=${s.id}`, '_blank')}
+                        onClick={() => window.open(`/survey/welcome?sessionId=${s.id}`, '_blank')}
                         className="text-green-600 hover:text-green-800 hover:underline font-medium text-[11px]"
                       >
                         Open Study
@@ -180,15 +180,14 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                                   <th className="px-3 py-2 font-medium text-gray-600">Status</th>
                                   <th className="px-3 py-2 font-medium text-gray-600">Start Time</th>
                                   <th className="px-3 py-2 font-medium text-gray-600">End Time</th>
-                                  <th className="px-3 py-2 font-medium text-gray-600">Replay</th>
                                 </tr>
                               </thead>
                               <tbody>
                                 {submissions
-                                  .filter((sub) => sub.sessionId === s.id)
+                                  .filter((sub) => sub.sessionId === s.id || sub.sessionId === s._id)
                                   .map((sub) => (
-                                    <tr key={sub.id} className="border-t border-emerald-50 hover:bg-slate-50">
-                                      <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub.id}</td>
+                                    <tr key={sub._id} className="border-t border-emerald-50 hover:bg-slate-50">
+                                      <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub._id}</td>
                                       <td className="px-3 py-2">
                                         {sub.isCompleted ? (
                                           <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800">
@@ -205,19 +204,6 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                                       </td>
                                       <td className="px-3 py-2 text-gray-500">
                                         {sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : '-'}
-                                      </td>
-                                      <td className="px-3 py-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => navigate(`/admin/replay/${sub.id}`)}
-                                          className="flex items-center gap-1 text-emerald-600 hover:text-emerald-800 hover:underline font-medium px-2 py-1 bg-emerald-50 rounded border border-emerald-100 transition-colors"
-                                        >
-                                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                          </svg>
-                                          View Replay
-                                        </button>
                                       </td>
                                     </tr>
                                   ))}

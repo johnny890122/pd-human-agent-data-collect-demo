@@ -1,5 +1,9 @@
 export type AgentId = 'A1' | 'A2' | 'B3' | 'B4';
 export type GroupId = 'A' | 'B';
+export type EdgeState = 'not give' | 'give';
+export type ScenarioStatus = 'active' | 'completed' | 'paused';
+export type SessionMode = 'manual' | 'batch' | 'mixed';
+export type GroupStatus = 'creating' | 'active' | 'completed' | 'archived';
 
 export interface Agent {
   id: AgentId;
@@ -13,37 +17,99 @@ export interface EdgeDef {
   target: AgentId;
 }
 
-export interface SessionSetup {
-  id?: string;
-  groupId?: string;
+// NEW: Scenario 作為獨立的原子單元
+export interface Scenario {
+  _id: string;  // UUID，不再是 number
+  focalNode: string;
+  opponentNode: string;
   activeEdgeIds: string[];
-  scenarios: Scenario[];
+  edgeStates: Record<string, EdgeState>;
+  scenarioIndex?: number;
+  groupId?: string | null;
+  setupId?: string | null;
+  targetSize: number;
+  responseCount: number;
+  status: ScenarioStatus;
+  completionRate?: number;  // Virtual field
+  createdAt: string;
+  updatedAt: string;
+}
+
+// REFACTORED: Session 取代 SessionSetup（輕量容器）
+export interface Session {
+  _id: string;  // UUID
+  scenarioIds: string[];  // 引用 Scenario._id 陣列
+  scenarios?: Scenario[];  // Virtual populate
   focalNode: string;
   opponentNode: string;
   sampleSize: number;
-  submissionCount?: number;
-  updatedAt?: string;
+  groupId?: string | null;
+  submissionCount: number;
+  metadata?: {
+    participantId?: string | null;
+    createdFor?: SessionMode | null;
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
+// Lightweight scenario preview for frontend (before server creation)
+export interface ScenarioPreview {
+  id: number;
+  edgeStates: Record<string, EdgeState>;
+}
+
+// 向後相容別名（逐步淘汰）
+export interface SessionSetup extends Session {
+  id?: string;  // Deprecated: use _id
+  activeEdgeIds?: string[];  // Deprecated: derived from scenarios
+  scenarios?: Scenario[] | ScenarioPreview[];  // Support both full and preview scenarios
+}
+
+// UPDATED: Submission
 export interface Submission {
-  sessionId: string;
-  edgeId: string;
+  _id: string;
+  sessionId: string;  // 引用 Session._id
+  participantId?: string | null;
   results: SurveyResult[];
   demographics?: {
-    age: number;
-    gender: string;
-    education: string;
-  };
-  isCompleted?: boolean;
+    age?: number;
+    gender?: string;
+    education?: string;
+  } | null;
+  isCompleted: boolean;
+  completedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
-
-export interface Scenario {
-  id: number;
-  edgeStates: Record<string, 'not give' | 'give'>;
-}
-
+// UPDATED: SurveyResult
 export interface SurveyResult {
-  scenarioId: number;
-  cooperationProbability: number; // 0.0 to 1.0
+  scenarioId: string;  // UUID 引用，不再是 number
+  cooperationProbability: number;  // 0.0 to 1.0
+  responseTime?: number;  // milliseconds
+  answeredAt?: string;
+}
+
+// NEW: SessionGroup with unified config
+export interface SessionGroup {
+  _id: string;
+  name: string;
+  description?: string | null;
+  config: {
+    edgeCount?: number | null;  // Batch mode
+    maxK?: number | null;  // Mixed mode
+    scenariosPerSession?: number | null;  // Mixed mode
+    targetSizePerScenario?: number | null;  // Mixed mode
+    focalNode: string;
+    opponentNode: string;
+    sampleSize: number;
+  };
+  totalSessions: number;
+  totalScenarios: number;
+  status: GroupStatus;
+  mode?: SessionMode;  // Virtual field
+  completionPercentage?: number;  // Virtual field
+  createdAt: string;
+  updatedAt: string;
 }

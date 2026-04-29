@@ -1,12 +1,13 @@
 import { connectToDatabase, isDbConfigured } from '../db.js';
 import { SessionSetupModel, SubmissionModel } from '../models/SessionSetup.js';
+import { ScenarioModel } from '../models/Scenario.js';
+import { SessionModel } from '../models/Session.js';
 import { SessionReplayModel } from '../models/SessionReplay.js';
 import { SessionGroupModel } from '../models/SessionGroup.js';
 import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
-import { generateEdgeCombinations, combinationCount, validateBatchParams } from '../../utils/combinations.js';
+import { generateEdgeCombinations, validateBatchParams } from '../../utils/combinations.js';
 import { generateDesignMatrix } from '../../utils/mathBackend.js';
-
 
 function requireDb() {
   if (!isDbConfigured()) {
@@ -14,16 +15,115 @@ function requireDb() {
   }
 }
 
+// ============================================================================
+// Helper Functions - New Data Model
+// ============================================================================
+
+async function toScenarioGraph(doc) {
+  if (!doc) return null;
+  return {
+    _id: String(doc._id),
+    focalNode: doc.focalNode,
+    opponentNode: doc.opponentNode,
+    activeEdgeIds: doc.activeEdgeIds || [],
+    edgeStates: doc.edgeStates || {},
+    scenarioIndex: doc.scenarioIndex,
+    groupId: doc.groupId || null,
+    setupId: doc.setupId || null,
+    targetSize: doc.targetSize || 0,
+    responseCount: doc.responseCount || 0,
+    status: doc.status || 'active',
+    completionRate: doc.completionRate || 0,
+    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
+  };
+}
+
+async function toSessionGraph(doc, populateScenarios = true) {
+  if (!doc) return null;
+  
+  // 如果需要 populate scenarios
+  let scenarios = [];
+  if (populateScenarios && doc.scenarioIds && doc.scenarioIds.length > 0) {
+    const scenarioDocs = await ScenarioModel.find({ _id: { $in: doc.scenarioIds } }).lean();
+    scenarios = await Promise.all(scenarioDocs.map(s => toScenarioGraph(s)));
+  }
+  
+  const submissionCount = await SubmissionModel.countDocuments({
+    sessionId: String(doc._id),
+    isCompleted: true
+  });
+  
+  return {
+    _id: String(doc._id),
+    scenarioIds: doc.scenarioIds || [],
+    scenarios,
+    focalNode: doc.focalNode,
+    opponentNode: doc.opponentNode,
+    sampleSize: doc.sampleSize || 20,
+    groupId: doc.groupId || null,
+    submissionCount,
+    metadata: doc.metadata || null,
+    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
+  };
+}
+
+function toGroupGraph(doc) {
+  if (!doc) return null;
+  
+  // Mode 偵測
+  let mode = 'manual';
+  if (doc.config) {
+    if (doc.config.maxK) mode = 'mixed';
+    else if (doc.config.edgeCount) mode = 'batch';
+  }
+  
+  return {
+    _id: String(doc._id),
+    name: doc.name,
+    description: doc.description || null,
+    config: doc.config || {},
+    totalSessions: doc.totalSessions || 0,
+    totalScenarios: doc.totalScenarios || 0,
+    status: doc.status || 'active',
+    mode,
+    completionPercentage: doc.completionPercentage || 0,
+    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
+  };
+}
+
+function toSubmissionGraph(doc) {
+  if (!doc) return null;
+  return {
+    _id: String(doc._id),
+    sessionId: doc.sessionId,
+    participantId: doc.participantId || null,
+    results: doc.results || [],
+    demographics: doc.demographics || null,
+    isCompleted: doc.isCompleted === true,
+    completedAt: doc.completedAt ? (doc.completedAt instanceof Date ? doc.completedAt.toISOString() : doc.completedAt) : null,
+    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
+    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
+  };
+}
+
+// ============================================================================
+// Helper Functions - Legacy (Backward Compatibility)
+// ============================================================================
+
 async function toSetupGraph(doc) {
   if (!doc) return null;
   const submissionCount = await SubmissionModel.countDocuments({
     sessionId: String(doc._id),
+    isCompleted: true
   });
   return {
     id: String(doc._id),
     groupId: doc.groupId || null,
-    activeEdgeIds: doc.activeEdgeIds,
-    scenarios: doc.scenarios,
+    activeEdgeIds: doc.activeEdgeIds || [],
+    scenarios: doc.scenarios || [],
     focalNode: doc.focalNode,
     opponentNode: doc.opponentNode,
     sampleSize: doc.sampleSize || 20,
@@ -32,25 +132,19 @@ async function toSetupGraph(doc) {
   };
 }
 
-function toGroupGraph(doc) {
-  if (!doc) return null;
+function mapEntry(doc) {
   return {
-    id: String(doc._id),
-    name: doc.name,
-    description: doc.description || null,
-    batchMode: doc.batchMode,
-    edgeCount: doc.edgeCount,
-    focalNode: doc.focalNode,
-    opponentNode: doc.opponentNode,
-    sampleSize: doc.sampleSize,
-    totalSessions: doc.totalSessions,
-    completedSessions: doc.completedSessions,
-    status: doc.status,
+    _id: String(doc._id),
+    id: String(doc._id),  // Keep for backward compatibility
+    sessionId: doc.sessionId,
+    edgeId: doc.edgeId || '',
+    results: doc.results || [],
+    demographics: doc.demographics || null,
+    isCompleted: doc.isCompleted === true,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
 }
-
 
 function validateResults(results) {
   for (const answer of results) {
@@ -60,61 +154,112 @@ function validateResults(results) {
   }
 }
 
-function mapEntry(doc) {
-  return {
-    id: String(doc._id),
-    sessionId: doc.sessionId,
-    edgeId: doc.edgeId,
-    results: doc.results || [],
-    demographics: doc.demographics || null,
-    isCompleted: doc.isCompleted === true,
-    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
-    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
-  };
-}
+// ============================================================================
+// Resolvers
+// ============================================================================
 
 export const resolvers = {
   JSON: GraphQLJSON,
 
   Query: {
     health: () => 'ok',
-    activeSessionSetup: async () => {
+    
+    // ========================================================================
+    // Session Queries (NEW)
+    // ========================================================================
+    
+    session: async (_, { id }) => {
       requireDb();
       await connectToDatabase();
-      const doc = await SessionSetupModel.findOne().sort({ updatedAt: -1 }).lean();
-      return await toSetupGraph(doc);
+      const doc = await SessionModel.findById(id).lean();
+      return await toSessionGraph(doc);
     },
-    sessionSetup: async (_, { id }) => {
-      requireDb();
-      await connectToDatabase();
-      const doc = await SessionSetupModel.findById(id).lean();
-      return await toSetupGraph(doc);
-    },
-    allSessionSetups: async (_, { excludeBatchSessions = false }) => {
+    
+    allSessions: async (_, { excludeGroupSessions = false }) => {
       requireDb();
       await connectToDatabase();
       
-      // 構建查詢條件
-      const query = excludeBatchSessions
-        ? { groupId: null }  // 只返回 manual sessions
-        : {};                 // 返回所有 sessions
-      
-      const docs = await SessionSetupModel.find(query).sort({ createdAt: -1 }).lean();
-      return await Promise.all(docs.map(doc => toSetupGraph(doc)));
+      const query = excludeGroupSessions ? { groupId: null } : {};
+      const docs = await SessionModel.find(query).sort({ createdAt: -1 }).lean();
+      return await Promise.all(docs.map(doc => toSessionGraph(doc)));
     },
-    recentSubmissions: async (_, { limit }) => {
+    
+    sessionsByGroup: async (_, { groupId }) => {
+      requireDb();
+      await connectToDatabase();
+      const docs = await SessionModel.find({ groupId }).sort({ createdAt: 1 }).lean();
+      return await Promise.all(docs.map(doc => toSessionGraph(doc)));
+    },
+    
+    activeSession: async () => {
+      requireDb();
+      await connectToDatabase();
+      const doc = await SessionModel.findOne().sort({ updatedAt: -1 }).lean();
+      return await toSessionGraph(doc);
+    },
+    
+    // ========================================================================
+    // Scenario Queries (NEW)
+    // ========================================================================
+    
+    scenario: async (_, { id }) => {
+      requireDb();
+      await connectToDatabase();
+      const doc = await ScenarioModel.findById(id).lean();
+      return await toScenarioGraph(doc);
+    },
+    
+    scenarios: async (_, { groupId, status, limit }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      const query = {};
+      if (groupId) query.groupId = groupId;
+      if (status) query.status = status;
+      
+      let queryBuilder = ScenarioModel.find(query).sort({ createdAt: 1 });
+      if (limit) queryBuilder = queryBuilder.limit(limit);
+      
+      const docs = await queryBuilder.lean();
+      return await Promise.all(docs.map(doc => toScenarioGraph(doc)));
+    },
+    
+    // ========================================================================
+    // SessionGroup Queries
+    // ========================================================================
+    
+    sessionGroup: async (_, { id }) => {
+      requireDb();
+      await connectToDatabase();
+      const doc = await SessionGroupModel.findById(id).lean();
+      return toGroupGraph(doc);
+    },
+    
+    allSessionGroups: async () => {
+      requireDb();
+      await connectToDatabase();
+      const docs = await SessionGroupModel.find({}).sort({ createdAt: -1 }).lean();
+      return docs.map(doc => toGroupGraph(doc));
+    },
+    
+    // ========================================================================
+    // Submission Queries
+    // ========================================================================
+    
+    recentSubmissions: async (_, { limit = 20 }) => {
       requireDb();
       await connectToDatabase();
       const docs = await SubmissionModel.find({})
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
-      return docs.map((doc) => ({
-        ...mapEntry(doc),
-        isCompleted: doc.isCompleted === true,
-      }));
-
+      return docs.map(doc => toSubmissionGraph(doc));
     },
+    
+    // ========================================================================
+    // Session Replay (pending removal per REQ-413)
+    // ========================================================================
+    
     getSessionReplay: async (_, { sessionId }) => {
       requireDb();
       await connectToDatabase();
@@ -129,182 +274,90 @@ export const resolvers = {
       }
       return allEvents;
     },
-    sessionGroup: async (_, { id }) => {
-      requireDb();
-      await connectToDatabase();
-      const doc = await SessionGroupModel.findById(id).lean();
-      return toGroupGraph(doc);
-    },
-    allSessionGroups: async () => {
-      requireDb();
-      await connectToDatabase();
-      const docs = await SessionGroupModel.find({}).sort({ createdAt: -1 }).lean();
-      return docs.map(doc => toGroupGraph(doc));
-    },
-    sessionsByGroup: async (_, { groupId }) => {
-      requireDb();
-      await connectToDatabase();
-      const docs = await SessionSetupModel.find({ groupId }).sort({ createdAt: 1 }).lean();
-      return await Promise.all(docs.map(doc => toSetupGraph(doc)));
-    },
+    
   },
+
   Mutation: {
-    saveSessionSetup: async (_, { setup }) => {
-      requireDb();
-      await connectToDatabase();
-
-      // We create a new setup each time or update the last one? 
-      // Given the user removed 'key', maybe they want a history.
-      // I'll create a new one to be safe, or update the most recent.
-      // Let's create a new one as it's cleaner without a key.
-      const doc = await SessionSetupModel.create({
-        _id: randomUUID(),
-        activeEdgeIds: setup.activeEdgeIds,
-        scenarios: setup.scenarios,
-        focalNode: setup.focalNode,
-        opponentNode: setup.opponentNode,
-        sampleSize: setup.sampleSize,
-      });
-
-      return await toSetupGraph(doc.toObject());
-    },
-    startSurveyEntry: async (_, { sessionId, edgeId }, context) => {
-      if (!context?.isTurnstileVerified) {
-        throw new Error('Turnstile verification required before starting survey.');
-      }
-
-      requireDb();
-      await connectToDatabase();
-
-      const doc = await SubmissionModel.create({
-        sessionId,
-        edgeId,
-        results: [],
-        demographics: null,
-        isCompleted: false,
-      });
-
-      return mapEntry(doc);
-    },
-    saveSurveyAnswer: async (_, { entryId, answer }) => {
-      requireDb();
-      validateResults([answer]);
-      await connectToDatabase();
-
-      const existing = await SubmissionModel.findById(entryId);
-      if (!existing) {
-        throw new Error('Survey entry not found.');
-      }
-
-      const results = Array.isArray(existing.results) ? [...existing.results] : [];
-      const idx = results.findIndex((item) => item.scenarioId === answer.scenarioId);
-      if (idx >= 0) {
-        results[idx] = answer;
-      } else {
-        results.push(answer);
-      }
-      results.sort((a, b) => a.scenarioId - b.scenarioId);
-
-      existing.results = results;
-      await existing.save();
-      return mapEntry(existing);
-    },
-    completeSurveyEntry: async (_, { entryId, demographics }) => {
-      requireDb();
-      await connectToDatabase();
-
-      const doc = await SubmissionModel.findByIdAndUpdate(
-        entryId,
-        {
-          $set: {
-            demographics,
-            isCompleted: true,
-          },
-        },
-        { new: true }
-      );
-
-      if (!doc) {
-        throw new Error('Survey entry not found.');
-      }
-
-      return mapEntry(doc);
-    },
-    submitSurvey: async (_, { sessionId, edgeId, results, demographics }) => {
-      try {
-        requireDb();
-        validateResults(results);
-        await connectToDatabase();
-
-        const doc = await SubmissionModel.create({
-          sessionId,
-          edgeId,
-          results,
-          demographics,
-          isCompleted: true,
-        });
-
-        // Use a 100% safe way to get ISO string
-        let createdAtStr = new Date().toISOString();
-        if (doc && doc.createdAt) {
-          try {
-            if (typeof doc.createdAt.toISOString === 'function') {
-              createdAtStr = doc.createdAt.toISOString();
-            } else {
-              createdAtStr = new Date(doc.createdAt).toISOString();
-            }
-          } catch (e) {
-            console.warn("Date conversion failed, using now()", e);
-          }
-        }
-
-        return {
-          id: String(doc._id),
-          sessionId: doc.sessionId || sessionId,
-          edgeId: doc.edgeId || edgeId,
-          results: doc.results || results,
-          demographics: doc.demographics || demographics,
-          isCompleted: true,
-          createdAt: createdAtStr,
-        };
-      } catch (error) {
-        console.error("Survey submission failed:", error);
-        throw error;
-      }
-    },
-    saveSessionEvents: async (_, { sessionId, events }) => {
-      requireDb();
-      await connectToDatabase();
-
-      if (!events || events.length === 0) return true;
-
-      // Find the latest chunk for this session
-      let latestChunk = await SessionReplayModel.findOne({ sessionId }).sort({ chunkIndex: -1 });
-
-      if (!latestChunk) {
-        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: 0, eventCount: 0, events: [] });
-      }
-
-      // Check threshold (e.g., 2000 events) as a safe heuristic for 16MB MongoDB limit
-      if (latestChunk.eventCount >= 2000) {
-        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: latestChunk.chunkIndex + 1, eventCount: 0, events: [] });
-      }
-
-      await SessionReplayModel.updateOne(
-        { _id: latestChunk._id },
-        { 
-          $push: { events: { $each: events } },
-          $inc: { eventCount: events.length }
-        }
-      );
-
-      return true;
-    },
-    createBatchSessions: async (_, { input }) => {
+    // ========================================================================
+    // Mode 1: Manual Session (NEW)
+    // ========================================================================
+    
+    createManualSession: async (_, { input }) => {
       requireDb();
       await connectToDatabase();
       
-      const { name, description, edgeCount, focalNode, opponentNode, sampleSize } = input;
+      const { activeEdgeIds, focalNode, opponentNode, sampleSize } = input;
+      
+      // Validation: activeEdgeIds must not be empty
+      if (!activeEdgeIds || activeEdgeIds.length === 0) {
+        throw new Error('activeEdgeIds cannot be empty. At least one edge must be selected.');
+      }
+      
+      // Validation: basic field checks
+      if (!focalNode || !opponentNode) {
+        throw new Error('focalNode and opponentNode are required.');
+      }
+      
+      if (!sampleSize || sampleSize < 1) {
+        throw new Error('sampleSize must be at least 1.');
+      }
+      
+      // 1. 生成 design matrix
+      const designMatrix = generateDesignMatrix(activeEdgeIds);
+      console.log(`[createManualSession] Generated ${designMatrix.length} scenarios`);
+      
+      // 2. 建立獨立的 Scenario documents
+      const scenarioDocs = designMatrix.map((scenario, index) => ({
+        _id: randomUUID(),
+        focalNode,
+        opponentNode,
+        activeEdgeIds,
+        edgeStates: scenario.edgeStates,
+        scenarioIndex: index,
+        groupId: null,
+        setupId: null,
+        targetSize: 0,  // Manual mode 不追蹤 scenario-level
+        responseCount: 0,
+        status: 'active',
+      }));
+      
+      console.log(`[createManualSession] Inserting ${scenarioDocs.length} Scenario documents...`);
+      const scenarios = await ScenarioModel.insertMany(scenarioDocs);
+      console.log(`[createManualSession] ✓ Inserted ${scenarios.length} Scenarios`);
+      console.log(`[createManualSession] Scenario IDs:`, scenarios.map(s => s._id));
+      
+      // 3. 建立 Session 引用 scenarios
+      console.log(`[createManualSession] Creating Session document...`);
+      const session = await SessionModel.create({
+        _id: randomUUID(),
+        scenarioIds: scenarios.map(s => s._id),
+        focalNode,
+        opponentNode,
+        sampleSize,
+        groupId: null,
+        submissionCount: 0,
+        metadata: { createdFor: 'manual' },
+      });
+      console.log(`[createManualSession] ✓ Created Session: ${session._id}`);
+      
+      const result = {
+        session: await toSessionGraph(session.toObject()),
+        scenariosCreated: scenarios.length,
+      };
+      console.log(`[createManualSession] Returning result with ${result.scenariosCreated} scenarios`);
+      
+      return result;
+    },
+    
+    // ========================================================================
+    // Mode 2: Batch Sessions (REFACTORED)
+    // ========================================================================
+    
+    createBatchSessions: async (_, { input, name, description }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      const { edgeCount, focalNode, opponentNode, sampleSize } = input;
       
       // 驗證參數
       const validation = validateBatchParams(edgeCount, 1000);
@@ -314,24 +367,25 @@ export const resolvers = {
       
       const totalCombinations = validation.count;
       
-      // 創建 SessionGroup
+      // 1. 建立 SessionGroup
       const group = await SessionGroupModel.create({
         _id: randomUUID(),
         name,
         description: description || null,
-        batchMode: true,
-        edgeCount,
-        focalNode,
-        opponentNode,
-        sampleSize,
+        config: {
+          edgeCount,
+          focalNode,
+          opponentNode,
+          sampleSize,
+        },
         totalSessions: totalCombinations,
-        completedSessions: 0,
+        totalScenarios: 0,
         status: 'creating',
       });
       
       const groupId = String(group._id);
       
-      // 生成所有邊緣組合
+      // 2. 生成所有 C(12, k) 組合
       const allEdges = [
         { id: 'A1-A2' }, { id: 'A1-B3' }, { id: 'A1-B4' },
         { id: 'A2-A1' }, { id: 'A2-B3' }, { id: 'A2-B4' },
@@ -340,25 +394,45 @@ export const resolvers = {
       ];
       const combinations = generateEdgeCombinations(allEdges, edgeCount);
       
-      // 批次準備文檔
-      const sessionDocs = combinations.map(activeEdgeIds => {
-        const scenarios = generateDesignMatrix(activeEdgeIds);
-        return {
+      const sessionIds = [];
+      
+      // 3. 為每個組合建立 scenarios + session
+      for (const combo of combinations) {
+        const designMatrix = generateDesignMatrix(combo);
+        
+        // 建立 scenarios for this combination
+        const scenarioDocs = designMatrix.map((scenario, index) => ({
           _id: randomUUID(),
+          focalNode,
+          opponentNode,
+          activeEdgeIds: combo,
+          edgeStates: scenario.edgeStates,
+          scenarioIndex: index,
           groupId,
-          activeEdgeIds,
-          scenarios,
+          setupId: null,
+          targetSize: 0,  // Batch mode 追蹤 session-level，不是 scenario-level
+          responseCount: 0,
+          status: 'active',
+        }));
+        
+        const scenarios = await ScenarioModel.insertMany(scenarioDocs);
+        
+        // 建立 session for this combination
+        const session = await SessionModel.create({
+          _id: randomUUID(),
+          scenarioIds: scenarios.map(s => s._id),
           focalNode,
           opponentNode,
           sampleSize,
-        };
-      });
+          groupId,
+          submissionCount: 0,
+          metadata: { createdFor: 'batch' },
+        });
+        
+        sessionIds.push(String(session._id));
+      }
       
-      // 批次插入（效能優化）
-      const insertedDocs = await SessionSetupModel.insertMany(sessionDocs);
-      const sessionIds = insertedDocs.map(doc => String(doc._id));
-      
-      // 更新群組狀態
+      // 4. 啟動 group
       await SessionGroupModel.updateOne(
         { _id: groupId },
         { $set: { status: 'active' } }
@@ -370,6 +444,116 @@ export const resolvers = {
         sessionIds,
       };
     },
+    
+    // ========================================================================
+    // Unified Survey Flow (REFACTORED)
+    // ========================================================================
+    
+    startSurvey: async (_, { sessionId }, context) => {
+      if (!context?.isTurnstileVerified) {
+        throw new Error('Turnstile verification required before starting survey.');
+      }
+      
+      requireDb();
+      await connectToDatabase();
+      
+      // 檢查 session 是否已滿
+      const session = await SessionModel.findById(sessionId);
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      
+      const submissionCount = await SubmissionModel.countDocuments({
+        sessionId,
+        isCompleted: true
+      });
+      
+      if (submissionCount >= session.sampleSize) {
+        throw new Error('Session is full');
+      }
+      
+      // 建立 submission
+      const doc = await SubmissionModel.create({
+        sessionId,
+        participantId: null,
+        results: [],
+        demographics: null,
+        isCompleted: false,
+      });
+      
+      return toSubmissionGraph(doc);
+    },
+    
+    saveSurveyAnswer: async (_, { submissionId, scenarioId, cooperationProbability }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      // 驗證
+      if (cooperationProbability < 0 || cooperationProbability > 1) {
+        throw new Error('cooperationProbability must be between 0 and 1');
+      }
+      
+      // 更新 submission
+      const submission = await SubmissionModel.findById(submissionId);
+      if (!submission) {
+        throw new Error('Submission not found');
+      }
+      
+      const existingIndex = submission.results.findIndex(r => r.scenarioId === scenarioId);
+      
+      if (existingIndex >= 0) {
+        // 更新現有答案
+        submission.results[existingIndex].cooperationProbability = cooperationProbability;
+        submission.results[existingIndex].answeredAt = new Date();
+      } else {
+        // 新增答案
+        submission.results.push({
+          scenarioId,
+          cooperationProbability,
+          answeredAt: new Date(),
+        });
+        
+        // ** KEY: 更新 scenario 的 responseCount (原子操作) **
+        await ScenarioModel.findByIdAndUpdate(scenarioId, { $inc: { responseCount: 1 } });
+      }
+      
+      await submission.save();
+      return toSubmissionGraph(submission);
+    },
+    
+    completeSurvey: async (_, { submissionId, demographics }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      const submission = await SubmissionModel.findByIdAndUpdate(
+        submissionId,
+        {
+          $set: {
+            demographics,
+            isCompleted: true,
+            completedAt: new Date(),
+          },
+        },
+        { new: true }
+      );
+      
+      if (!submission) {
+        throw new Error('Submission not found');
+      }
+      
+      // 更新 session 的 submissionCount
+      await SessionModel.findByIdAndUpdate(
+        submission.sessionId,
+        { $inc: { submissionCount: 1 } }
+      );
+      
+      return toSubmissionGraph(submission);
+    },
+    
+    // ========================================================================
+    // Admin Controls
+    // ========================================================================
+    
     updateSessionGroupStatus: async (_, { groupId, status }) => {
       requireDb();
       await connectToDatabase();
@@ -391,23 +575,29 @@ export const resolvers = {
       
       return toGroupGraph(doc);
     },
+    
     deleteSessionGroup: async (_, { groupId }) => {
       requireDb();
       await connectToDatabase();
       
       // 刪除群組關聯的所有 sessions
-      await SessionSetupModel.deleteMany({ groupId });
+      const sessions = await SessionModel.find({ groupId });
+      const sessionIds = sessions.map(s => String(s._id));
+      
+      await SessionModel.deleteMany({ groupId });
       
       // 刪除所有關聯的 submissions
-      const sessions = await SessionSetupModel.find({ groupId });
-      const sessionIds = sessions.map(s => String(s._id));
       await SubmissionModel.deleteMany({ sessionId: { $in: sessionIds } });
+      
+      // 刪除所有關聯的 scenarios
+      await ScenarioModel.deleteMany({ groupId });
       
       // 刪除群組
       const result = await SessionGroupModel.deleteOne({ _id: groupId });
       
       return result.deletedCount > 0;
     },
+    
     clearDatabase: async () => {
       if (process.env.NODE_ENV === 'production') {
         throw new Error('Action denied: You cannot clear the database in production.');
@@ -415,16 +605,50 @@ export const resolvers = {
       requireDb();
       await connectToDatabase();
       try {
-        await SessionSetupModel.deleteMany({});
+        await SessionModel.deleteMany({});
+        await ScenarioModel.deleteMany({});
         await SubmissionModel.deleteMany({});
         await SessionReplayModel.deleteMany({});
         await SessionGroupModel.deleteMany({});
+        // Legacy
+        await SessionSetupModel.deleteMany({});
         return true;
       } catch (error) {
         console.error("Failed to clean database:", error);
         return false;
       }
     },
+    
+    // ========================================================================
+    // Session Replay (pending removal per REQ-413)
+    // ========================================================================
+    
+    saveSessionEvents: async (_, { sessionId, events }) => {
+      requireDb();
+      await connectToDatabase();
+
+      if (!events || events.length === 0) return true;
+
+      let latestChunk = await SessionReplayModel.findOne({ sessionId }).sort({ chunkIndex: -1 });
+
+      if (!latestChunk) {
+        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: 0, eventCount: 0, events: [] });
+      }
+
+      if (latestChunk.eventCount >= 2000) {
+        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: latestChunk.chunkIndex + 1, eventCount: 0, events: [] });
+      }
+
+      await SessionReplayModel.updateOne(
+        { _id: latestChunk._id },
+        { 
+          $push: { events: { $each: events } },
+          $inc: { eventCount: events.length }
+        }
+      );
+
+      return true;
+    },
+    
   },
 };
-

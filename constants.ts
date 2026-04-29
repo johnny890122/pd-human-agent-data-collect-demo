@@ -1,4 +1,4 @@
-import { Agent, AgentId, EdgeDef, SessionSetup } from './types';
+import { Agent, AgentId, EdgeDef, Session, SessionSetup } from './types';
 
 export const AGENTS: Record<AgentId, Agent> = {
   'A1': { id: 'A1', label: '1', group: 'A' },
@@ -79,11 +79,17 @@ export const COLORS = {
 };
 
 export const INITIAL_SETUP: SessionSetup = {
-  activeEdgeIds: [],
+  _id: '',
+  id: '',
+  scenarioIds: [],
   scenarios: [],
+  activeEdgeIds: [],
   focalNode: 'A1',
   opponentNode: 'A2',
   sampleSize: 20,
+  submissionCount: 0,
+  createdAt: '',
+  updatedAt: '',
 };
 
 export const TOAST_DURATION_MS = 2000;

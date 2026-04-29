@@ -9,12 +9,10 @@ import ProtectedRoute from './components/ProtectedRoute';
 import SurveyWelcome from './components/SurveyWelcome';
 import { SessionSetup, SurveyResult } from './types';
 import {
-  completeSurveyEntry,
-  fetchActiveSessionSetup,
-  fetchSessionSetup,
+  completeSurvey,
+  fetchSession,
   saveSurveyAnswer,
-  saveSessionSetup,
-  startSurveyEntry,
+  startSurvey,
 } from './utils/graphqlClient';
 import { loadSession, saveSession, clearSession } from './utils/surveySession';
 import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
@@ -23,17 +21,23 @@ const App: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const setupIdFromUrl = searchParams.get('setupId');
+  
+  // URL params: only sessionId (setupId removed)
+  const sessionIdFromUrl = searchParams.get('sessionId');
+  
   const [backendNotice, setBackendNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeSetupId, setActiveSetupId] = useState<string | null>(null);
-  const [restoredEntryId, setRestoredEntryId] = useState<string | undefined>(undefined);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [restoredSubmissionId, setRestoredSubmissionId] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isTurnstileVerified, setIsTurnstileVerified] = useState(false);
   const [isTurnstileStatusLoading, setIsTurnstileStatusLoading] = useState(true);
   
-  // Initial Setup State
+  // Setup state (converted from Session for UI compatibility)
   const [setup, setSetup] = useState<SessionSetup>(INITIAL_SETUP);
+  
+  // Session with scenarios
+  const [session, setSession] = useState<any>(null);
 
   useEffect(() => {
     if (location.pathname.startsWith('/admin')) {
@@ -48,7 +52,6 @@ const App: React.FC = () => {
 
     document.title = 'Experiment';
   }, [location.pathname]);
-
 
   useEffect(() => {
     const hydrateTurnstileStatus = async () => {
@@ -78,53 +81,59 @@ const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    const hydrateSetup = async () => {
+    const hydrateSession = async () => {
       try {
-        let persistedSetup;
-        if (setupIdFromUrl) {
-          persistedSetup = await fetchSessionSetup(setupIdFromUrl);
-        } else {
-          persistedSetup = await fetchActiveSessionSetup();
-        }
-
-        if (persistedSetup) {
-          setSetup(persistedSetup);
-          
-          // Check for existing session
-          const setupId = setupIdFromUrl || persistedSetup.id;
-          if (setupId) {
-            // Check if explicitly trying to restart the survey
+        if (sessionIdFromUrl) {
+          // Fetch session with populated scenarios
+          const fetchedSession = await fetchSession(sessionIdFromUrl);
+          if (fetchedSession) {
+            setSession(fetchedSession);
+            setActiveSessionId(sessionIdFromUrl);
+            
+            // Convert session to setup format for UI compatibility
+            const compatSetup: SessionSetup = {
+              _id: fetchedSession._id,
+              id: fetchedSession._id,
+              scenarioIds: fetchedSession.scenarioIds,
+              focalNode: fetchedSession.focalNode,
+              opponentNode: fetchedSession.opponentNode,
+              activeEdgeIds: fetchedSession.scenarios?.[0]?.activeEdgeIds || [],
+              scenarios: fetchedSession.scenarios || [],  // Populated Scenario objects with _id
+              sampleSize: fetchedSession.sampleSize,
+              submissionCount: fetchedSession.submissionCount,
+              createdAt: fetchedSession.createdAt,
+              updatedAt: fetchedSession.updatedAt,
+            };
+            setSetup(compatSetup);
+            
+            // Check for session restoration
             const isRestarting = location.pathname.startsWith('/survey/welcome') || location.pathname.startsWith('/survey/intro');
             if (isRestarting) {
-              clearSession(setupId);
-              setRestoredEntryId(undefined);
+              clearSession(sessionIdFromUrl);
+              setRestoredSubmissionId(undefined);
             }
 
-            let session = isRestarting ? null : loadSession(setupId);
+            let storedSession = isRestarting ? null : loadSession(sessionIdFromUrl);
             
-            // If the user's current URL is quite different from the session's path, 
-            // they probably manually navigated or reloaded with a new URL. Let them continue.
-            if (session && location.pathname.startsWith('/survey/scenarios') && location.pathname !== session.path.split('?')[0]) {
-               console.warn("Session path mismatch, ignoring stored session cookie.");
-               session = null; 
+            if (storedSession && location.pathname.startsWith('/survey/scenarios') && location.pathname !== storedSession.path.split('?')[0]) {
+              console.warn("Session path mismatch, ignoring stored session cookie.");
+              storedSession = null;
             }
 
-            if (session) {
-              setRestoredEntryId(session.entryId);
-              // Only redirect if the path is different
-              const fullSessionPath = session.path;
+            if (storedSession) {
+              setRestoredSubmissionId(storedSession.submissionId);
+              const fullSessionPath = storedSession.path;
               const currentFullPath = location.pathname + location.search;
               if (currentFullPath !== fullSessionPath) {
                 navigate(fullSessionPath, { replace: true });
               }
             } else if (location.pathname.startsWith('/survey') && !location.pathname.includes('/outro') && !location.pathname.startsWith('/survey/intro') && !location.pathname.startsWith('/survey/welcome')) {
               try {
-                const edgeId = `${persistedSetup.focalNode}-${persistedSetup.opponentNode}`;
-                const entryId = await startSurveyEntry(setupId, edgeId);
-                setRestoredEntryId(entryId);
-                saveSession(setupId, entryId, location.pathname + location.search);
+                const submission = await startSurvey(sessionIdFromUrl);
+                setRestoredSubmissionId(submission._id);
+                saveSession(sessionIdFromUrl, submission._id, location.pathname + location.search);
               } catch (e) {
-                console.error("Failed to eagerly create survey session", e);
+                console.error("Failed to eagerly create survey submission", e);
               }
             }
           }
@@ -137,45 +146,34 @@ const App: React.FC = () => {
       }
     };
 
-    hydrateSetup();
-  }, [setupIdFromUrl, navigate]);
-
-  const handleSaveSetup = async (setupToSave: SessionSetup) => {
-    try {
-      const savedSetup = await saveSessionSetup(setupToSave);
-      const id = savedSetup.id;
-      setActiveSetupId(id ?? null);
-      return id;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      setBackendNotice(`Could not persist setup: ${message}`);
-      return undefined;
-    }
-  };
+    hydrateSession();
+  }, [sessionIdFromUrl, navigate, location.pathname, location.search]);
 
   const handleSurveyStart = async (): Promise<string | undefined> => {
     try {
-      const setupSessionId = setupIdFromUrl || activeSetupId || setup.id;
+      const currentId = sessionIdFromUrl || activeSessionId || setup.id;
 
-      if (!setupSessionId) {
-        throw new Error('Missing setupId. Please start from an admin-generated survey URL.');
+      if (!currentId) {
+        throw new Error('Missing session ID. Please start from an admin-generated survey URL.');
       }
 
-      if (restoredEntryId) {
-        const path = `/survey/scenarios/0${setupIdFromUrl ? `?setupId=${setupIdFromUrl}` : ''}`;
-        saveSession(setupSessionId, restoredEntryId, path);
-        return restoredEntryId;
+      // If already have restored submission, reuse it
+      if (restoredSubmissionId) {
+        const path = `/survey/scenarios/0?sessionId=${currentId}`;
+        saveSession(currentId, restoredSubmissionId, path);
+        return restoredSubmissionId;
       }
 
-      const edgeId = `${setup.focalNode}-${setup.opponentNode}`;
-      const entryId = await startSurveyEntry(setupSessionId, edgeId);
-      setRestoredEntryId(entryId);
+      // Unified survey flow
+      console.log('[NEW API] Starting survey with sessionId:', currentId);
+      const submission = await startSurvey(currentId);
+      setRestoredSubmissionId(submission._id);
       setBackendNotice(null);
       
-      const path = `/survey/scenarios/0${setupIdFromUrl ? `?setupId=${setupIdFromUrl}` : ''}`;
-      saveSession(setupSessionId, entryId, path);
+      const path = `/survey/scenarios/0?sessionId=${currentId}`;
+      saveSession(currentId, submission._id, path);
       
-      return entryId;
+      return submission._id;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setBackendNotice(`Could not start survey session: ${message}`);
@@ -183,9 +181,11 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSaveAnswer = async (entryId: string, answer: SurveyResult): Promise<boolean> => {
+  const handleSaveAnswer = async (submissionId: string, answer: SurveyResult): Promise<boolean> => {
     try {
-      await saveSurveyAnswer(entryId, answer);
+      // Unified survey flow with Scenario UUID references
+      console.log('[NEW API] Saving answer for scenario:', answer.scenarioId);
+      await saveSurveyAnswer(submissionId, answer.scenarioId, answer.cooperationProbability);
       setBackendNotice(null);
       return true;
     } catch (error) {
@@ -195,25 +195,31 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSurveyComplete = async (entryId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => {
+  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => {
     setIsSubmitting(true);
     console.log('Survey Completed');
 
     try {
-      await completeSurveyEntry(entryId, demographics);
+      const currentId = sessionIdFromUrl || setup.id || '';
+      
+      // Unified survey flow
+      console.log('[NEW API] Completing survey with unified API');
+      await completeSurvey(submissionId, demographics);
+      
       setBackendNotice(null);
-      clearSession(setupIdFromUrl || setup.id || '');
+      clearSession(currentId);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
       setBackendNotice(`Could not persist survey results: ${message}`);
     }
 
     setIsSubmitting(false);
-    navigate(setupIdFromUrl ? `/survey/outro?setupId=${setupIdFromUrl}` : '/survey/outro', { replace: true });
+    const urlSuffix = sessionIdFromUrl ? `?sessionId=${sessionIdFromUrl}` : '';
+    navigate(`/survey/outro${urlSuffix}`, { replace: true });
   };
 
   const handleBackToAdmin = () => {
-      navigate('/admin/setup');
+    navigate('/admin/setup');
   };
 
   if (isLoading || isTurnstileStatusLoading) {
@@ -227,7 +233,7 @@ const App: React.FC = () => {
   const isSurveyRoute = location.pathname.startsWith('/survey') && !location.pathname.startsWith('/survey/outro');
   const isSessionFull = (setup.submissionCount || 0) >= setup.sampleSize;
 
-  if (isSurveyRoute && isSessionFull && !restoredEntryId) {
+  if (isSurveyRoute && isSessionFull && !restoredSubmissionId) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8 text-center">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
@@ -264,7 +270,7 @@ const App: React.FC = () => {
           path="/admin/setup"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
             </ProtectedRoute>
           }
         />
@@ -272,7 +278,7 @@ const App: React.FC = () => {
           path="/admin/history"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
             </ProtectedRoute>
           }
         />
@@ -280,7 +286,7 @@ const App: React.FC = () => {
           path="/admin/groups"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
             </ProtectedRoute>
           }
         />
@@ -288,7 +294,7 @@ const App: React.FC = () => {
           path="/admin/groups/:groupId"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={handleSaveSetup} />
+              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
             </ProtectedRoute>
           }
         />
@@ -310,7 +316,7 @@ const App: React.FC = () => {
               onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
-              initialEntryId={restoredEntryId}
+              initialEntryId={restoredSubmissionId}
               isTurnstileVerified={isTurnstileVerified}
               onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
@@ -325,7 +331,7 @@ const App: React.FC = () => {
               onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
-              initialEntryId={restoredEntryId}
+              initialEntryId={restoredSubmissionId}
               isTurnstileVerified={isTurnstileVerified}
               onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
@@ -340,7 +346,7 @@ const App: React.FC = () => {
               onSaveAnswer={handleSaveAnswer}
               onComplete={handleSurveyComplete} 
               onBack={handleBackToAdmin}
-              initialEntryId={restoredEntryId}
+              initialEntryId={restoredSubmissionId}
               isTurnstileVerified={isTurnstileVerified}
               onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />

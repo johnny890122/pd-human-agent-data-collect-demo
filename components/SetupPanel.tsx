@@ -8,7 +8,7 @@ import { AGENTS, ALL_EDGES } from '../constants';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
 import { combinationCount } from '../utils/combinations';
-import { createBatchSessions } from '../utils/graphqlClient';
+import { createBatchSessions, createManualSession } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import BatchModeConfig from './BatchModeConfig';
 import BatchConfirmModal from './BatchConfirmModal';
@@ -55,7 +55,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const [showBatchConfirmModal, setShowBatchConfirmModal] = React.useState(false);
   const [isBatchCreating, setIsBatchCreating] = React.useState(false);
 
-  const k = setup.activeEdgeIds.length;
+  const k = setup.activeEdgeIds?.length || 0;
   const scenariosCount = Math.pow(2, k);
   const isHighLoad = k > 4;
   
@@ -78,13 +78,35 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
 
   const handleGenerateUrl = async () => {
     setIsSaving(true);
-    const scenarios = generateDesignMatrix(setup.activeEdgeIds);
-    const updatedSetup = { ...setup, scenarios };
-    setSetup(updatedSetup);
-    const id = await onSave(updatedSetup);
-    if (id) {
-      const url = `${window.location.origin}/survey/welcome?setupId=${id}`;
+    try {
+      // Use NEW API: createManualSession (Scenario-centric)
+      const result = await createManualSession(
+        setup.activeEdgeIds || [],
+        setup.focalNode,
+        setup.opponentNode,
+        setup.sampleSize
+      );
+      
+      // Update local state with returned session
+      const updatedSetup = {
+        ...setup,
+        _id: result.session._id,
+        id: result.session._id,
+        scenarioIds: result.session.scenarioIds,
+        scenarios: result.session.scenarios,
+        submissionCount: result.session.submissionCount,
+      };
+      setSetup(updatedSetup);
+      
+      // Generate URL with sessionId (NEW format)
+      const url = `${window.location.origin}/survey/welcome?sessionId=${result.session._id}`;
       setGeneratedUrl(url);
+      
+      toast.success(`✅ Created session with ${result.scenariosCreated} scenarios`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to create session: ${message}`);
+      console.error('Create manual session error:', error);
     }
     setIsSaving(false);
   };
@@ -156,8 +178,8 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
       <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-emerald-200/80 shadow-sm mt-3">
         <span className="text-xs text-emerald-800 font-semibold tracking-wider mb-2">Active Edges</span>
         <div className="flex flex-wrap gap-2">
-          {setup.activeEdgeIds.length > 0 ? (
-            setup.activeEdgeIds.map(edgeId => {
+          {(setup.activeEdgeIds?.length || 0) > 0 ? (
+            setup.activeEdgeIds?.map(edgeId => {
               const edge = ALL_EDGES.find(e => e.id === edgeId);
               if (!edge) return null;
               return (

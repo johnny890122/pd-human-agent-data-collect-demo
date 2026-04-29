@@ -4,11 +4,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 const SurveyWelcome: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const setupId = searchParams.get('setupId');
+  const sessionId = searchParams.get('sessionId');
 
   const handleStart = () => {
-    if (setupId) {
-      navigate(`/survey/intro/0?setupId=${setupId}`);
+    if (sessionId) {
+      navigate(`/survey/intro/0?sessionId=${sessionId}`);
     } else {
       navigate('/survey/intro/0');
     }

@@ -51,16 +51,16 @@ const GroupDetailView: React.FC = () => {
     if (!group || sessions.length === 0) return;
 
     const headers = ['#', 'Session ID', 'Focal Node Group', 'Partner Node Group', 'Active Edges', 'Progress', 'Study URL'];
-    const focalLabel = getFocalGroupLabel(group.focalNode);
-    const partnerLabel = getPartnerGroupLabel(group.opponentNode);
+    const focalLabel = getFocalGroupLabel(group.config.focalNode);
+    const partnerLabel = getPartnerGroupLabel(group.config.opponentNode);
     const rows = sessions.map((session, index) => [
       index + 1,
-      session.id || '',
+      session._id || session.id || '',
       focalLabel,
       partnerLabel,
-      session.activeEdgeIds.map(eid => getEdgeDisplayName(eid, group.focalNode, group.opponentNode)).join(' | '),
+      session.scenarios?.[0]?.activeEdgeIds?.map(eid => getEdgeDisplayName(eid, group.config.focalNode, group.config.opponentNode)).join(' | ') || '',
       `${session.submissionCount || 0}/${session.sampleSize}`,
-      `${window.location.origin}/survey/welcome?setupId=${session.id}`
+      `${window.location.origin}/survey/welcome?sessionId=${session._id || session.id}`
     ]);
 
     const csvContent = [
@@ -101,8 +101,8 @@ const GroupDetailView: React.FC = () => {
     );
   }
 
-  const progress = group.totalSessions > 0 
-    ? (group.completedSessions / group.totalSessions) * 100 
+  const progress = group.totalSessions > 0 && group.completionPercentage != null
+    ? group.completionPercentage
     : 0;
 
   return (
@@ -133,23 +133,23 @@ const GroupDetailView: React.FC = () => {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Focal Group</div>
-              <div className="text-lg font-bold text-purple-700">{getFocalGroupLabel(group.focalNode)}</div>
+              <div className="text-lg font-bold text-purple-700">{getFocalGroupLabel(group.config.focalNode)}</div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Partner Group</div>
-              <div className="text-lg font-bold text-purple-700">{getPartnerGroupLabel(group.opponentNode)}</div>
+              <div className="text-lg font-bold text-purple-700">{getPartnerGroupLabel(group.config.opponentNode)}</div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Edge Count (k)</div>
-              <div className="text-2xl font-bold text-purple-700">{group.edgeCount}</div>
+              <div className="text-2xl font-bold text-purple-700">{group.config.edgeCount || 'N/A'}</div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">Total Sessions</div>
               <div className="text-2xl font-bold text-purple-700">{group.totalSessions}</div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
-              <div className="text-xs text-gray-500 mb-1">Sample Size</div>
-              <div className="text-2xl font-bold text-purple-700">{group.sampleSize}</div>
+              <div className="text-xs text-gray-500 mb-1">Sample Size per Session</div>
+              <div className="text-2xl font-bold text-purple-700">{group.config.sampleSize}</div>
             </div>
           </div>
 
@@ -192,27 +192,27 @@ const GroupDetailView: React.FC = () => {
                     : 0;
                   
                   return (
-                    <tr key={session.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={session._id || session.id} className="hover:bg-gray-50 transition-colors">
                       <td className="py-3 text-gray-500">{index + 1}</td>
                       <td className="py-3 font-mono text-xs text-purple-700">
-                        <div className="truncate max-w-[200px]" title={session.id}>
-                          {session.id}
+                        <div className="truncate max-w-[200px]" title={session._id || session.id}>
+                          {session._id || session.id}
                         </div>
                       </td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-1">
-                          {session.activeEdgeIds.map(edgeId => (
+                          {session.scenarios?.[0]?.activeEdgeIds?.map(edgeId => (
                             <span
                               key={edgeId}
                               className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium"
                             >
-                              {group ? getEdgeDisplayName(edgeId, group.focalNode, group.opponentNode) : edgeId}
+                              {group ? getEdgeDisplayName(edgeId, group.config.focalNode, group.config.opponentNode) : edgeId}
                             </span>
-                          ))}
+                          )) || <span className="text-gray-400 text-xs">Loading...</span>}
                         </div>
                       </td>
                       <td className="py-3 font-bold text-gray-700">
-                        {session.scenarios.length}
+                        {session.scenarios?.length || session.scenarioIds?.length || 0}
                       </td>
                       <td className="py-3">
                         <div className="flex items-center gap-2">
@@ -229,7 +229,7 @@ const GroupDetailView: React.FC = () => {
                       </td>
                       <td className="py-3">
                         <button
-                          onClick={() => window.open(`/survey/welcome?setupId=${session.id}`, '_blank')}
+                          onClick={() => window.open(`/survey/welcome?sessionId=${session._id || session.id}`, '_blank')}
                           className="text-purple-600 hover:text-purple-800 hover:underline font-medium flex items-center gap-1"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

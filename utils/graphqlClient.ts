@@ -1,4 +1,4 @@
-import { SessionSetup, SurveyResult } from '../types';
+import { Session, SessionSetup, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -7,101 +7,14 @@ interface GraphQLResponse<TData> {
   errors?: Array<{ message: string }>;
 }
 
-interface GraphSessionSetup {
-  id?: string;
-  activeEdgeIds: string[];
-  scenarios: any[];
-  focalNode: string;
-  opponentNode: string;
-  sampleSize: number;
-  submissionCount?: number;
-  updatedAt?: string;
-}
-
-const CANONICAL_AGENT_IDS = new Set(['A1', 'A2', 'B3', 'B4']);
-
-function normalizeAgentId(id: string | undefined): string {
-  if (!id) return 'A1';
-  // Check if mapping old id formats
-  if (id === '1') return 'A1';
-  if (id === '2') return 'A2';
-  if (id === '3') return 'B3';
-  if (id === '4') return 'B4';
-
-  if (CANONICAL_AGENT_IDS.has(id)) return id;
-  return 'A1';
-}
-
-function normalizeEdgeId(edgeId: string): string {
-  const [sourceRaw, targetRaw] = edgeId.split('-');
-  if (!sourceRaw || !targetRaw) {
-    return edgeId;
-  }
-  const source = normalizeAgentId(sourceRaw.trim());
-  const target = normalizeAgentId(targetRaw.trim());
-  return `${source}-${target}`;
-}
-
-function normalizeScenarios(
-  scenarios: any[]
-): any[] {
-  if (!Array.isArray(scenarios)) return [];
-
-  return scenarios.map((scenario) => {
-    if (!scenario || typeof scenario !== 'object') return scenario;
-    const edgeStates = scenario.edgeStates;
-    if (!edgeStates || typeof edgeStates !== 'object') {
-      return scenario;
-    }
-
-    const normalizedEdgeStates = Object.fromEntries(
-      Object.entries(edgeStates).map(([edgeId, state]) => [normalizeEdgeId(edgeId), state])
-    );
-
-    return {
-      ...scenario,
-      edgeStates: normalizedEdgeStates,
-    };
-  });
-}
-
-function setupToGraphInput(setup: SessionSetup): GraphSessionSetup {
-  return {
-    activeEdgeIds: setup.activeEdgeIds,
-    scenarios: setup.scenarios,
-    focalNode: setup.focalNode,
-    opponentNode: setup.opponentNode,
-    sampleSize: setup.sampleSize,
-  };
-}
-
-function setupFromGraph(graph: GraphSessionSetup): SessionSetup {
-  const focalNode = normalizeAgentId(graph.focalNode);
-  
-  let opponentNode = normalizeAgentId(graph.opponentNode);
-  if (opponentNode === focalNode) {
-    opponentNode = focalNode === 'A1' ? 'A2' : 'A1';
-  }
-
-  return {
-    id: graph.id,
-    activeEdgeIds: (graph.activeEdgeIds || []).map(normalizeEdgeId),
-    scenarios: normalizeScenarios(graph.scenarios),
-    focalNode,
-    opponentNode,
-    sampleSize: graph.sampleSize,
-    submissionCount: graph.submissionCount,
-    updatedAt: graph.updatedAt,
-  };
-}
-
+// ============================================================================
+// Helper Functions
+// ============================================================================
 
 async function runGraphQL<TData>(query: string, variables?: Record<string, unknown>): Promise<TData> {
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query, variables }),
   });
 
@@ -121,223 +34,206 @@ async function runGraphQL<TData>(query: string, variables?: Record<string, unkno
   return json.data;
 }
 
-export async function fetchActiveSessionSetup(): Promise<SessionSetup | null> {
+// ============================================================================
+// NEW API: Session (replaces SessionSetup)
+// ============================================================================
+
+export async function fetchSession(id: string): Promise<Session | null> {
   const query = `
-    query ActiveSessionSetup {
-      activeSessionSetup {
-        id
-        activeEdgeIds
-        scenarios
+    query Session($id: ID!) {
+      session(id: $id) {
+        _id
+        scenarioIds
+        scenarios {
+          _id
+          focalNode
+          opponentNode
+          activeEdgeIds
+          edgeStates
+          scenarioIndex
+          status
+          responseCount
+          targetSize
+        }
         focalNode
         opponentNode
         sampleSize
-      }
-    }
-
-  `;
-
-  const data = await runGraphQL<{ activeSessionSetup: GraphSessionSetup | null }>(query);
-  if (!data.activeSessionSetup) {
-    return null;
-  }
-  return setupFromGraph(data.activeSessionSetup);
-}
- 
-export async function fetchSessionSetup(id: string): Promise<SessionSetup | null> {
-  const query = `
-    query SessionSetup($id: ID!) {
-      sessionSetup(id: $id) {
-        id
-        activeEdgeIds
-        scenarios
-        focalNode
-        opponentNode
-        sampleSize
-        submissionCount
-      }
-    }
-  `;
- 
-  const data = await runGraphQL<{ sessionSetup: GraphSessionSetup | null }>(query, { id });
-  if (!data.sessionSetup) {
-    return null;
-  }
-  return setupFromGraph(data.sessionSetup);
-}
- 
-export async function fetchAllSessionSetups(excludeBatchSessions = false): Promise<SessionSetup[]> {
-  const query = `
-    query AllSessionSetups($excludeBatchSessions: Boolean) {
-      allSessionSetups(excludeBatchSessions: $excludeBatchSessions) {
-        id
         groupId
-        activeEdgeIds
-        scenarios
-        focalNode
-        opponentNode
-        sampleSize
         submissionCount
-        updatedAt
-      }
-    }
-  `;
- 
-  const data = await runGraphQL<{ allSessionSetups: GraphSessionSetup[] }>(query, { excludeBatchSessions });
-  return data.allSessionSetups.map(setupFromGraph);
-}
-
-export async function saveSessionSetup(setup: SessionSetup): Promise<SessionSetup> {
-  const mutation = `
-    mutation SaveSessionSetup($setup: SessionSetupInput!) {
-      saveSessionSetup(setup: $setup) {
-        id
-        focalNode
-        opponentNode
-        sampleSize
-        submissionCount
-      }
-    }
-  `;
-
-  const data = await runGraphQL<{ saveSessionSetup: GraphSessionSetup }>(mutation, {
-    setup: setupToGraphInput(setup),
-  });
-  return setupFromGraph(data.saveSessionSetup);
-}
-
-export async function submitSurvey(
-  sessionId: string,
-  edgeId: string,
-  results: SurveyResult[],
-  demographics: { age: number; gender: string; education: string }
-): Promise<void> {
-  const mutation = `
-    mutation SubmitSurvey($sessionId: String!, $edgeId: String!, $results: [SurveyAnswerInput!]!, $demographics: DemographicInput!) {
-      submitSurvey(sessionId: $sessionId, edgeId: $edgeId, results: $results, demographics: $demographics) {
-        sessionId
-      }
-    }
-  `;
-
-  await runGraphQL(mutation, {
-    sessionId,
-    edgeId,
-    results,
-    demographics,
-  });
-}
-
-export async function startSurveyEntry(sessionId: string, edgeId: string): Promise<string> {
-  const mutation = `
-    mutation StartSurveyEntry($sessionId: String!, $edgeId: String!) {
-      startSurveyEntry(sessionId: $sessionId, edgeId: $edgeId) {
-        id
-      }
-    }
-  `;
-
-  const data = await runGraphQL<{ startSurveyEntry: { id: string } }>(mutation, {
-    sessionId,
-    edgeId,
-  });
-
-  return data.startSurveyEntry.id;
-}
-
-export async function saveSurveyAnswer(entryId: string, answer: SurveyResult): Promise<void> {
-  const mutation = `
-    mutation SaveSurveyAnswer($entryId: ID!, $answer: SurveyAnswerInput!) {
-      saveSurveyAnswer(entryId: $entryId, answer: $answer) {
-        id
-      }
-    }
-  `;
-
-  await runGraphQL(mutation, {
-    entryId,
-    answer,
-  });
-}
-
-export async function completeSurveyEntry(
-  entryId: string,
-  demographics: { age: number; gender: string; education: string }
-): Promise<void> {
-  const mutation = `
-    mutation CompleteSurveyEntry($entryId: ID!, $demographics: DemographicInput!) {
-      completeSurveyEntry(entryId: $entryId, demographics: $demographics) {
-        id
-      }
-    }
-  `;
-
-  await runGraphQL(mutation, {
-    entryId,
-    demographics,
-  });
-}
-
-
-export interface Submission {
-  id: string;
-  sessionId: string;
-  edgeId: string;
-  results: any[];
-  demographics: any;
-  isCompleted: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export async function fetchRecentSubmissions(): Promise<Submission[]> {
-  const query = `
-    query RecentSubmissions {
-      recentSubmissions(limit: 100) {
-        id
-        sessionId
-        edgeId
-        isCompleted
+        metadata {
+          participantId
+          createdFor
+        }
         createdAt
         updatedAt
       }
     }
   `;
-  const data = await runGraphQL<{ recentSubmissions: Submission[] }>(query);
-  return data.recentSubmissions || [];
+
+  const data = await runGraphQL<{ session: Session | null }>(query, { id });
+  return data.session;
 }
 
-export async function clearDatabase(): Promise<boolean> {
-  const mutation = `
-    mutation ClearDatabase {
-      clearDatabase
+export async function fetchAllSessions(excludeGroupSessions = false): Promise<Session[]> {
+  const query = `
+    query AllSessions($excludeGroupSessions: Boolean) {
+      allSessions(excludeGroupSessions: $excludeGroupSessions) {
+        _id
+        scenarioIds
+        scenarios {
+          _id
+          edgeStates
+          scenarioIndex
+        }
+        focalNode
+        opponentNode
+        sampleSize
+        groupId
+        submissionCount
+        metadata {
+          createdFor
+        }
+        createdAt
+        updatedAt
+      }
     }
   `;
-  try {
-    const data = await runGraphQL<{ clearDatabase: boolean }>(mutation);
-    return data.clearDatabase || false;
-  } catch (error) {
-    console.error("Failed to clear database via GraphQL:", error);
-    return false;
-  }
+
+  const data = await runGraphQL<{ allSessions: Session[] }>(query, { excludeGroupSessions });
+  return data.allSessions || [];
 }
 
-// ============= 批次功能 API =============
+export async function fetchSessionsByGroup(groupId: string): Promise<Session[]> {
+  const query = `
+    query SessionsByGroup($groupId: ID!) {
+      sessionsByGroup(groupId: $groupId) {
+        _id
+        scenarioIds
+        scenarios {
+          _id
+          edgeStates
+          scenarioIndex
+          activeEdgeIds
+        }
+        focalNode
+        opponentNode
+        sampleSize
+        submissionCount
+        createdAt
+      }
+    }
+  `;
 
-export interface SessionGroup {
-  id: string;
-  name: string;
-  description?: string;
-  batchMode: boolean;
-  edgeCount: number;
-  focalNode: string;
-  opponentNode: string;
-  sampleSize: number;
-  totalSessions: number;
-  completedSessions: number;
-  status: string;
-  createdAt: string;
-  updatedAt: string;
+  const data = await runGraphQL<{ sessionsByGroup: Session[] }>(query, { groupId });
+  return data.sessionsByGroup || [];
 }
+
+// ============================================================================
+// NEW API: Scenario
+// ============================================================================
+
+export async function fetchScenario(id: string): Promise<Scenario | null> {
+  const query = `
+    query Scenario($id: ID!) {
+      scenario(id: $id) {
+        _id
+        focalNode
+        opponentNode
+        activeEdgeIds
+        edgeStates
+        scenarioIndex
+        groupId
+        targetSize
+        responseCount
+        status
+        completionRate
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ scenario: Scenario | null }>(query, { id });
+  return data.scenario;
+}
+
+export async function fetchScenarios(params?: {
+  groupId?: string;
+  status?: string;
+  limit?: number;
+}): Promise<Scenario[]> {
+  const query = `
+    query Scenarios($groupId: ID, $status: String, $limit: Int) {
+      scenarios(groupId: $groupId, status: $status, limit: $limit) {
+        _id
+        focalNode
+        opponentNode
+        activeEdgeIds
+        edgeStates
+        scenarioIndex
+        groupId
+        targetSize
+        responseCount
+        status
+        completionRate
+        createdAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ scenarios: Scenario[] }>(query, params || {});
+  return data.scenarios || [];
+}
+
+// ============================================================================
+// NEW API: Manual Mode
+// ============================================================================
+
+export interface ManualSessionResult {
+  session: Session;
+  scenariosCreated: number;
+}
+
+export async function createManualSession(
+  activeEdgeIds: string[],
+  focalNode: string,
+  opponentNode: string,
+  sampleSize: number
+): Promise<ManualSessionResult> {
+  const mutation = `
+    mutation CreateManualSession($input: SessionInput!) {
+      createManualSession(input: $input) {
+        session {
+          _id
+          scenarioIds
+          scenarios {
+            _id
+            edgeStates
+            scenarioIndex
+          }
+          focalNode
+          opponentNode
+          sampleSize
+          submissionCount
+          metadata {
+            createdFor
+          }
+        }
+        scenariosCreated
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ createManualSession: ManualSessionResult }>(mutation, {
+    input: { activeEdgeIds, focalNode, opponentNode, sampleSize },
+  });
+
+  return data.createManualSession;
+}
+
+// ============================================================================
+// NEW API: Batch Mode (Refactored)
+// ============================================================================
 
 export interface BatchLaunchResult {
   groupId: string;
@@ -354,8 +250,8 @@ export async function createBatchSessions(
   description?: string
 ): Promise<BatchLaunchResult> {
   const mutation = `
-    mutation CreateBatchSessions($input: SessionGroupInput!) {
-      createBatchSessions(input: $input) {
+    mutation CreateBatchSessions($input: GroupConfigInput!, $name: String!, $description: String) {
+      createBatchSessions(input: $input, name: $name, description: $description) {
         groupId
         sessionsCreated
         sessionIds
@@ -365,97 +261,92 @@ export async function createBatchSessions(
 
   const data = await runGraphQL<{ createBatchSessions: BatchLaunchResult }>(mutation, {
     input: {
-      name,
-      description: description || null,
       edgeCount,
       focalNode,
       opponentNode,
       sampleSize,
     },
+    name,
+    description: description || null,
   });
 
   return data.createBatchSessions;
 }
 
-export async function fetchAllSessionGroups(): Promise<SessionGroup[]> {
+// ============================================================================
+// NEW API: SessionGroup (Refactored)
+// ============================================================================
+
+export async function fetchAllSessionGroups(): Promise<SessionGroupType[]> {
   const query = `
     query AllSessionGroups {
       allSessionGroups {
-        id
+        _id
         name
         description
-        batchMode
-        edgeCount
-        focalNode
-        opponentNode
-        sampleSize
+        config {
+          edgeCount
+          maxK
+          scenariosPerSession
+          targetSizePerScenario
+          focalNode
+          opponentNode
+          sampleSize
+        }
         totalSessions
-        completedSessions
+        totalScenarios
         status
+        mode
+        completionPercentage
         createdAt
         updatedAt
       }
     }
   `;
 
-  const data = await runGraphQL<{ allSessionGroups: SessionGroup[] }>(query);
+  const data = await runGraphQL<{ allSessionGroups: SessionGroupType[] }>(query);
   return data.allSessionGroups || [];
 }
 
-export async function fetchSessionGroup(id: string): Promise<SessionGroup | null> {
+export async function fetchSessionGroup(id: string): Promise<SessionGroupType | null> {
   const query = `
     query SessionGroup($id: ID!) {
       sessionGroup(id: $id) {
-        id
+        _id
         name
         description
-        batchMode
-        edgeCount
-        focalNode
-        opponentNode
-        sampleSize
+        config {
+          edgeCount
+          maxK
+          scenariosPerSession
+          targetSizePerScenario
+          focalNode
+          opponentNode
+          sampleSize
+        }
         totalSessions
-        completedSessions
+        totalScenarios
         status
+        mode
+        completionPercentage
         createdAt
         updatedAt
       }
     }
   `;
 
-  const data = await runGraphQL<{ sessionGroup: SessionGroup | null }>(query, { id });
+  const data = await runGraphQL<{ sessionGroup: SessionGroupType | null }>(query, { id });
   return data.sessionGroup;
-}
-
-export async function fetchSessionsByGroup(groupId: string): Promise<SessionSetup[]> {
-  const query = `
-    query SessionsByGroup($groupId: ID!) {
-      sessionsByGroup(groupId: $groupId) {
-        id
-        groupId
-        activeEdgeIds
-        scenarios
-        focalNode
-        opponentNode
-        sampleSize
-        submissionCount
-        updatedAt
-      }
-    }
-  `;
-
-  const data = await runGraphQL<{ sessionsByGroup: any[] }>(query, { groupId });
-  return data.sessionsByGroup.map(setupFromGraph);
 }
 
 export async function updateSessionGroupStatus(
   groupId: string,
   status: string
-): Promise<SessionGroup> {
+): Promise<SessionGroupType> {
   const mutation = `
     mutation UpdateSessionGroupStatus($groupId: ID!, $status: String!) {
       updateSessionGroupStatus(groupId: $groupId, status: $status) {
-        id
+        _id
         name
         status
         updatedAt
@@ -463,7 +354,7 @@ export async function updateSessionGroupStatus(
     }
   `;
 
-  const data = await runGraphQL<{ updateSessionGroupStatus: SessionGroup }>(mutation, {
+  const data = await runGraphQL<{ updateSessionGroupStatus: SessionGroupType }>(mutation, {
     groupId,
     status,
   });
@@ -486,3 +377,135 @@ export async function deleteSessionGroup(groupId: string): Promise<boolean> {
     return false;
   }
 }
+
+// ============================================================================
+// NEW API: Unified Survey Flow
+// ============================================================================
+
+export async function startSurvey(sessionId: string): Promise<SubmissionType> {
+  const mutation = `
+    mutation StartSurvey($sessionId: ID!) {
+      startSurvey(sessionId: $sessionId) {
+        _id
+        sessionId
+        participantId
+        results {
+          scenarioId
+          cooperationProbability
+          responseTime
+          answeredAt
+        }
+        isCompleted
+        createdAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ startSurvey: SubmissionType }>(mutation, { sessionId });
+  return data.startSurvey;
+}
+
+export async function saveSurveyAnswer(
+  submissionId: string,
+  scenarioId: string,
+  cooperationProbability: number
+): Promise<SubmissionType> {
+  const mutation = `
+    mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!) {
+      saveSurveyAnswer(
+        submissionId: $submissionId
+        scenarioId: $scenarioId
+        cooperationProbability: $cooperationProbability
+      ) {
+        _id
+        results {
+          scenarioId
+          cooperationProbability
+          answeredAt
+        }
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ saveSurveyAnswer: SubmissionType }>(mutation, {
+    submissionId,
+    scenarioId,
+    cooperationProbability,
+  });
+
+  return data.saveSurveyAnswer;
+}
+
+export async function completeSurvey(
+  submissionId: string,
+  demographics: { age?: number; gender?: string; education?: string }
+): Promise<SubmissionType> {
+  const mutation = `
+    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!) {
+      completeSurvey(submissionId: $submissionId, demographics: $demographics) {
+        _id
+        isCompleted
+        completedAt
+        demographics {
+          age
+          gender
+          education
+        }
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ completeSurvey: SubmissionType }>(mutation, {
+    submissionId,
+    demographics,
+  });
+
+  return data.completeSurvey;
+}
+
+// ============================================================================
+// Submissions
+// ============================================================================
+
+export async function fetchRecentSubmissions(): Promise<SubmissionType[]> {
+  const query = `
+    query RecentSubmissions {
+      recentSubmissions(limit: 100) {
+        _id
+        sessionId
+        participantId
+        isCompleted
+        completedAt
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ recentSubmissions: SubmissionType[] }>(query);
+  return data.recentSubmissions || [];
+}
+
+// ============================================================================
+// Database Management
+// ============================================================================
+
+export async function clearDatabase(): Promise<boolean> {
+  const mutation = `
+    mutation ClearDatabase {
+      clearDatabase
+    }
+  `;
+
+  try {
+    const data = await runGraphQL<{ clearDatabase: boolean }>(mutation);
+    return data.clearDatabase || false;
+  } catch (error) {
+    console.error("Failed to clear database via GraphQL:", error);
+    return false;
+  }
+}
+
+
+// Re-export types from types.ts for convenience
+export type { Submission, SessionGroup, Scenario, Session } from '../types';

@@ -1,17 +1,17 @@
 export interface SurveySession {
-  entryId: string;
+  submissionId: string; // Renamed from entryId to match new API
   path: string;
 }
 
-const getSessionKey = (setupId: string) => `survey_session_${setupId}`;
+const getSessionKey = (sessionId: string) => `survey_session_${sessionId}`;
 
-export function saveSession(setupId: string, entryId: string, path: string): void {
-  const session: SurveySession = { entryId, path };
-  localStorage.setItem(getSessionKey(setupId), JSON.stringify(session));
+export function saveSession(sessionId: string, submissionId: string, path: string): void {
+  const session: SurveySession = { submissionId, path };
+  localStorage.setItem(getSessionKey(sessionId), JSON.stringify(session));
 }
 
-export function loadSession(setupId: string): SurveySession | null {
-  const stored = localStorage.getItem(getSessionKey(setupId));
+export function loadSession(sessionId: string): SurveySession | null {
+  const stored = localStorage.getItem(getSessionKey(sessionId));
   if (!stored) return null;
   try {
     return JSON.parse(stored) as SurveySession;
@@ -21,6 +21,6 @@ export function loadSession(setupId: string): SurveySession | null {
   }
 }
 
-export function clearSession(setupId: string): void {
-  localStorage.removeItem(getSessionKey(setupId));
+export function clearSession(sessionId: string): void {
+  localStorage.removeItem(getSessionKey(sessionId));
 }

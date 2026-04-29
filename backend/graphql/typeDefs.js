@@ -1,114 +1,200 @@
 export const typeDefs = `#graphql
   scalar JSON
 
-  type Submission {
-    id: ID!
-    sessionId: String!
-    edgeId: String!
-    results: [SurveyAnswer!]!
-    demographics: Demographic
-    isCompleted: Boolean!
-    createdAt: String!
-    updatedAt: String
-  }
-
-
-  type Demographic {
-    age: Int!
-    gender: String!
-    education: String!
-  }
-
-  input DemographicInput {
-    age: Int!
-    gender: String!
-    education: String!
-  }
-
-  type SessionSetup {
-    id: ID!
-    groupId: String
+  # ============================================================================
+  # Scenario (NEW) - Atomic Unit of Experiment
+  # ============================================================================
+  
+  type Scenario {
+    _id: ID!
+    focalNode: String!
+    opponentNode: String!
     activeEdgeIds: [String!]!
-    scenarios: [JSON!]!
-    focalNode: String!
-    opponentNode: String!
-    sampleSize: Int!
-    submissionCount: Int!
-    updatedAt: String
-  }
-
-  input SessionSetupInput {
-    activeEdgeIds: [String!]!
-    scenarios: [JSON!]!
-    focalNode: String!
-    opponentNode: String!
-    sampleSize: Int!
-  }
-
-
-  type SurveyAnswer {
-    scenarioId: Int!
-    cooperationProbability: Float!
-  }
-
-  input SurveyAnswerInput {
-    scenarioId: Int!
-    cooperationProbability: Float!
-  }
-
-  type SessionGroup {
-    id: ID!
-    name: String!
-    description: String
-    batchMode: Boolean!
-    edgeCount: Int!
-    focalNode: String!
-    opponentNode: String!
-    sampleSize: Int!
-    totalSessions: Int!
-    completedSessions: Int!
+    edgeStates: JSON!
+    scenarioIndex: Int
+    groupId: ID
+    setupId: ID
+    targetSize: Int!
+    responseCount: Int!
     status: String!
+    completionRate: Float!
     createdAt: String!
     updatedAt: String!
   }
 
-  input SessionGroupInput {
-    name: String!
-    description: String
-    edgeCount: Int!
+  # ============================================================================
+  # Session (REFACTORED from SessionSetup) - Scenario Container
+  # ============================================================================
+  
+  type Session {
+    _id: ID!
+    scenarioIds: [ID!]!
+    scenarios: [Scenario!]!
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
+    groupId: ID
+    submissionCount: Int!
+    metadata: SessionMetadata
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type SessionMetadata {
+    participantId: String
+    createdFor: String
+  }
+
+  input SessionInput {
+    activeEdgeIds: [String!]!
     focalNode: String!
     opponentNode: String!
     sampleSize: Int!
   }
 
+  # ============================================================================
+  # Submission (UPDATED) - References Scenario UUIDs
+  # ============================================================================
+  
+  type Submission {
+    _id: ID!
+    sessionId: ID!
+    participantId: String
+    results: [SurveyResult!]!
+    demographics: Demographics
+    isCompleted: Boolean!
+    completedAt: String
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type SurveyResult {
+    scenarioId: ID!
+    cooperationProbability: Float!
+    responseTime: Int
+    answeredAt: String
+  }
+
+  type Demographics {
+    age: Int
+    gender: String
+    education: String
+  }
+
+  input DemographicsInput {
+    age: Int
+    gender: String
+    education: String
+  }
+
+  input SurveyAnswerInput {
+    scenarioId: ID!
+    cooperationProbability: Float!
+  }
+
+  # ============================================================================
+  # SessionGroup (UPDATED) - Unified Config
+  # ============================================================================
+  
+  type SessionGroup {
+    _id: ID!
+    name: String!
+    description: String
+    config: GroupConfig!
+    totalSessions: Int!
+    totalScenarios: Int!
+    status: String!
+    mode: String!
+    completionPercentage: Float
+    createdAt: String!
+    updatedAt: String!
+  }
+
+  type GroupConfig {
+    edgeCount: Int
+    maxK: Int
+    scenariosPerSession: Int
+    targetSizePerScenario: Int
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
+  }
+
+  input GroupConfigInput {
+    edgeCount: Int
+    maxK: Int
+    scenariosPerSession: Int
+    targetSizePerScenario: Int
+    focalNode: String!
+    opponentNode: String!
+    sampleSize: Int!
+  }
+
+  # ============================================================================
+  # Result Types
+  # ============================================================================
+
   type BatchLaunchResult {
     groupId: ID!
     sessionsCreated: Int!
-    sessionIds: [String!]!
+    sessionIds: [ID!]!
   }
+
+  type ManualSessionResult {
+    session: Session!
+    scenariosCreated: Int!
+  }
+
+  # ============================================================================
+  # Queries
+  # ============================================================================
 
   type Query {
     health: String!
-    activeSessionSetup: SessionSetup
-    sessionSetup(id: ID!): SessionSetup
-    allSessionSetups(excludeBatchSessions: Boolean): [SessionSetup!]!
-    recentSubmissions(limit: Int = 20): [Submission!]!
-    getSessionReplay(sessionId: String!): [JSON!]!
+    
+    # Session queries (renamed from SessionSetup)
+    session(id: ID!): Session
+    allSessions(excludeGroupSessions: Boolean): [Session!]!
+    sessionsByGroup(groupId: ID!): [Session!]!
+    activeSession: Session
+    
+    # Scenario queries (NEW)
+    scenario(id: ID!): Scenario
+    scenarios(groupId: ID, status: String, limit: Int): [Scenario!]!
+    
+    # SessionGroup queries
     sessionGroup(id: ID!): SessionGroup
     allSessionGroups: [SessionGroup!]!
-    sessionsByGroup(groupId: ID!): [SessionSetup!]!
+    
+    # Submission queries
+    recentSubmissions(limit: Int = 20): [Submission!]!
+    
+    # Session replay (pending removal per REQ-413)
+    getSessionReplay(sessionId: String!): [JSON!]!
   }
 
+  # ============================================================================
+  # Mutations
+  # ============================================================================
+
   type Mutation {
-    saveSessionSetup(setup: SessionSetupInput!): SessionSetup!
-    startSurveyEntry(sessionId: String!, edgeId: String!): Submission!
-    saveSurveyAnswer(entryId: ID!, answer: SurveyAnswerInput!): Submission!
-    completeSurveyEntry(entryId: ID!, demographics: DemographicInput!): Submission!
-    submitSurvey(sessionId: String!, edgeId: String!, results: [SurveyAnswerInput!]!, demographics: DemographicInput!): Submission!
-    saveSessionEvents(sessionId: String!, events: [JSON!]!): Boolean!
-    createBatchSessions(input: SessionGroupInput!): BatchLaunchResult!
+    # Mode 1: Manual (NEW - replaces saveSessionSetup)
+    createManualSession(input: SessionInput!): ManualSessionResult!
+    
+    # Mode 2: Batch (REFACTORED)
+    createBatchSessions(input: GroupConfigInput!, name: String!, description: String): BatchLaunchResult!
+    
+    # Unified survey flow
+    startSurvey(sessionId: ID!): Submission!
+    saveSurveyAnswer(submissionId: ID!, scenarioId: ID!, cooperationProbability: Float!): Submission!
+    completeSurvey(submissionId: ID!, demographics: DemographicsInput!): Submission!
+    
+    # Admin controls
     updateSessionGroupStatus(groupId: ID!, status: String!): SessionGroup!
     deleteSessionGroup(groupId: ID!): Boolean!
     clearDatabase: Boolean!
+    
+    # Session replay (pending removal per REQ-413)
+    saveSessionEvents(sessionId: String!, events: [JSON!]!): Boolean!
   }
 `;

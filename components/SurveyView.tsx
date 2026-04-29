@@ -36,14 +36,14 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const location = useLocation();
   const params = useParams();
   const [searchParams] = useSearchParams();
-  const setupId = searchParams.get('setupId');
+  const sessionId = searchParams.get('sessionId');
   const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const turnstileSiteKey = isLocalHost
     ? '1x00000000000000000000AA'
     : (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '0x4AAAAAAC2vj0xOA6Fpx2cd');
 
-  const navigateWithSetup = (path: string) => {
-    navigate(setupId ? `${path}?setupId=${setupId}` : path);
+  const navigateWithSession = (path: string) => {
+    navigate(sessionId ? `${path}?sessionId=${sessionId}` : path);
   };
 
   // Keep users in the survey flow by ignoring browser Back navigation.
@@ -198,7 +198,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
       setShowTurnstileGate(false);
       onTurnstileVerified();
       resetTurnstileWidget('remove');
-      navigateWithSetup('/survey/scenarios/0');
+      navigateWithSession('/survey/scenarios/0');
     } catch {
       setTurnstileError('驗證失敗，請再試一次。');
       resetTurnstileWidget();
@@ -212,7 +212,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const [revealedEdgeIds, setRevealedEdgeIds] = useState<Set<string>>(new Set());
   const [isDecisionPhase, setIsDecisionPhase] = useState(false);
   const [showPayoffTable, setShowPayoffTable] = useState(false);
-  const allRevealed = revealedEdgeIds.size >= setup.activeEdgeIds.length;
+  const activeEdgeIds = setup.activeEdgeIds || [];
+  const allRevealed = revealedEdgeIds.size >= activeEdgeIds.length;
 
   // Reset reveal/decision state on each new scenario
   useEffect(() => {
@@ -237,8 +238,10 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const currentScenario = scenarios[scenarioIdx];
 
   const handleNext = async () => {
+    // Handle both Scenario (_id) and ScenarioPreview (id) types
+    const scenarioId = '_id' in currentScenario ? currentScenario._id : String(currentScenario.id);
     const answer: SurveyResult = {
-      scenarioId: currentScenario.id,
+      scenarioId,
       cooperationProbability: sliderValue / 100,
     };
     const newResults = [...results];
@@ -251,17 +254,17 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     }
 
     if (scenarioIdx < scenarios.length - 1) {
-      const nextPath = `/survey/scenarios/${scenarioIdx + 1}${setupId ? `?setupId=${setupId}` : ''}`;
+      const nextPath = `/survey/scenarios/${scenarioIdx + 1}${sessionId ? `?sessionId=${sessionId}` : ''}`;
       if (entryId) {
-        saveSession(setupId || setup.id || '', entryId, nextPath);
+        saveSession(sessionId || setup.id || '', entryId, nextPath);
       }
-      navigateWithSetup(`/survey/scenarios/${scenarioIdx + 1}`);
+      navigateWithSession(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      const nextPath = `/survey/outro${setupId ? `?setupId=${setupId}` : ''}`;
+      const nextPath = `/survey/outro${sessionId ? `?sessionId=${sessionId}` : ''}`;
       if (entryId) {
-        saveSession(setupId || setup.id || '', entryId, nextPath);
+        saveSession(sessionId || setup.id || '', entryId, nextPath);
       }
-      navigateWithSetup('/survey/outro');
+      navigateWithSession('/survey/outro');
     }
   };
 
@@ -277,8 +280,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({
       return;
     }
 
-    navigate(setupId ? `/survey/intro/0?setupId=${setupId}` : '/survey/intro/0', { replace: true });
-  }, [isPostIntroStep, isTurnstileVerified, navigate, setupId]);
+    navigate(sessionId ? `/survey/intro/0?sessionId=${sessionId}` : '/survey/intro/0', { replace: true });
+  }, [isPostIntroStep, isTurnstileVerified, navigate, sessionId]);
   // const isDemographicsStep = location.pathname === '/survey/demographics';
 
   // ── Intro ──────────────────────────────────────────────────────────────────
@@ -288,7 +291,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
         <SurveyIntro 
           setup={setup} 
           currentStep={introStep}
-          onNavigateIntro={(step) => navigateWithSetup(`/survey/intro/${step}`)}
+          onNavigateIntro={(step) => navigateWithSession(`/survey/intro/${step}`)}
           onFinish={() => {
             setTurnstileError(null);
             setShowTurnstileGate(true);
@@ -343,7 +346,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
   // ── Outro ──────────────────────────────────────────────────────────────────
   if (isOutroStep) {
-    return <SurveyOutro results={results} onBack={onBack} />;
+    return <SurveyOutro results={results} onBack={onBack} onComplete={onComplete} entryId={entryId} />;
   }
 
   // ── Demographics ──────────────────────────────────────────────────────────
@@ -403,8 +406,53 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
   // ── Scenarios ──────────────────────────────────────────────────────────────
 
-  if (!isScenariosStep || !currentScenario) {
+  if (!isScenariosStep) {
     return null;
+  }
+
+  // 檢查是否有 scenarios
+  if (!scenarios || scenarios.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6 text-center">
+          <div className="text-6xl">⚠️</div>
+          <h2 className="text-2xl font-bold text-gray-900">測驗配置錯誤</h2>
+          <p className="text-gray-600">
+            此測驗沒有任何題目。這可能是因為管理員在建立測驗時沒有選擇任何互動邊。
+          </p>
+          <p className="text-sm text-gray-500">
+            請聯絡管理員重新設定測驗。
+          </p>
+          <button
+            onClick={onBack}
+            className="w-full py-3 bg-gray-900 text-white font-bold rounded-xl shadow-lg hover:bg-black transition-colors"
+          >
+            返回
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 檢查當前 scenario 是否存在
+  if (!currentScenario) {
+    return (
+      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6 text-center">
+          <div className="text-6xl">🔍</div>
+          <h2 className="text-2xl font-bold text-gray-900">找不到題目</h2>
+          <p className="text-gray-600">
+            題目 #{scenarioIdx + 1} 不存在。總共有 {scenarios.length} 題。
+          </p>
+          <button
+            onClick={() => navigateWithSession('/survey/scenarios/0')}
+            className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
+          >
+            返回第一題
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -460,7 +508,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                   <p className="text-xs text-blue-800 font-medium text-center">
                     請點擊以下虛弧線上的「問號」，來閱覽互動記錄
                     <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600">
-                      剩下 {setup.activeEdgeIds.length - revealedEdgeIds.size} 個
+                      剩下 {activeEdgeIds.length - revealedEdgeIds.size} 個
                     </span>
                   </p>
                 </div>
@@ -547,7 +595,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                 }`}
             >
               {!allRevealed
-                ? `請先點擊並閱覽所有的互動記錄 (${revealedEdgeIds.size}/${setup.activeEdgeIds.length})` 
+                ? `請先點擊並閱覽所有的互動記錄 (${revealedEdgeIds.size}/${activeEdgeIds.length})`
                 : !isDecisionPhase
                   ? '請先按解鎖決定鍵'
                   : !hasInteracted

@@ -4,15 +4,46 @@ import { SurveyResult } from '../types';
 export interface SurveyOutroProps {
   results: SurveyResult[];
   onBack: () => void;
+  onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
+  entryId?: string;
 }
 
-const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack }) => {
+const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack, onComplete, entryId }) => {
   const [step, setStep] = useState(1);
   const [codeValue, setCodeValue] = useState('');
   const [emailValue, setEmailValue] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const trimmedEmail = emailValue.trim();
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
   const showEmailError = trimmedEmail.length > 0 && !isEmailValid;
+
+  const handleFinalSubmit = async () => {
+    if (!isEmailValid || isSubmitting) return;
+    
+    setIsSubmitting(true);
+    
+    try {
+      // 構建 demographics 物件，包含報名代碼和 email
+      const demographics = {
+        age: parseInt(codeValue) || 0,
+        gender: 'unknown',
+        education: trimmedEmail
+      };
+      
+      // 呼叫 completeSurvey
+      if (onComplete && entryId) {
+        await onComplete(entryId, results, demographics);
+      }
+      
+      // 完成後進入下一步
+      setStep(3);
+    } catch (error) {
+      console.error('Failed to complete survey:', error);
+      alert('提交失敗，請稍後再試');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (step === 1) {
     return (
@@ -71,15 +102,15 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack }) => {
             <p className="text-sm text-red-600 text-left">請輸入正確的 Email 格式，例如：name@example.com</p>
           )}
           <button
-            onClick={() => setStep(3)}
-            disabled={!isEmailValid}
+            onClick={handleFinalSubmit}
+            disabled={!isEmailValid || isSubmitting}
             className={`w-full py-4 text-lg font-bold rounded-xl shadow-sm transition-all ${
-              !isEmailValid
+              !isEmailValid || isSubmitting
                 ? 'bg-gray-300 text-gray-400 cursor-not-allowed'
                 : 'bg-green-600 hover:bg-green-700 text-white'
             }`}
           >
-            送出
+            {isSubmitting ? '提交中...' : '送出'}
           </button>
         </div>
       </div>

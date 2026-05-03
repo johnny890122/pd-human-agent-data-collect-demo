@@ -181,8 +181,6 @@ export const typeDefs = `#graphql
     # Submission queries
     recentSubmissions(limit: Int = 20): [Submission!]!
     
-    # Session replay (pending removal per REQ-413)
-    getSessionReplay(sessionId: String!): [JSON!]!
   }
 
   # ============================================================================

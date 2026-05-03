@@ -2,7 +2,7 @@ import { connectToDatabase, isDbConfigured } from '../db.js';
 import { SessionSetupModel, SubmissionModel } from '../models/SessionSetup.js';
 import { ScenarioModel } from '../models/Scenario.js';
 import { SessionModel } from '../models/Session.js';
-import { SessionReplayModel } from '../models/SessionReplay.js';
+// SessionReplayModel removed per REQ-413
 import { SessionGroupModel } from '../models/SessionGroup.js';
 import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
@@ -257,24 +257,7 @@ export const resolvers = {
       return docs.map(doc => toSubmissionGraph(doc));
     },
     
-    // ========================================================================
-    // Session Replay (pending removal per REQ-413)
-    // ========================================================================
-    
-    getSessionReplay: async (_, { sessionId }) => {
-      requireDb();
-      await connectToDatabase();
-      const chunks = await SessionReplayModel.find({ sessionId }).sort({ chunkIndex: 1 }).lean();
-      if (!chunks || chunks.length === 0) return [];
-      
-      let allEvents = [];
-      for (const chunk of chunks) {
-        if (Array.isArray(chunk.events)) {
-          allEvents = allEvents.concat(chunk.events);
-        }
-      }
-      return allEvents;
-    },
+    // Session replay resolver removed per REQ-413
     
   },
 
@@ -863,7 +846,6 @@ export const resolvers = {
         await SessionModel.deleteMany({});
         await ScenarioModel.deleteMany({});
         await SubmissionModel.deleteMany({});
-        await SessionReplayModel.deleteMany({});
         await SessionGroupModel.deleteMany({});
         // Legacy
         await SessionSetupModel.deleteMany({});
@@ -874,36 +856,7 @@ export const resolvers = {
       }
     },
     
-    // ========================================================================
-    // Session Replay (pending removal per REQ-413)
-    // ========================================================================
-    
-    saveSessionEvents: async (_, { sessionId, events }) => {
-      requireDb();
-      await connectToDatabase();
-
-      if (!events || events.length === 0) return true;
-
-      let latestChunk = await SessionReplayModel.findOne({ sessionId }).sort({ chunkIndex: -1 });
-
-      if (!latestChunk) {
-        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: 0, eventCount: 0, events: [] });
-      }
-
-      if (latestChunk.eventCount >= 2000) {
-        latestChunk = await SessionReplayModel.create({ sessionId, chunkIndex: latestChunk.chunkIndex + 1, eventCount: 0, events: [] });
-      }
-
-      await SessionReplayModel.updateOne(
-        { _id: latestChunk._id },
-        { 
-          $push: { events: { $each: events } },
-          $inc: { eventCount: events.length }
-        }
-      );
-
-      return true;
-    },
+    // saveSessionEvents removed per REQ-413
     
   },
 };

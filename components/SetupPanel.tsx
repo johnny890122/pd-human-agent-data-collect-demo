@@ -3,7 +3,7 @@ import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
-import { SessionSetup, AgentId } from '../types';
+import { Session, AgentId } from '../types';
 import { AGENTS, ALL_EDGES } from '../constants';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
@@ -17,13 +17,13 @@ import AgentAvatar from './AgentAvatar';
 type LaunchMode = 'manual' | 'mixed';
 
 interface SetupPanelProps {
-  setup: SessionSetup;
-  setSetup: React.Dispatch<React.SetStateAction<SessionSetup>>;
+  setup: Session;
+  setSetup: React.Dispatch<React.SetStateAction<Session>>;
   generatedUrl: string | null;
   setGeneratedUrl: React.Dispatch<React.SetStateAction<string | null>>;
   isSaving: boolean;
   setIsSaving: React.Dispatch<React.SetStateAction<boolean>>;
-  onSave: (setupToSave: SessionSetup) => Promise<string | undefined>;
+  onSave: (setupToSave: Session) => Promise<string | undefined>;
   onNodeInteraction: (nodeId: AgentId) => void;
   onEdgeToggle: (edgeId: string) => void;
   readOnly?: boolean;

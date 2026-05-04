@@ -7,7 +7,7 @@ import Login from './components/Login';
 import NotFound from './components/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import SurveyWelcome from './components/SurveyWelcome';
-import { SessionSetup, SurveyResult } from './types';
+import { Session, SurveyResult } from './types';
 import {
   completeSurvey,
   fetchSession,
@@ -38,7 +38,7 @@ const App: React.FC = () => {
   const [isTurnstileStatusLoading, setIsTurnstileStatusLoading] = useState(true);
   
   // Setup state (converted from Session for UI compatibility)
-  const [setup, setSetup] = useState<SessionSetup>(INITIAL_SETUP);
+  const [setup, setSetup] = useState<Session>(INITIAL_SETUP);
   
   // Session with scenarios
   const [session, setSession] = useState<any>(null);
@@ -112,9 +112,8 @@ const App: React.FC = () => {
             setActiveSessionId(sessionIdFromUrl);
             
             // Convert session to setup format for UI compatibility
-            const compatSetup: SessionSetup = {
+            const compatSetup: Session = {
               _id: fetchedSession._id,
-              id: fetchedSession._id,
               scenarioIds: fetchedSession.scenarioIds,
               focalNode: fetchedSession.focalNode,
               opponentNode: fetchedSession.opponentNode,
@@ -172,7 +171,7 @@ const App: React.FC = () => {
 
   const handleSurveyStart = async (): Promise<string | undefined> => {
     try {
-      const currentId = sessionIdFromUrl || activeSessionId || setup.id;
+      const currentId = sessionIdFromUrl || activeSessionId || setup._id;
 
       if (!currentId) {
         throw new Error('Missing session ID. Please start from an admin-generated survey URL.');
@@ -221,7 +220,7 @@ const App: React.FC = () => {
     console.log('Survey Completed');
 
     try {
-      const currentId = sessionIdFromUrl || setup.id || '';
+      const currentId = sessionIdFromUrl || setup._id || '';
       
       // Unified survey flow
       console.log('[NEW API] Completing survey with unified API');

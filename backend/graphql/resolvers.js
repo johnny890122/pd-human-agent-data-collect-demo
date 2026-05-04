@@ -1,5 +1,5 @@
 import { connectToDatabase, isDbConfigured } from '../db.js';
-import { SessionSetupModel, SubmissionModel } from '../models/SessionSetup.js';
+import { SubmissionModel } from '../models/SessionSetup.js';
 import { ScenarioModel } from '../models/Scenario.js';
 import { SessionModel } from '../models/Session.js';
 // SessionReplayModel removed per REQ-413
@@ -751,8 +751,6 @@ export const resolvers = {
         await ScenarioModel.deleteMany({});
         await SubmissionModel.deleteMany({});
         await SessionGroupModel.deleteMany({});
-        // Legacy
-        await SessionSetupModel.deleteMany({});
         return true;
       } catch (error) {
         console.error("Failed to clean database:", error);

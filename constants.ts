@@ -1,4 +1,4 @@
-import { Agent, AgentId, EdgeDef, Session, SessionSetup } from './types';
+import { Agent, AgentId, EdgeDef, Session, ScenarioPreview } from './types';
 
 export const AGENTS: Record<AgentId, Agent> = {
   'A1': { id: 'A1', label: '1', group: 'A' },
@@ -78,12 +78,10 @@ export const COLORS = {
   indigoRgb: '79, 70, 229',
 };
 
-export const INITIAL_SETUP: SessionSetup = {
+export const INITIAL_SETUP: Session = {
   _id: '',
-  id: '',
   scenarioIds: [],
   scenarios: [],
-  activeEdgeIds: [],
   focalNode: 'A1',
   opponentNode: 'A2',
   sampleSize: 20,

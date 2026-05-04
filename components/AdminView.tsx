@@ -1,18 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { SessionSetup, AgentId } from '../types';
+import { Session, AgentId } from '../types';
 import { AGENTS } from '../constants';
 import { generateDesignMatrix } from '../utils/math';
-import { fetchAllSessions, fetchAllSessionSetups, clearDatabase } from '../utils/graphqlClient';
+import { fetchAllSessions, clearDatabase } from '../utils/graphqlClient';
 import HistoryTable from './HistoryTable';
 import SetupPanel from './SetupPanel';
 import GroupsTable from './GroupsTable';
 import GroupDetailView from './GroupDetailView';
 
 interface AdminViewProps {
-  setup: SessionSetup;
-  setSetup: React.Dispatch<React.SetStateAction<SessionSetup>>;
-  onSave: (setupToSave: SessionSetup) => Promise<string | undefined>; // Returns the setup ID
+  setup: Session;
+  setSetup: React.Dispatch<React.SetStateAction<Session>>;
+  onSave: (setupToSave: Session) => Promise<string | undefined>; // Returns the setup ID
 }
 
 const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
@@ -25,7 +25,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   const isReadOnly = location.state?.readOnly === true;
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [history, setHistory] = useState<SessionSetup[]>([]);
+  const [history, setHistory] = useState<Session[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
   const pageSize = 10;
 
@@ -36,7 +36,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
           // Fetch from NEW API (sessions collection) with populated scenarios
           const sessions = await fetchAllSessions(true);  // excludeGroupSessions = true
           
-          // Convert to SessionSetup format for compatibility
+          // Convert to Session format for compatibility
           const data = sessions.map(session => ({
             _id: session._id,
             id: session._id,
@@ -95,7 +95,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
     setSetup({ ...setup, activeEdgeIds: newActive });
   };
 
-  const handleLoadHistorySetup = (selectedSetup: SessionSetup) => {
+  const handleLoadHistorySetup = (selectedSetup: Session) => {
     setSetup(selectedSetup);
     setGeneratedUrl(null);
     navigate('/admin/setup', { state: { readOnly: true } });

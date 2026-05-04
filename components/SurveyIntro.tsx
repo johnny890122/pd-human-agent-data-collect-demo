@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { SessionSetup } from '../types';
+import { Session } from '../types';
 import { AGENTS, COLORS } from '../constants';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
 import { AGENT_IDS, generateTrianglePositions, PayoffMatrix, DecisionSlider } from './SurveyShared';
 
 export interface SurveyIntroProps {
-  setup: SessionSetup;
+  setup: Session;
   currentStep?: number;
   onNavigateIntro?: (step: number) => void;
   onFinish: () => void;

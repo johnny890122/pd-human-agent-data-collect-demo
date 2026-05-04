@@ -1,25 +1,4 @@
 import mongoose from 'mongoose';
-import { randomUUID } from 'crypto';
-
-const sessionSetupSchema = new mongoose.Schema(
-  {
-    _id: { type: String, default: () => randomUUID() },
-    
-    // 關聯到 SessionGroup（批次模式）
-    groupId: { type: String, required: false, default: null },
-    
-    activeEdgeIds: { type: [String], required: true },
-    scenarios: { type: [Object], required: true },
-    focalNode: { type: String, required: true },
-    opponentNode: { type: String, required: true },
-    sampleSize: { type: Number, required: true },
-  },
-  { timestamps: true }
-);
-
-// 索引優化：加速按 groupId 查詢
-sessionSetupSchema.index({ groupId: 1 });
-sessionSetupSchema.index({ createdAt: -1 });
 
 const submissionSchema = new mongoose.Schema(
   {
@@ -60,12 +39,6 @@ submissionSchema.index({ sessionId: 1 });
 submissionSchema.index({ sessionId: 1, participantId: 1 });
 // 索引：完成狀態查詢
 submissionSchema.index({ isCompleted: 1, createdAt: -1 });
-
-
-
-export const SessionSetupModel =
-  mongoose.models.SessionSetup ||
-  mongoose.model('SessionSetup', sessionSetupSchema);
 
 export const SubmissionModel =
   mongoose.models.Submission ||

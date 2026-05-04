@@ -28,7 +28,7 @@ const sessionSchema = new mongoose.Schema(
       participantId: { type: String, required: false, default: null },  // Mixed Mode: 此 session 是為哪個參與者建立的
       createdFor: { 
         type: String, 
-        enum: ['manual', 'batch', 'mixed', null],
+        enum: ['manual', 'mixed', null],
         required: false,
         default: null
       }

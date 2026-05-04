@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchSessionGroup, fetchSessionsByGroup, SessionGroup } from '../utils/graphqlClient';
-import { SessionSetup } from '../types';
+import { Session } from '../types';
 import { toast } from 'react-hot-toast';
 import { AGENTS, ALL_EDGES } from '../constants';
 import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
@@ -10,7 +10,7 @@ const GroupDetailView: React.FC = () => {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
   const [group, setGroup] = useState<SessionGroup | null>(null);
-  const [sessions, setSessions] = useState<SessionSetup[]>([]);
+  const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -55,12 +55,12 @@ const GroupDetailView: React.FC = () => {
     const partnerLabel = getPartnerGroupLabel(group.config.opponentNode);
     const rows = sessions.map((session, index) => [
       index + 1,
-      session._id || session.id || '',
+      session._id || session._id || '',
       focalLabel,
       partnerLabel,
       session.scenarios?.[0]?.activeEdgeIds?.map(eid => getEdgeDisplayName(eid, group.config.focalNode, group.config.opponentNode)).join(' | ') || '',
       `${session.submissionCount || 0}/${session.sampleSize}`,
-      `${window.location.origin}/survey/welcome?sessionId=${session._id || session.id}`
+      `${window.location.origin}/survey/welcome?sessionId=${session._id || session._id}`
     ]);
 
     const csvContent = [
@@ -145,7 +145,7 @@ const GroupDetailView: React.FC = () => {
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">{isMixedMode ? 'Max Edge Count (k)' : 'Edge Count (k)'}</div>
               <div className="text-2xl font-bold text-purple-700">
-                {isMixedMode ? `≤${group.config.maxK || 'N/A'}` : (undefined || 'N/A')}
+                {isMixedMode ? `≤${group.config.maxK || 'N/A'}` : 'N/A'}
               </div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">
@@ -251,11 +251,11 @@ const GroupDetailView: React.FC = () => {
                     : 0;
                   
                   return (
-                    <tr key={session._id || session.id} className="hover:bg-gray-50 transition-colors">
+                    <tr key={session._id || session._id} className="hover:bg-gray-50 transition-colors">
                       <td className="py-3 text-gray-500">{index + 1}</td>
                       <td className="py-3 font-mono text-xs text-purple-700">
-                        <div className="truncate max-w-[200px]" title={session._id || session.id}>
-                          {session._id || session.id}
+                        <div className="truncate max-w-[200px]" title={session._id || session._id}>
+                          {session._id || session._id}
                         </div>
                       </td>
                       <td className="py-3">
@@ -288,7 +288,7 @@ const GroupDetailView: React.FC = () => {
                       </td>
                       <td className="py-3">
                         <button
-                          onClick={() => window.open(`/survey/welcome?sessionId=${session._id || session.id}`, '_blank')}
+                          onClick={() => window.open(`/survey/welcome?sessionId=${session._id || session._id}`, '_blank')}
                           className="text-purple-600 hover:text-purple-800 hover:underline font-medium flex items-center gap-1"
                         >
                           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

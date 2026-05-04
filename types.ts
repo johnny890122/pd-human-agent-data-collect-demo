@@ -40,6 +40,7 @@ export interface Session {
   _id: string;  // UUID
   scenarioIds: string[];  // 引用 Scenario._id 陣列
   scenarios?: Scenario[];  // Virtual populate
+  activeEdgeIds?: string[];  // Frontend UI only / Legacy
   focalNode: string;
   opponentNode: string;
   sampleSize: number;
@@ -57,13 +58,6 @@ export interface Session {
 export interface ScenarioPreview {
   id: number;
   edgeStates: Record<string, EdgeState>;
-}
-
-// 向後相容別名（逐步淘汰）
-export interface SessionSetup extends Session {
-  id?: string;  // Deprecated: use _id
-  activeEdgeIds?: string[];  // Deprecated: derived from scenarios
-  scenarios?: Scenario[] | ScenarioPreview[];  // Support both full and preview scenarios
 }
 
 // UPDATED: Submission

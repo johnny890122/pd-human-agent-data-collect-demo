@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { SessionSetup, SurveyResult } from '../types';
+import { Session, SurveyResult } from '../types';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
@@ -10,7 +10,7 @@ import SurveyOutro from './SurveyOutro';
 import { saveSession } from '../utils/surveySession';
 
 interface SurveyViewProps {
-  setup: SessionSetup;
+  setup: Session;
   onStartSurvey: () => Promise<string | undefined>;
   onSaveAnswer: (entryId: string, answer: SurveyResult) => Promise<boolean>;
   onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
@@ -245,14 +245,14 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     console.log('[SurveyView] Total scenarios:', scenarios.length);
     console.log('[SurveyView] Current index:', scenarioIdx);
     if (currentScenario) {
-      const scenarioId = '_id' in currentScenario ? currentScenario._id : String(currentScenario.id);
+      const scenarioId = currentScenario._id;
       console.log('[SurveyView] Current scenario ID:', scenarioId);
       console.log('[SurveyView] Current scenario activeEdgeIds:', currentScenario.activeEdgeIds);
       console.log('[SurveyView] Current scenario edgeStates:', currentScenario.edgeStates);
     }
     
     // Check if all scenarios are unique
-    const scenarioIds = scenarios.map(s => ('_id' in s ? s._id : String(s.id)));
+    const scenarioIds = scenarios.map(s => s._id);
     const uniqueIds = [...new Set(scenarioIds)];
     if (uniqueIds.length !== scenarioIds.length) {
       console.warn('[SurveyView] ⚠️  WARNING: Duplicate scenario IDs detected!', {
@@ -264,7 +264,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
   const handleNext = async () => {
     // Handle both Scenario (_id) and ScenarioPreview (id) types
-    const scenarioId = '_id' in currentScenario ? currentScenario._id : String(currentScenario.id);
+    const scenarioId = currentScenario._id;
     const answer: SurveyResult = {
       scenarioId,
       cooperationProbability: sliderValue / 100,
@@ -281,13 +281,13 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     if (scenarioIdx < scenarios.length - 1) {
       const nextPath = `/survey/scenarios/${scenarioIdx + 1}${sessionId ? `?sessionId=${sessionId}` : ''}`;
       if (entryId) {
-        saveSession(sessionId || setup.id || '', entryId, nextPath);
+        saveSession(sessionId || setup._id || '', entryId, nextPath);
       }
       navigateWithSession(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
       const nextPath = `/survey/outro${sessionId ? `?sessionId=${sessionId}` : ''}`;
       if (entryId) {
-        saveSession(sessionId || setup.id || '', entryId, nextPath);
+        saveSession(sessionId || setup._id || '', entryId, nextPath);
       }
       navigateWithSession('/survey/outro');
     }

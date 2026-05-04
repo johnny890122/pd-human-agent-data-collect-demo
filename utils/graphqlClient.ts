@@ -1,4 +1,4 @@
-import { Session, SessionSetup, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
+import { Session, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -41,7 +41,7 @@ async function runGraphQL<TData>(query: string, variables?: Record<string, unkno
 }
 
 // ============================================================================
-// NEW API: Session (replaces SessionSetup)
+// NEW API: Session (replaces Session)
 // ============================================================================
 
 export async function fetchSession(id: string): Promise<Session | null> {

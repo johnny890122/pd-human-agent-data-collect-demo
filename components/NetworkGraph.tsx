@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import * as d3 from 'd3';
 import { AGENTS, ALL_EDGES, COLORS } from '../constants';
-import { AgentId, SessionSetup, Scenario } from '../types';
+import { AgentId, Session, Scenario } from '../types';
 import { clamp, distance, getBezierPoint, projectPointToSegmentT } from '../utils/math';
 
 interface NetworkGraphProps {
   mode: 'admin' | 'survey';
-  setup: SessionSetup;
-  scenario?: Scenario;
+  setup: Session;
+  scenario?: any;
   onEdgeClick?: (edgeId: string) => void;
   onNodeClick?: (agentId: AgentId) => void;
   className?: string;
@@ -112,10 +112,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const getEdgeColor = (edgeId: string) => {
     if (mode === 'admin') {
-      return setup.activeEdgeIds.includes(edgeId) ? COLORS.highlight : COLORS.edgeInactive;
+      return (setup?.activeEdgeIds || []).includes(edgeId) ? COLORS.highlight : COLORS.edgeInactive;
     }
     // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
-    const activeEdges = scenario?.activeEdgeIds || setup.activeEdgeIds;
+    const activeEdges = scenario?.activeEdgeIds || setup?.activeEdgeIds || [];
     if (activeEdges.includes(edgeId) && scenario) {
       return scenario.edgeStates[edgeId] === 'give' ? COLORS.coop : COLORS.defect;
     }
@@ -125,7 +125,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   const getEdgeOpacity = (edgeId: string) => {
     if (mode === 'admin') return 1;
     // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
-    const activeEdges = scenario?.activeEdgeIds || setup.activeEdgeIds;
+    const activeEdges = scenario?.activeEdgeIds || setup?.activeEdgeIds || [];
     return activeEdges.includes(edgeId) ? 1 : 0;
   };
 
@@ -279,7 +279,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const start = positions[edge.source];
         const end = positions[edge.target];
         // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
-        const activeEdges = mode === 'survey' && scenario?.activeEdgeIds ? scenario.activeEdgeIds : setup.activeEdgeIds;
+        const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds) || setup?.activeEdgeIds || [];
         const isActive = activeEdges.includes(edge.id);
         const color = getEdgeColor(edge.id);
         const opacity = getEdgeOpacity(edge.id);
@@ -412,7 +412,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const start = positions[edge.source];
         const end = positions[edge.target];
         // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
-        const activeEdges = mode === 'survey' && scenario?.activeEdgeIds ? scenario.activeEdgeIds : setup.activeEdgeIds;
+        const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds) || setup?.activeEdgeIds || [];
         const isActive = activeEdges.includes(edge.id);
         const opacity = getEdgeOpacity(edge.id);
 

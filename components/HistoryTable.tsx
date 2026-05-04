@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchRecentSubmissions, Submission } from '../utils/graphqlClient';
-import { SessionSetup } from '../types';
+import { Session } from '../types';
 import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 
 interface HistoryTableProps {
-  history: SessionSetup[];
+  history: Session[];
   historyPage: number;
   pageSize: number;
   onPageChange: (page: number) => void;
-  onLoadSetup: (setup: SessionSetup) => void;
+  onLoadSetup: (setup: Session) => void;
 }
 
 const HistoryTable: React.FC<HistoryTableProps> = ({
@@ -92,12 +92,12 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                 const minutes = String(parsedDate.getMinutes()).padStart(2, '0');
                 displayDate = `${year}/${month}/${day} ${hours}:${minutes}`;
               }
-              const isExpanded = s.id ? expandedRows.has(s.id) : false;
+              const isExpanded = s._id ? expandedRows.has(s._id) : false;
 
               return (
-                <React.Fragment key={s.id || Math.random()}>
+                <React.Fragment key={s._id || Math.random()}>
                   <tr className="group hover:bg-emerald-50/40 transition-colors">
-                    <td className="py-3 pl-2 cursor-pointer" onClick={() => s.id && toggleRow(s.id)}>
+                    <td className="py-3 pl-2 cursor-pointer" onClick={() => s._id && toggleRow(s._id)}>
                       <button className="text-gray-400 hover:text-emerald-600 focus:outline-none">
                         <svg className={`w-4 h-4 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -108,13 +108,13 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                     {displayDate}
                   </td>
                   <td className="py-3 pr-2 font-mono text-[11px]">
-                    {s.id ? (
+                    {s._id ? (
                       <button
                         type="button"
                         onClick={() => onLoadSetup(s)}
                         className="text-emerald-700 hover:text-emerald-900 hover:underline"
                       >
-                        {s.id}
+                        {s._id}
                       </button>
                     ) : (
                       <span className="text-gray-600">-</span>
@@ -151,10 +151,10 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                     </div>
                   </td>
                   <td className="py-3 pr-2">
-                    {s.id ? (
+                    {s._id ? (
                       <button
                         type="button"
-                        onClick={() => window.open(`/survey/welcome?sessionId=${s.id}`, '_blank')}
+                        onClick={() => window.open(`/survey/welcome?sessionId=${s._id}`, '_blank')}
                         className="text-green-600 hover:text-green-800 hover:underline font-medium text-[11px]"
                       >
                         Open Study
@@ -172,7 +172,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                       ) : (
                         <div className="flex flex-col gap-2">
                           <span className="font-semibold text-gray-700 text-xs mb-2">Participant Submissions:</span>
-                          {submissions.filter(sub => sub.sessionId === s.id).length > 0 ? (
+                          {submissions.filter(sub => sub.sessionId === s._id).length > 0 ? (
                             <table className="w-full text-left text-xs bg-white rounded-md border border-emerald-100 overflow-hidden">
                               <thead className="bg-emerald-50">
                                 <tr>
@@ -184,7 +184,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                               </thead>
                               <tbody>
                                 {submissions
-                                  .filter((sub) => sub.sessionId === s.id || sub.sessionId === s._id)
+                                  .filter((sub) => sub.sessionId === s._id || sub.sessionId === s._id)
                                   .map((sub) => (
                                     <tr key={sub._id} className="border-t border-emerald-50 hover:bg-slate-50">
                                       <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub._id}</td>

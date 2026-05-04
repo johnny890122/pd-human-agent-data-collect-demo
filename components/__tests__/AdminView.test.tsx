@@ -3,15 +3,14 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import AdminView from '../AdminView';
-import { SessionSetup } from '../../types';
-import { fetchAllSessionSetups } from '../../utils/graphqlClient';
+import { Session } from '../../types';
+import { fetchAllSessions } from '../../utils/graphqlClient';
 
 vi.mock('../../utils/graphqlClient', () => ({
-  fetchAllSessionSetups: vi.fn().mockResolvedValue([]),
+  fetchAllSessions: vi.fn().mockResolvedValue([]),
 }));
 
-const baseSetup: SessionSetup = {
-  activeEdgeIds: ['A1-A2'],
+const baseSetup = {
   scenarios: [],
   focalNode: 'A1',
   opponentNode: 'A2',
@@ -23,7 +22,7 @@ describe('AdminView', () => {
   it('defaults to setup tab and shows config with graph guidance', () => {
     render(
       <MemoryRouter initialEntries={['/admin/setup']}>
-        <AdminView setup={baseSetup} setSetup={vi.fn()} onSave={vi.fn()} />
+        <AdminView setup={baseSetup as any as Session} setSetup={vi.fn()} onSave={vi.fn()} />
       </MemoryRouter>
     );
 
@@ -35,7 +34,7 @@ describe('AdminView', () => {
   it('switches to history tab and shows history table', async () => {
     render(
       <MemoryRouter initialEntries={['/admin/setup']}>
-        <AdminView setup={baseSetup} setSetup={vi.fn()} onSave={vi.fn()} />
+        <AdminView setup={baseSetup as any as Session} setSetup={vi.fn()} onSave={vi.fn()} />
       </MemoryRouter>
     );
 
@@ -52,9 +51,7 @@ describe('AdminView', () => {
 
   it('loads selected setup from history when Setup ID is clicked', async () => {
     const setSetup = vi.fn();
-    const historySetup: SessionSetup = {
-      id: 'setup-123',
-      activeEdgeIds: ['A1-A2', 'B3-B4'],
+    const historySetup = {
       scenarios: [],
       focalNode: 'B3',
       opponentNode: 'A2',
@@ -63,11 +60,11 @@ describe('AdminView', () => {
       updatedAt: '2026-03-23T00:00:00.000Z',
     };
 
-    vi.mocked(fetchAllSessionSetups).mockResolvedValueOnce([historySetup]);
+    vi.mocked(fetchAllSessions).mockResolvedValueOnce([historySetup as any as Session]);
 
     render(
       <MemoryRouter initialEntries={['/admin/setup']}>
-        <AdminView setup={baseSetup} setSetup={setSetup} onSave={vi.fn()} />
+        <AdminView setup={baseSetup as any as Session} setSetup={setSetup} onSave={vi.fn()} />
       </MemoryRouter>
     );
 

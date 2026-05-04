@@ -3,7 +3,6 @@ export type GroupId = 'A' | 'B';
 export type EdgeState = 'not give' | 'give';
 export type ScenarioStatus = 'active' | 'completed' | 'paused';
 export type SessionMode = 'manual' | 'mixed';
-export type GroupStatus = 'creating' | 'active' | 'completed' | 'archived';
 
 export interface Agent {
   id: AgentId;
@@ -99,7 +98,6 @@ export interface SessionGroup {
   };
   totalSessions: number;
   totalScenarios: number;
-  status: GroupStatus;
   mode?: SessionMode;  // Virtual field
   completionPercentage?: number;  // Virtual field
   createdAt: string;

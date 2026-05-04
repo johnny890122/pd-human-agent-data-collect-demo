@@ -343,7 +343,6 @@ export async function fetchAllSessionGroups(): Promise<SessionGroupType[]> {
         }
         totalSessions
         totalScenarios
-        status
         mode
         completionPercentage
         createdAt
@@ -374,7 +373,6 @@ export async function fetchSessionGroup(id: string): Promise<SessionGroupType | 
         }
         totalSessions
         totalScenarios
-        status
         mode
         completionPercentage
         createdAt
@@ -385,29 +383,6 @@ export async function fetchSessionGroup(id: string): Promise<SessionGroupType | 
 
   const data = await runGraphQL<{ sessionGroup: SessionGroupType | null }>(query, { id });
   return data.sessionGroup;
-}
-
-export async function updateSessionGroupStatus(
-  groupId: string,
-  status: string
-): Promise<SessionGroupType> {
-  const mutation = `
-    mutation UpdateSessionGroupStatus($groupId: ID!, $status: String!) {
-      updateSessionGroupStatus(groupId: $groupId, status: $status) {
-        _id
-        name
-        status
-        updatedAt
-      }
-    }
-  `;
-
-  const data = await runGraphQL<{ updateSessionGroupStatus: SessionGroupType }>(mutation, {
-    groupId,
-    status,
-  });
-
-  return data.updateSessionGroupStatus;
 }
 
 export async function deleteSessionGroup(groupId: string): Promise<boolean> {

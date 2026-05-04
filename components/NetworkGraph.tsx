@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import * as d3 from 'd3';
-import { AGENTS, ALL_EDGES, COLORS } from '../constants';
+import { AGENTS, ALL_EDGES, COLORS, RADIUS } from '../constants';
 import { AgentId, Session, Scenario } from '../types';
 import { clamp, distance, getBezierPoint, projectPointToSegmentT } from '../utils/math';
 
@@ -128,8 +128,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     const activeEdges = scenario?.activeEdgeIds || setup?.activeEdgeIds || [];
     return activeEdges.includes(edgeId) ? 1 : 0;
   };
-
-  const RADIUS = 42; // Larger nodes for better visibility
 
   const groupAColor = COLORS.kmt;
   const groupBColor = COLORS.dpp;

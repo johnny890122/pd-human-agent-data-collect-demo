@@ -102,7 +102,6 @@ export const typeDefs = `#graphql
     config: GroupConfig!
     totalSessions: Int!
     totalScenarios: Int!
-    status: String!
     mode: String!
     completionPercentage: Float
     createdAt: String!
@@ -194,7 +193,6 @@ export const typeDefs = `#graphql
     completeSurvey(submissionId: ID!, demographics: DemographicsInput!): Submission!
     
     # Admin controls
-    updateSessionGroupStatus(groupId: ID!, status: String!): SessionGroup!
     deleteSessionGroup(groupId: ID!): Boolean!
     clearDatabase: Boolean!
     

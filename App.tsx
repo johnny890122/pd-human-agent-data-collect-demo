@@ -24,7 +24,7 @@ const App: React.FC = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   
-  // URL params: sessionId for Manual/Batch, groupId+mode for Mixed
+  // URL params: sessionId for Manual/Mixed, groupId+mode for Mixed
   const sessionIdFromUrl = searchParams.get('sessionId');
   const groupIdFromUrl = searchParams.get('groupId');
   const modeFromUrl = searchParams.get('mode');

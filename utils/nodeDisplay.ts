@@ -1,11 +1,5 @@
-import { AGENTS } from '../constants';
+import { AGENTS, GROUP_DISPLAY_NAMES } from '../constants';
 import { AgentId } from '../types';
-
-/** Mapping from internal group ID to display name (UI only). */
-export const GROUP_DISPLAY_NAMES: Record<string, string> = {
-  'A': '國民黨',
-  'B': '民進黨',
-};
 
 /**
  * Returns a human-readable display name for a node based on its role in the session.

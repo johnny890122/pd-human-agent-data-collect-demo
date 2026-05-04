@@ -270,7 +270,6 @@ describe('Batch Mode (createBatchSessions)', () => {
       },
       totalSessions: 0,
       totalScenarios: 0,
-      status: 'creating',
     });
 
     const groupId = String(group._id);
@@ -332,12 +331,11 @@ describe('Batch Mode (createBatchSessions)', () => {
     expect(scenarios).toHaveLength(totalScenarios);
     expect(totalScenarios).toBe(3 * 4); // 每個組合 2^2 = 4 scenarios
 
-    // 5. 更新 group 狀態
+    // 5. 更新 group 統計
     const updateResult = await SessionGroupModel.updateOne(
       { _id: groupId },
       {
         $set: {
-          status: 'active',
           totalSessions: sessions.length,
           totalScenarios: scenarios.length
         }
@@ -348,7 +346,6 @@ describe('Batch Mode (createBatchSessions)', () => {
 
     const updatedGroup = await SessionGroupModel.findById(groupId).lean();
     expect(updatedGroup).not.toBeNull();
-    expect(updatedGroup.status).toBe('active');
     expect(updatedGroup.config.edgeCount).toBe(2);
   });
 
@@ -363,7 +360,6 @@ describe('Batch Mode (createBatchSessions)', () => {
         sampleSize: 20,
       },
       totalSessions: 0,
-      status: 'active',
     });
 
     const batchGroupObj = batchGroup.toObject();
@@ -378,7 +374,6 @@ describe('Batch Mode (createBatchSessions)', () => {
         sampleSize: 20,
       },
       totalSessions: 1,
-      status: 'active',
     });
 
     const manualGroupObj = manualGroup.toObject();

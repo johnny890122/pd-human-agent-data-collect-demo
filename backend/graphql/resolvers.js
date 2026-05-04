@@ -85,7 +85,6 @@ function toGroupGraph(doc) {
     config: doc.config || {},
     totalSessions: doc.totalSessions || 0,
     totalScenarios: doc.totalScenarios || 0,
-    status: doc.status || 'active',
     mode,
     completionPercentage: doc.completionPercentage || 0,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
@@ -325,7 +324,6 @@ export const resolvers = {
         },
         totalSessions: 0, // 動態創建，初始為 0
         totalScenarios: 0, // 稍後更新
-        status: 'creating',
       });
       
       const groupId = String(group._id);
@@ -371,13 +369,12 @@ export const resolvers = {
       await ScenarioModel.insertMany(scenariosPool);
       console.log(`[createMixedGroup] ✓ Inserted ${scenariosPool.length} Scenario documents`);
       
-      // 4. 更新 group 統計並啟動
+      // 4. 更新 group 統計
       await SessionGroupModel.updateOne(
         { _id: groupId },
         {
           $set: {
-            totalScenarios: scenariosPool.length,
-            status: 'active'
+            totalScenarios: scenariosPool.length
           }
         }
       );
@@ -414,14 +411,10 @@ export const resolvers = {
       
       console.log(`[startMixedSession] Starting session for participant: ${participantId || 'anonymous'}`);
       
-      // 1. 檢查 group 是否存在且為 active
+      // 1. 檢查 group 是否存在
       const group = await SessionGroupModel.findById(groupId);
       if (!group) {
         throw new Error('Group not found');
-      }
-      
-      if (group.status !== 'active') {
-        throw new Error(`Group is ${group.status}, cannot create new sessions`);
       }
       
       const config = group.config || {};
@@ -628,15 +621,6 @@ export const resolvers = {
           });
           
           console.log(`[completeSurvey] Incomplete scenarios: ${incompleteCount}`);
-          
-          // 如果所有 scenarios 都達到 targetSize，標記 group 為 completed
-          if (incompleteCount === 0 && group.status === 'active') {
-            await SessionGroupModel.updateOne(
-              { _id: session.groupId },
-              { $set: { status: 'completed' } }
-            );
-            console.log(`[completeSurvey] ✓ Group ${session.groupId} marked as completed!`);
-          }
         }
       }
       
@@ -646,28 +630,6 @@ export const resolvers = {
     // ========================================================================
     // Admin Controls
     // ========================================================================
-    
-    updateSessionGroupStatus: async (_, { groupId, status }) => {
-      requireDb();
-      await connectToDatabase();
-      
-      const validStatuses = ['creating', 'active', 'completed', 'archived'];
-      if (!validStatuses.includes(status)) {
-        throw new Error(`Invalid status. Must be one of: ${validStatuses.join(', ')}`);
-      }
-      
-      const doc = await SessionGroupModel.findByIdAndUpdate(
-        groupId,
-        { $set: { status } },
-        { new: true }
-      );
-      
-      if (!doc) {
-        throw new Error('SessionGroup not found');
-      }
-      
-      return toGroupGraph(doc);
-    },
     
     deleteSessionGroup: async (_, { groupId }) => {
       requireDb();

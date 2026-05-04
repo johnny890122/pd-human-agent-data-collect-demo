@@ -1,4 +1,4 @@
-import { Agent, AgentId, EdgeDef, Session, ScenarioPreview } from './types';
+import { Agent, AgentId, EdgeDef, Session } from './types';
 
 export const AGENTS: Record<AgentId, Agent> = {
   'A1': { id: 'A1', label: '1', group: 'A' },
@@ -23,11 +23,12 @@ export const ALL_EDGES: EdgeDef[] = [
   { id: 'B4-B3', source: 'B4', target: 'B3' },
 ];
 
-export const DEFAULT_EDGE_CONFIG = {
-  label: 'Relationship',
-  low: '不給予',
-  high: '給予',
+export const GROUP_DISPLAY_NAMES: Record<string, string> = {
+  'A': '國民黨',
+  'B': '民進黨',
 };
+
+export const RADIUS = 42; // Node radius for NetworkGraph
 
 export const COLORS = {
   // Political colors (for Named mode)

@@ -29,13 +29,6 @@ const sessionGroupSchema = new mongoose.Schema(
     // 快取統計
     totalSessions: { type: Number, default: 0 },       // Sessions 已建立
     totalScenarios: { type: Number, default: 0 },      // Scenarios 已建立（Mixed Mode）
-    
-    // 狀態管理
-    status: {
-      type: String,
-      enum: ['creating', 'active', 'completed', 'archived'],
-      default: 'creating'
-    },
   },
   {
     timestamps: true,
@@ -45,7 +38,6 @@ const sessionGroupSchema = new mongoose.Schema(
 
 // 索引優化
 sessionGroupSchema.index({ createdAt: -1 });
-sessionGroupSchema.index({ status: 1 });
 
 // 虛擬欄位：mode 偵測
 sessionGroupSchema.virtual('mode').get(function() {
@@ -91,11 +83,6 @@ sessionGroupSchema.methods.updateCompletedCount = async function() {
   }
   
   this.completedSessions = completed;
-  
-  // 自動更新狀態
-  if (completed === this.totalSessions && this.totalSessions > 0) {
-    this.status = 'completed';
-  }
   
   await this.save();
   return this;

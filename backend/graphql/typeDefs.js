@@ -11,12 +11,11 @@ export const typeDefs = `#graphql
     opponentNode: String!
     activeEdgeIds: [String!]!
     edgeStates: JSON!
-    scenarioIndex: Int
+    scenarioIndex: Int!                 # Required: position in design matrix
     groupId: ID
-    setupId: ID
     targetSize: Int!
     responseCount: Int!
-    status: String!
+    status: String!                     # 'active' | 'inactive' - controls selection availability
     completionRate: Float!
     createdAt: String!
     updatedAt: String!

@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
 
 /**
- * Session Schema - Scenario Container (Lightweight)
- * Session 是一個輕量容器，透過 ID 引用 scenarios，而不是嵌入資料
+ * Session Schema - Scenario Container
+ * Session 是一個輕量容器，透過 ID 引用 scenarios
  */
 const sessionSchema = new mongoose.Schema(
   {
@@ -26,9 +26,9 @@ const sessionSchema = new mongoose.Schema(
     // Mixed Mode metadata
     metadata: {
       participantId: { type: String, required: false, default: null },  // Mixed Mode: 此 session 是為哪個參與者建立的
-      createdFor: { 
-        type: String, 
-        enum: ['manual', 'mixed', null],
+      createdFor: {
+        type: String,
+        enum: ['manual', 'batch', 'mixed', null],
         required: false,
         default: null
       }

@@ -16,6 +16,9 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-04-29 | **LEGACY API REMOVAL COMPLETE** ✅ Phase 15-16 finished | All setupId-based legacy API removed. Manual & Batch modes now exclusively use new Session/Scenario API. URL format changed from `?setupId=` to `?sessionId=`. All frontend components updated. ~500 lines of legacy code removed. API tests passing. |
 | 2026-04-29 | **MIXED MODE CORE COMPLETE** ✅ Backend + Frontend implementation done | createMixedGroup and startMixedSession resolvers implemented. Balanced selection strategy active. MixedModeConfig UI complete. App.tsx routing supports Mixed Mode URLs. 288 scenarios generated in tests. REQ-306, REQ-307, REQ-308, REQ-309 implemented. |
 | 2026-05-04 | **BUG FIXES** NetworkGraph undefined error and incomplete submissions bug | Fixed NetworkGraph TypeError with defensive checks. Fixed SurveyOutro not calling completeSurvey mutation. All submissions now properly marked as complete. |
+| 2026-05-04 | **SCHEMA REFINEMENT** Scenario model improvements | `scenarioIndex` now required for traceability. `status` enum simplified from `['active', 'completed', 'paused']` to `['active', 'inactive']` to explicitly control scenario availability without redundant completion states (already tracked by `responseCount >= targetSize`). |
+| 2026-05-04 | **PARTICIPANT IDENTIFICATION ENHANCEMENT** Device fingerprinting for Mixed Mode (REQ-311) | Replace random participant ID with browser fingerprinting for more reliable duplicate detection. Addresses Open Question #5. |
+| 2026-05-04 | **SCHEMA CONSTRAINT TIGHTENING** Mixed Mode config fields are now mandatory (REQ-312) | `SessionGroup.config.maxK`, `scenariosPerSession`, and `targetSizePerScenario` changed from `required: false` to `required: true` on the Mongoose schema. These three fields are the defining configuration of a Mixed Mode group and must always be present when a Mixed Mode group is created. This change has cascading impact on GraphQL input types, TypeScript types, and test fixtures — see REQ-312 and TASK-2401..TASK-2407. **Open conflict flagged**: Mongoose `required: true` applies collection-wide; Batch Mode groups do not have these fields. Resolution needed — see Open Questions #7. |
 
 ---
 
@@ -112,18 +115,47 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **REQ-309 — Mixed Mode Completion Detection.** ✅ **COMPLETED** When all scenarios in a Mixed Mode group reach their `targetSize` (i.e., `responseCount >= targetSize`), the system automatically updates the group's status to `completed`.
   - *Acceptance:* After each submission completion, query `Scenario.countDocuments({ groupId, responseCount: { $lt: targetSize } })`. If count is 0, update `SessionGroup.status = 'completed'`. Admin UI displays completion progress as `(scenarios where responseCount >= targetSize) / totalScenarios × 100%`. **Implemented**: Logic in completeSurvey resolver.
 
+- **REQ-312 — Mixed Mode Config Fields Are Mandatory.** 🔧 **IN PROGRESS** (2026-05-04) When creating a Mixed Mode `SessionGroup`, the three configuration fields `maxK`, `scenariosPerSession`, and `targetSizePerScenario` MUST be provided and MUST be valid positive integers. The system MUST reject any attempt to create a Mixed Mode group without all three fields.
+  - *Rationale:* These fields are the complete definition of a Mixed Mode experiment. Without them, `createMixedGroup` cannot generate a scenario pool (`maxK`), cannot create personalized sessions (`scenariosPerSession`), and cannot track group completion (`targetSizePerScenario`). Previously they were `required: false` which allowed silent partial configurations that would fail at runtime.
+  - *Acceptance:*
+    - `SessionGroup.config.maxK` — Mongoose schema `required: true`, enforced range `min: 1, max: 12`
+    - `SessionGroup.config.scenariosPerSession` — Mongoose schema `required: true`, value must be ≥ 1
+    - `SessionGroup.config.targetSizePerScenario` — Mongoose schema `required: true`, value must be ≥ 1
+    - `createMixedGroup` mutation rejects input where any of these three fields is missing or zero (existing resolver-level validation already covers this; the schema change adds a second layer of enforcement at the persistence layer)
+    - GraphQL `GroupConfigInput` type declares these fields as non-nullable (`Int!`) so callers get a schema-level error before the resolver even runs
+    - TypeScript `SessionGroup.config` interface declares `maxK`, `scenariosPerSession`, `targetSizePerScenario` as `number` (not `number | null`)
+  - *Breaking change note:* Any existing `SessionGroup` document of Batch Mode (`config.edgeCount` is set, `config.maxK` is null) will fail Mongoose validation under strict `required: true` unless the constraint is scoped only to Mixed Mode documents. See Open Question #7.
+
 - **REQ-310 — Scenario Completion Visualization.** ⏸️ **DEFERRED** Admin UI for Mixed Mode groups MUST display a scenario-level completion heatmap showing which scenarios are under-sampled, at-target, or over-sampled.
   - *Acceptance:* `GroupDetailView` for Mixed Mode groups queries all scenarios via `scenarios(groupId)` and renders a visual matrix (e.g., D3 heatmap) where color intensity represents `responseCount / targetSize`. Clicking a cell shows scenario details (edge configuration, current count).
+
+- **REQ-311 — Device Fingerprint Participant Identification.** 🔄 **IN PROGRESS** (2026-05-04) The system MUST use browser device fingerprinting instead of random IDs for participant identification in Mixed Mode to enhance duplicate detection and prevent repeat submissions.
+  - *Rationale:* Random localStorage IDs can be easily cleared or bypassed. Device fingerprinting provides more stable identification across sessions while remaining privacy-friendly (no PII collection).
+  - *Acceptance:*
+    - Replace `utils/participantId.ts` random ID generation with fingerprinting library (e.g., FingerprintJS)
+    - Generate participant ID from browser attributes: canvas fingerprint, WebGL, fonts, screen resolution, timezone, plugins
+    - Fallback to random ID if fingerprinting fails (e.g., privacy-focused browsers)
+    - Store fingerprint hash (not raw data) in `Session.metadata.participantId` and `Submission.participantId`
+    - Participant ID should be stable across browser sessions but change if significant browser config changes
+    - Display fingerprinting attribution notice in survey welcome page per library licensing requirements
+  - *Technical Constraints:*
+    - Must work in all major browsers (Chrome, Firefox, Safari, Edge)
+    - Should not significantly impact page load time (<100ms)
+    - Respect DNT (Do Not Track) headers - fallback to anonymous mode if DNT is enabled
+    - Comply with privacy regulations (no biometric data, no cross-site tracking)
 
 ### REQ-315 — Session History (`/admin/history`)
 
 - **REQ-316 — List standalone sessions.** Shows every `Session` where `groupId == null`, with submission counts and links to the survey URL and raw data.
   - *Acceptance:* Backed by `allSessions(excludeGroupSessions: true)` query. URLs use `?sessionId=` format.
 
-### REQ-320 — Scenario-Centric Data Model (Architecture Requirement) ✅ **IMPLEMENTED 2026-04-28**
+### REQ-320 — Scenario-Centric Data Model (Architecture Requirement) ✅ **IMPLEMENTED 2026-04-28** 🔧 **REFINED 2026-05-04**
 
-- **REQ-321 — Scenario as Atomic Unit.** ✅ **IMPLEMENTED 2026-04-28** The system MUST model `Scenario` as an independent, first-class entity with its own collection, lifecycle, and tracking. Each scenario encapsulates: (a) experiment configuration (focalNode, opponentNode, activeEdgeIds), (b) specific state (edgeStates map), (c) data collection progress (responseCount vs targetSize), (d) status (active/completed/paused).
+- **REQ-321 — Scenario as Atomic Unit.** ✅ **IMPLEMENTED 2026-04-28** 🔧 **REFINED 2026-05-04** The system MUST model `Scenario` as an independent, first-class entity with its own collection, lifecycle, and tracking. Each scenario encapsulates: (a) experiment configuration (focalNode, opponentNode, activeEdgeIds), (b) specific state (edgeStates map), (c) data collection progress (responseCount vs targetSize), (d) status controlling selection availability.
   - *Acceptance:* ✅ `Scenario` collection exists with UUID primary keys. Can be queried independently of `Session`. Supports scenario-level analytics and filtering. Implemented in [`backend/models/Scenario.js`](../backend/models/Scenario.js). Tested in 15/15 backend unit tests.
+  - *Schema Refinement (2026-05-04):*
+    - `scenarioIndex` is now **required** (`required: true`) to ensure traceability to the original design matrix position for all scenarios.
+    - `status` enum simplified to `['active', 'inactive']`. The `status` field now explicitly controls whether a scenario can be selected for new sessions (e.g., pausing problematic configurations), rather than redundantly tracking completion state already available via `responseCount >= targetSize` comparison. Previous values `'completed'` and `'paused'` are replaced by the simpler binary `'active'` (available for selection) vs `'inactive'` (excluded from selection).
 
 - **REQ-322 — Session as Scenario Container.** ✅ **IMPLEMENTED 2026-04-28** `Session` MUST be a lightweight container that references scenarios via `scenarioIds: [String]` rather than embedding scenario data. Sessions define the participant experience (which scenarios in what order) but scenarios exist independently.
   - *Acceptance:* ✅ `Session` documents contain only IDs, not full scenario objects. GraphQL queries populate scenarios on-demand via `toSessionGraph` helper. Implemented in [`backend/models/Session.js`](../backend/models/Session.js). Verified with unit tests.
@@ -207,4 +239,6 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 2. **REQ-310 Scenario heatmap.** UI design and implementation priority for scenario completion visualization in Mixed Mode groups.
 3. **Mixed Mode design matrix size.** How many scenarios does each edge combination's design matrix contain? This affects `totalScenarios` calculation and estimated participant count.
 4. **Mixed Mode balanced selection tuning.** Current strategy: sort by `responseCount`, take top 2S, random sample S. Should we adjust the candidate pool size or use different strategy?
-5. **Mixed Mode duplicate participation.** Should the system enforce `participantId` uniqueness per group more strictly? Via cookie, email requirement, or other method?
+5. **~~Mixed Mode duplicate participation.~~** ~~Should the system enforce `participantId` uniqueness per group more strictly? Via cookie, email requirement, or other method?~~ → **RESOLVED** via REQ-311 (device fingerprinting)
+6. **Fingerprinting library choice.** Should we use open-source FingerprintJS, commercial Fingerprint Pro, or implement custom fingerprinting? Trade-offs: accuracy vs cost vs privacy.
+7. **REQ-312 Mongoose `required: true` scope conflict.** Making `maxK`, `scenariosPerSession`, and `targetSizePerScenario` unconditionally `required: true` in the Mongoose schema will cause validation failures when creating Batch Mode or Manual Mode `SessionGroup` documents, which legitimately do not have these fields. Two resolution options: (a) keep `required: false` at the Mongoose level and rely exclusively on resolver-level validation + GraphQL type-system enforcement (`Int!`) to enforce presence for Mixed Mode — the schema-level constraint only applies when the resolver itself writes the document; (b) use a Mongoose conditional validator (`required: function() { return !!this.config?.maxK; }`) so the constraint applies only to Mixed Mode documents. The tasks in Phase 24 implement option (b) as it provides the deepest enforcement while remaining non-breaking for other modes. Confirm preferred approach before implementation.

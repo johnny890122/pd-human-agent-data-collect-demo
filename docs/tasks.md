@@ -20,6 +20,8 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 | Phase 16 | ✅ Complete | 2026-04-29 | Survey flow |
 | Phase 17 | 🟡 Partial | Ongoing | Testing done, heatmap deferred |
 | Bug Fixes | ✅ Complete | 2026-05-04 | NetworkGraph, SurveyOutro |
+| Schema Refinement | 🔧 In Progress | 2026-05-04 | Scenario model improvements |
+| Phase 24 | 📋 Planned | 2026-05-04 | Mixed Mode config fields mandatory (REQ-312) |
 
 ---
 
@@ -480,6 +482,177 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 
 ---
 
+## Phase 24: Mixed Mode Config Fields — Mandatory Enforcement (REQ-312)
+
+**Status**: 📋 **Planned** (2026-05-04)
+
+**Objective**: Enforce that `maxK`, `scenariosPerSession`, and `targetSizePerScenario` are always present and valid when a Mixed Mode `SessionGroup` is created. Changes span four layers: Mongoose schema, GraphQL type definitions, TypeScript types, and test fixtures.
+
+**Prerequisite decision**: Confirm Open Question #7 (whether to use conditional Mongoose validators or rely on GraphQL layer enforcement only). Tasks below assume conditional validators (option b) — adjust TASK-2401 if option a is chosen.
+
+---
+
+### Layer 1 — Mongoose Schema (`backend/models/SessionGroup.js`)
+
+- [ ] **TASK-2401**: Tighten `SessionGroup.config` required constraints — `backend/models/SessionGroup.js` lines 19-21 [REQ-312]
+  - Change `maxK`, `scenariosPerSession`, and `targetSizePerScenario` from `required: false` to conditional validators so the constraint fires only on Mixed Mode documents (those where `config.maxK` is truthy):
+    ```js
+    maxK: {
+      type: Number,
+      min: 1,
+      max: 12,
+      required: function() { return this.config && !!this.config.maxK; }
+    },
+    scenariosPerSession: {
+      type: Number,
+      required: function() { return this.config && !!this.config.maxK; }
+    },
+    targetSizePerScenario: {
+      type: Number,
+      required: function() { return this.config && !!this.config.maxK; }
+    }
+    ```
+  - **Risk**: If the simpler `required: true` approach is chosen instead, Batch Mode and Manual Mode `SessionGroup` documents will fail validation — all existing tests and the `createBatchSessions` / `createManualSession` flows must then be updated to supply dummy values or the batch/manual paths must be restructured.
+  - *Verification*: `SessionGroupModel.create({ name: 'Mixed', config: { maxK: 2, focalNode: 'A1', opponentNode: 'A2', sampleSize: 1 } })` MUST fail Mongoose validation with a meaningful error. `SessionGroupModel.create({ name: 'Batch', config: { edgeCount: 2, focalNode: 'A1', opponentNode: 'A2', sampleSize: 20 } })` MUST still succeed.
+
+---
+
+### Layer 2 — GraphQL Type Definitions (`backend/graphql/typeDefs.js`)
+
+- [ ] **TASK-2402**: Make `maxK`, `scenariosPerSession`, `targetSizePerScenario` non-nullable in `GroupConfigInput` — `backend/graphql/typeDefs.js` [REQ-312]
+  - Change the `GroupConfigInput` input type from:
+    ```graphql
+    input GroupConfigInput {
+      edgeCount: Int
+      maxK: Int
+      scenariosPerSession: Int
+      targetSizePerScenario: Int
+      focalNode: String!
+      opponentNode: String!
+      sampleSize: Int!
+    }
+    ```
+    to:
+    ```graphql
+    input GroupConfigInput {
+      edgeCount: Int
+      maxK: Int!
+      scenariosPerSession: Int!
+      targetSizePerScenario: Int!
+      focalNode: String!
+      opponentNode: String!
+      sampleSize: Int!
+    }
+    ```
+  - **Impact**: The `createMixedGroup` mutation (the only consumer of `GroupConfigInput`) already requires these fields via resolver guards. Promoting them to `Int!` moves enforcement to the GraphQL schema layer, so clients receive a type error before the resolver runs.
+  - **Risk**: `GroupConfigInput` is shared with any future mutations that use the same input type. If a Batch Mode mutation is ever added using this type, it would need to supply dummy values or a separate input type. Consider whether a dedicated `MixedGroupConfigInput` is preferable long-term.
+  - *Verification*: Sending `createMixedGroup` without `maxK` MUST return a GraphQL schema validation error (not a resolver error).
+
+- [ ] **TASK-2403**: Make `maxK`, `scenariosPerSession`, `targetSizePerScenario` non-nullable in the `GroupConfig` return type — `backend/graphql/typeDefs.js` [REQ-312]
+  - Change:
+    ```graphql
+    type GroupConfig {
+      edgeCount: Int
+      maxK: Int
+      scenariosPerSession: Int
+      targetSizePerScenario: Int
+      ...
+    }
+    ```
+    to:
+    ```graphql
+    type GroupConfig {
+      edgeCount: Int
+      maxK: Int!
+      scenariosPerSession: Int!
+      targetSizePerScenario: Int!
+      ...
+    }
+    ```
+  - **Risk**: `GroupConfig` is also returned for Batch Mode groups (`toGroupGraph` helper). Batch Mode groups have `maxK: undefined / null`, so marking the return type as `Int!` will cause Apollo to return null-violation errors on every `sessionGroup` and `allSessionGroups` query for Batch Mode groups. Safest resolution: keep the return type fields nullable (`Int`) and only enforce non-nullability on the input side (`GroupConfigInput`). Alternatively, create a discriminated union or separate types per mode.
+  - **Recommendation**: Skip this task or scope it only to the input type (TASK-2402). Document the asymmetry: input is strict (`Int!`), output is permissive (`Int`) because the output serves all modes. Revisit when/if Batch Mode is removed or mode-specific return types are introduced.
+
+---
+
+### Layer 3 — Resolver (`backend/graphql/resolvers.js`)
+
+- [ ] **TASK-2404**: Remove dead fallback in `startMixedSession` resolver — `backend/graphql/resolvers.js` line 428 [REQ-312]
+  - Current code: `const scenariosPerSession = config.scenariosPerSession || 20;`
+  - With `scenariosPerSession` now required and validated before document creation, `config.scenariosPerSession` will always be a positive integer at this point. The `|| 20` fallback is dead code and masks the absence of the field (which should now be impossible).
+  - Change to: `const scenariosPerSession = config.scenariosPerSession;`
+  - Add a defensive throw if somehow it is still falsy (belt-and-suspenders for bad pre-existing DB data):
+    ```js
+    const scenariosPerSession = config.scenariosPerSession;
+    if (!scenariosPerSession) {
+      throw new Error('SessionGroup is missing required config.scenariosPerSession');
+    }
+    ```
+  - *Verification*: `startMixedSession` with a group that has `scenariosPerSession=5` MUST use exactly 5, not 20.
+
+---
+
+### Layer 4 — TypeScript Types (`types.ts`)
+
+- [ ] **TASK-2405**: Remove nullability from Mixed Mode config fields in the `SessionGroup` interface — `types.ts` lines 93-95 [REQ-312]
+  - Change:
+    ```typescript
+    config: {
+      maxK?: number | null;           // Mixed mode
+      scenariosPerSession?: number | null;  // Mixed mode
+      targetSizePerScenario?: number | null;  // Mixed mode
+      focalNode: string;
+      opponentNode: string;
+      sampleSize: number;
+    };
+    ```
+    to:
+    ```typescript
+    config: {
+      edgeCount?: number | null;      // Batch mode only
+      maxK: number;                   // Mixed mode — required, non-nullable
+      scenariosPerSession: number;    // Mixed mode — required, non-nullable
+      targetSizePerScenario: number;  // Mixed mode — required, non-nullable
+      focalNode: string;
+      opponentNode: string;
+      sampleSize: number;
+    };
+    ```
+  - **Risk**: Frontend components that access `group.config.maxK`, `group.config.scenariosPerSession`, or `group.config.targetSizePerScenario` currently guard with `|| 0` or `|| 1` patterns (visible in `GroupDetailView.tsx` line 198). After this change, those guards become unnecessary (but are not harmful — TypeScript will report them as redundant). More importantly, any code that checks `if (group.config.maxK)` to detect Mixed Mode will still work because the value is 0 for non-mixed groups only if they somehow set it — but it should be `undefined`/absent for Batch Mode groups. Review all call sites before removing guards.
+  - *Call sites to inspect*:
+    - `components/GroupDetailView.tsx` lines 148, 162, 174, 197, 198
+    - `components/MixedModeConfig.tsx` (reads from state, not DB type — not affected)
+    - `components/SetupPanel.tsx` (writes to mutation, not reads from DB type — not affected)
+    - `utils/graphqlClient.ts` lines 337-339, 368-370 (fragment field selections — not typed directly, OK)
+
+---
+
+### Layer 5 — Test Fixtures (`backend/__tests__/new-data-model.test.js`)
+
+- [ ] **TASK-2406**: Add Mixed Mode SessionGroup creation test that validates all three fields are required — `backend/__tests__/new-data-model.test.js` [REQ-312]
+  - Add a new `describe('SessionGroup Mixed Mode required config fields')` block with tests:
+    1. Creating a SessionGroup with all three fields present MUST succeed
+    2. Creating a Mixed Mode SessionGroup without `scenariosPerSession` MUST fail Mongoose validation (expects `ValidationError`)
+    3. Creating a Mixed Mode SessionGroup without `targetSizePerScenario` MUST fail Mongoose validation
+    4. Creating a Mixed Mode SessionGroup without `maxK` — this is the degenerate case where none of the conditional validators would fire; discuss whether this case needs a separate guard
+  - *Note*: If TASK-2401 uses simple `required: true` instead of conditional validators, also add a test confirming Batch Mode group creation still works (to prevent regression).
+
+- [ ] **TASK-2407**: Verify existing Batch Mode test fixtures still pass after TASK-2401 — `backend/__tests__/new-data-model.test.js` [REQ-312]
+  - Examine the two `SessionGroupModel.create(...)` calls in the `Batch Mode (createBatchSessions)` describe block (lines 264-275 and 357-366). Both create groups without `maxK`, `scenariosPerSession`, or `targetSizePerScenario`.
+  - If conditional validators are used (TASK-2401 option b), these tests MUST continue to pass without modification.
+  - If unconditional `required: true` is used (option a), these test fixtures MUST be updated to include the three fields (e.g., provide `maxK: null` explicitly, or restructure fixtures to reflect mode separation).
+  - Run the full test suite (`npx vitest run backend/__tests__/new-data-model.test.js`) and confirm all 15+ tests pass before marking this task complete.
+
+---
+
+**Acceptance Criteria for Phase 24**:
+- Sending `createMixedGroup` without `maxK` returns a GraphQL schema error (not a resolver error) — enforced by `Int!` in `GroupConfigInput`
+- Attempting `SessionGroupModel.create({ name: 'x', config: { maxK: 2, focalNode: 'A1', opponentNode: 'A2', sampleSize: 1 } })` without `scenariosPerSession` throws `ValidationError` — enforced by Mongoose conditional validator
+- `startMixedSession` no longer uses the `|| 20` fallback — fails explicitly if `scenariosPerSession` is absent
+- Frontend TypeScript `SessionGroup.config.maxK` is typed as `number` (not `number | null`) — compile-time enforcement
+- All existing backend tests continue to pass (no regression on Batch/Manual Mode group creation)
+
+---
+
 ## Backlog / Future Enhancements
 
 ### Features (Out of Scope Today)
@@ -557,3 +730,233 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 
 **Week 5** ✅: Bug fixes and documentation consolidation
 - Milestone: All known issues fixed, documentation synchronized
+
+---
+
+## Phase 21: Device Fingerprinting - Core Implementation (REQ-311)
+
+**Status**: 📋 **Planned** (2026-05-04)
+
+**Objective**: Replace random localStorage-based participant IDs with browser device fingerprinting to provide stable identification and prevent duplicate submissions in Mixed Mode experiments.
+
+### Tasks
+
+- [ ] **TASK-2101**: Install and configure FingerprintJS library
+  - Run `npm install @fingerprintjs/fingerprintjs`
+  - Verify library compatibility with Vite build
+  - Check bundle size impact (should be <50KB)
+  - [REQ-311]
+
+- [ ] **TASK-2102**: Refactor `utils/participantId.ts` for fingerprinting
+  - Replace random ID generation with `generateFingerprint()` async function
+  - Implement FingerprintJS initialization with privacy-safe config
+  - Add DNT (Do Not Track) header detection and fallback
+  - Create hybrid ID for low-confidence fingerprints
+  - Add error handling with fallback to random ID
+  - Update `getParticipantId()` to be async (returns `Promise<string>`)
+  - Maintain backward compatibility with existing random IDs
+  - [REQ-311]
+
+- [ ] **TASK-2103**: Update all `getParticipantId()` call sites for async
+  - Update `App.tsx` to use `await getParticipantId()`
+  - Update any other components that call this function
+  - Handle loading state while fingerprint generates
+  - [REQ-311]
+
+- [ ] **TASK-2104**: Add privacy disclosure notice
+  - Update `components/SurveyWelcome.tsx` to display fingerprinting notice
+  - Add bilingual notice (zh-TW and English)
+  - Include explanation of what data is collected (browser config only)
+  - Clarify no PII, no biometric data, no cross-site tracking
+  - [REQ-311, Privacy Compliance]
+
+- [ ] **TASK-2105**: Add fingerprint storage layer
+  - Store fingerprint hash in localStorage (`pd_fingerprint_v1`)
+  - Implement fingerprint comparison logic (reuse ID if fingerprint matches)
+  - Add migration logic for existing random IDs
+  - [REQ-311]
+
+- [ ] **TASK-2106**: Configure fingerprint components for privacy
+  - Exclude invasive components (sessionStorage, IndexedDB)
+  - Include only stable, non-invasive components (canvas, WebGL, fonts, timezone)
+  - Disable FingerprintJS telemetry
+  - Test compliance with DNT headers
+  - [REQ-311, Privacy Compliance]
+
+## Phase 22: Device Fingerprinting - Testing & Validation
+
+**Status**: 📋 **Planned** (2026-05-04)
+
+**Objective**: Ensure fingerprinting works reliably across browsers and scenarios, with proper fallbacks and performance.
+
+### Tasks
+
+- [ ] **TASK-2201**: Test fingerprint stability
+  - Open survey in same browser, verify same ID across sessions
+  - Clear localStorage, verify fingerprint regenerates correctly
+  - Test in incognito/private mode
+  - Test across browser restarts
+  - [REQ-311]
+
+- [ ] **TASK-2202**: Test browser compatibility
+  - Test in Chrome (latest 2 versions)
+  - Test in Firefox (latest 2 versions)
+  - Test in Safari (latest 2 versions)
+  - Test in Edge (latest version)
+  - Document any browser-specific issues
+  - [REQ-311]
+
+- [ ] **TASK-2203**: Test fallback scenarios
+  - Test with DNT enabled (should use `dnt-` prefixed random ID)
+  - Test with FingerprintJS load failure (should use `fallback-` ID)
+  - Test with low confidence score (should use hybrid ID)
+  - Test in browsers with fingerprint blocking (Brave, Tor Browser)
+  - [REQ-311]
+
+- [ ] **TASK-2204**: Performance testing
+  - Measure fingerprint generation time (should be <100ms)
+  - Test impact on page load time
+  - Test with slow network conditions
+  - Verify no blocking of UI rendering
+  - [REQ-311, NFR-1]
+
+- [ ] **TASK-2205**: Test Mixed Mode duplicate prevention
+  - Create Mixed Mode group
+  - Complete survey with fingerprint ID
+  - Attempt to start new session with same browser (should detect existing session)
+  - Clear localStorage but keep browser config (should generate same fingerprint)
+  - Change browser config significantly (should generate new fingerprint)
+  - [REQ-311, REQ-307]
+
+- [ ] **TASK-2206**: Test migration of existing random IDs
+  - Create session with old random ID
+  - Verify migration to fingerprint-based ID
+  - Ensure old submissions still linked correctly
+  - [REQ-311]
+
+- [ ] **TASK-2207**: Update unit tests
+  - Mock FingerprintJS in tests
+  - Test async `getParticipantId()` function
+  - Test fingerprint generation and fallback logic
+  - Test DNT header detection
+  - [REQ-311]
+
+- [ ] **TASK-2208**: Update E2E tests
+  - Update Mixed Mode test scripts to handle async participant ID
+  - Verify `scripts/test-mixed-mode-e2e.mjs` still passes
+  - [REQ-311]
+
+## Phase 23: Device Fingerprinting - Monitoring & Documentation
+
+**Status**: 📋 **Planned** (2026-05-04)
+
+**Objective**: Add monitoring capabilities and comprehensive documentation for the fingerprinting feature.
+
+### Tasks
+
+- [ ] **TASK-2301**: Add fingerprint analytics (optional)
+  - Add stats query: count of fingerprint vs fallback IDs
+  - Add collision detection: multiple participants with same fingerprint
+  - Add DNT opt-out rate tracking
+  - Display in Admin UI as info metrics
+  - [REQ-311]
+
+- [ ] **TASK-2302**: Create debugging utilities
+  - Add `getParticipantIdDebug()` function that returns fingerprint components
+  - Add console logging for fingerprint generation (dev mode only)
+  - Create admin tool to view participant ID details
+  - [REQ-311]
+
+- [ ] **TASK-2303**: Update documentation
+  - Add fingerprinting section to `docs/README.md`
+  - Document privacy implications and compliance
+  - Document troubleshooting for common issues
+  - Add FAQ about fingerprinting vs random IDs
+  - [REQ-311]
+
+- [ ] **TASK-2304**: Update `docs/testing-guide.md`
+  - Add fingerprinting test scenarios
+  - Document how to test with DNT enabled
+  - Document browser-specific testing requirements
+  - [REQ-311]
+
+- [ ] **TASK-2305**: Add privacy policy template (optional)
+  - Create sample privacy disclosure text for researchers
+  - Include explanation of fingerprinting technology
+  - Include data retention and usage policies
+  - [REQ-311, Privacy Compliance]
+
+---
+
+## Phase 19: Scenario Schema Refinement (2026-05-04)
+
+**Status**: 🔧 **In Progress**
+
+**Objective**: Simplify and clarify the Scenario model by making `scenarioIndex` required for traceability and simplifying the `status` enum to better reflect its actual purpose (selection availability control).
+
+### Tasks
+
+- [ ] **TASK-1901**: Update `backend/models/Scenario.js` schema
+  - Change `scenarioIndex` from `required: false` to `required: true`
+  - Change `status` enum from `['active', 'completed', 'paused']` to `['active', 'inactive']`
+  - Update schema comments to clarify that 'active' = available for selection, 'inactive' = excluded
+  - [REQ-321]
+
+- [ ] **TASK-1902**: Update all scenario creation code to ensure `scenarioIndex` is always provided
+  - Review `createManualSession` resolver
+  - Review `createBatchSessions` resolver
+  - Review `createMixedGroup` resolver
+  - Verify all scenarios are created with valid `scenarioIndex`
+  - [REQ-201, REQ-301, REQ-306]
+
+- [ ] **TASK-1903**: Update status-related logic in GraphQL resolvers
+  - Review and update any code that checks for 'completed' or 'paused' status
+  - Ensure Mixed Mode selection only uses 'active' scenarios
+  - Remove any redundant status updates (completion should be checked via `responseCount >= targetSize`)
+  - [REQ-307, REQ-309]
+
+- [ ] **TASK-1904**: Update GraphQL type definitions
+  - Update `Scenario` type in `typeDefs.js` to reflect new status enum
+  - Ensure `scenarioIndex` is marked as non-nullable (`Int!`)
+  - [REQ-321]
+
+- [ ] **TASK-1905**: Update test files
+  - Update `backend/__tests__/new-data-model.test.js` to use new status values
+  - Ensure all test scenario creations include `scenarioIndex`
+  - Verify tests still pass
+  - [All tests]
+
+- [ ] **TASK-1906**: Update documentation and scripts
+  - Review and update `scripts/test-*.mjs` files if they reference old status values
+  - Update `docs/testing-guide.md` if it contains status-related examples
+  - [Documentation]
+
+**Acceptance Criteria**:
+- All scenarios created through the system MUST have a valid `scenarioIndex`
+- Status field only uses 'active' or 'inactive' values
+- Mixed Mode balanced selection correctly filters by `status='active'`
+- No code references 'completed' or 'paused' status values
+- All existing tests pass with the new schema
+- New validation prevents scenarios without scenarioIndex
+
+---
+
+## Summary: Device Fingerprinting Implementation
+
+**Total Estimated Effort**: 3-4 days
+
+| Phase | Tasks | Estimated Time | Priority |
+|-------|-------|----------------|----------|
+| Phase 21 | 6 tasks (Core implementation) | 1-2 days | 🔴 High |
+| Phase 22 | 8 tasks (Testing & validation) | 1 day | 🟡 Medium |
+| Phase 23 | 5 tasks (Monitoring & docs) | 0.5-1 day | 🟢 Low |
+
+**Key Dependencies**:
+- Must complete Phase 21 before Phase 22
+- Phase 23 can be done in parallel with or after Phase 22
+
+**Risk Mitigation**:
+- Fingerprinting failures are handled with fallbacks (no service disruption)
+- Async changes may require UI loading states
+- Browser compatibility testing is critical for production use
+- Privacy compliance review recommended before deployment

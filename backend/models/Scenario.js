@@ -16,21 +16,19 @@ const scenarioSchema = new mongoose.Schema(
     
     // 特定狀態（此 scenario 的條件）
     edgeStates: { type: Map, of: String, required: true }, // edgeId → 'give' | 'not give'
-    scenarioIndex: { type: Number, required: false },       // 在原始 design matrix 中的位置（可選）
+    scenarioIndex: { type: Number, required: true },        // 在原始 design matrix 中的位置（必填）
     
     // 所有權（可追溯性）
     groupId: { type: String, required: false, default: null },     // 哪個 SessionGroup 創建的
-    setupId: { type: String, required: false, default: null },     // 原始 SessionSetup ID（用於遷移/參考）
-    
     // 數據收集追蹤（scenario-level!）
     targetSize: { type: Number, required: true, default: 0 },      // 此 scenario 需要多少回應
     responseCount: { type: Number, required: true, default: 0 },   // 已收集多少回應
     
-    status: { 
-      type: String, 
-      enum: ['active', 'completed', 'paused'],
-      default: 'active'
-    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],              // 控制 scenario 是否可被選擇
+      default: 'active'                          // 'active' = 可選擇, 'inactive' = 已排除
+    },                                           // 注意：完成狀態由 responseCount >= targetSize 判斷
   },
   { 
     timestamps: true,
@@ -40,8 +38,6 @@ const scenarioSchema = new mongoose.Schema(
 
 // 索引：Mixed Mode 平衡選擇
 scenarioSchema.index({ groupId: 1, status: 1, responseCount: 1 });
-// 索引：可追溯性
-scenarioSchema.index({ setupId: 1, scenarioIndex: 1 });
 // 索引：狀態查詢
 scenarioSchema.index({ status: 1 });
 

@@ -91,8 +91,8 @@ const App: React.FC = () => {
         if (groupIdFromUrl && modeFromUrl === 'mixed') {
           console.log('[App] Mixed Mode URL detected:', groupIdFromUrl);
           
-          // Get participant ID
-          const participantId = getParticipantId();
+          // Get participant ID (now async with fingerprinting)
+          const participantId = await getParticipantId();
           console.log('[App] Participant ID:', participantId);
           
           // Start or resume mixed session

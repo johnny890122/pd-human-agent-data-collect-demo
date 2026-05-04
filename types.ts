@@ -26,7 +26,6 @@ export interface Scenario {
   edgeStates: Record<string, EdgeState>;
   scenarioIndex?: number;
   groupId?: string | null;
-  setupId?: string | null;
   targetSize: number;
   responseCount: number;
   status: ScenarioStatus;

@@ -36,6 +36,9 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 - 2026-04-29: Mixed Mode core functionality implemented
 - 2026-05-04: NetworkGraph undefined bug fixed
 - 2026-05-04: SurveyOutro completeSurvey bug fixed
+- 2026-05-04: Scenario schema refined (scenarioIndex required, status simplified)
+- 2026-05-04: Device fingerprinting design for participant identification (REQ-311)
+- 2026-05-04: Mixed Mode config fields (`maxK`, `scenariosPerSession`, `targetSizePerScenario`) tightened to required (REQ-312) — see SessionGroup data model and Open Question #7
 
 ---
 
@@ -128,7 +131,7 @@ Submission → responses to a session's scenarios
 
 UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID() }`) for `Scenario`, `Session`, and `SessionGroup`. `Submission` uses Mongoose default ObjectId.
 
-### `Scenario` (New Model - Atomic Unit) ✅
+### `Scenario` (New Model - Atomic Unit) ✅ 🔧 **REFINED 2026-05-04**
 
 ```javascript
 // backend/models/Scenario.js
@@ -141,27 +144,66 @@ UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID(
   activeEdgeIds: [String],               // e.g., ['A1-A2', 'A2-B3']
   
   // Specific state (this scenario's condition)
-  edgeStates: Map<String, String>,       // edgeId → 'low' | 'high'
-  scenarioIndex: Number,                 // Position in original design matrix (optional)
+  edgeStates: Map<String, String>,       // edgeId → 'give' | 'not give'
+  scenarioIndex: Number (REQUIRED),      // Position in original design matrix (REQUIRED for traceability)
   
   // Ownership (traceability)
   groupId: String | null,                // Which SessionGroup created this
+                                         //
+                                         // WHY Scenario carries its own groupId (not derived from Session):
+                                         //
+                                         // 1. Creation-time orphan: In Mixed Mode, createMixedGroup bulk-creates
+                                         //    the entire Scenario pool (hundreds–thousands) before any Session
+                                         //    exists. Sessions are created lazily when participants arrive, so
+                                         //    there is no Session to trace back to at Scenario creation time.
+                                         //    groupId must be stamped onto Scenario at creation or it cannot
+                                         //    be stored at all.
+                                         //
+                                         // 2. Query efficiency (balanced selection): startMixedSession runs
+                                         //      ScenarioModel.find({ groupId, status: 'active' })
+                                         //    which hits the compound index { groupId, status, responseCount }
+                                         //    in a single round-trip. Without this field the equivalent query
+                                         //    would require: load all Sessions for group → collect scenarioIds
+                                         //    → query Scenarios by those IDs — three round-trips with no useful
+                                         //    index coverage on the Scenario collection.
+                                         //
+                                         // 3. Cascade delete: deleteSessionGroup uses
+                                         //      ScenarioModel.deleteMany({ groupId })
+                                         //    for the same single-query reason.
+                                         //
+                                         // Session.groupId and Scenario.groupId are two independent upward
+                                         // foreign keys to the same SessionGroup parent. They serve different
+                                         // child entities and neither is derivable from the other across the
+                                         // full object lifecycle. This is intentional denormalization, not
+                                         // redundancy.
   setupId: String | null,                // Original SessionSetup ID (for migration/reference)
   
   // Data collection tracking (scenario-level!)
   targetSize: Number,                    // How many responses needed for THIS scenario
   responseCount: Number,                 // How many responses collected so far
   
-  status: 'active' | 'completed' | 'paused',
+  status: 'active' | 'inactive',         // Controls selection availability (simplified 2026-05-04)
+                                         // 'active' = can be selected for new sessions
+                                         // 'inactive' = excluded from selection (e.g., paused experiments)
+                                         // NOTE: Completion is tracked via responseCount >= targetSize
   
   createdAt: Date,
   updatedAt: Date
 }
 ```
 
+**Schema Refinements (2026-05-04)**:
+- `scenarioIndex` changed from optional to **required** to ensure all scenarios are traceable to their design matrix position
+- `status` enum simplified from `['active', 'completed', 'paused']` to `['active', 'inactive']`:
+  - Removes redundancy: scenario completion is already determinable via `responseCount >= targetSize`
+  - Simplifies logic: status now only controls **selection availability** for new sessions
+  - 'active' = scenario can be selected by Mixed Mode balanced selection or included in queries
+  - 'inactive' = scenario is excluded (e.g., admin paused a problematic configuration)
+
 **Indexes**:
 - `{ groupId: 1, status: 1, responseCount: 1 }` — Mixed Mode balanced selection
 - `{ setupId: 1, scenarioIndex: 1 }` — Traceability
+- `{ status: 1 }` — Status queries
 
 **Maps to**: REQ-321 (Scenario as Atomic Unit)
 
@@ -252,7 +294,7 @@ SessionSchema.virtual('scenarios', {
 
 **Known Issue (Fixed 2026-05-04)**: SurveyOutro component was not calling `completeSurvey` mutation, causing `isCompleted` to always be `false`. Fixed by passing `onComplete` prop and calling it on final submission.
 
-### `SessionGroup` (Simplified - Unified Config) ✅
+### `SessionGroup` (Simplified - Unified Config) ✅ 🔧 **REFINED 2026-05-04**
 
 ```javascript
 // backend/models/SessionGroup.js
@@ -267,10 +309,10 @@ SessionSchema.virtual('scenarios', {
     // Batch Mode fields
     edgeCount: Number | null,            // k value
     
-    // Mixed Mode fields
-    maxK: Number | null,                 // 1..12
-    scenariosPerSession: Number | null,  // S
-    targetSizePerScenario: Number | null,
+    // Mixed Mode fields — ALL THREE ARE REQUIRED for Mixed Mode groups (REQ-312)
+    maxK: Number,                        // 1..12  REQUIRED when mode=mixed
+    scenariosPerSession: Number,         // S      REQUIRED when mode=mixed
+    targetSizePerScenario: Number,       //        REQUIRED when mode=mixed
     
     // Common fields
     focalNode: String,
@@ -289,6 +331,30 @@ SessionSchema.virtual('scenarios', {
 }
 ```
 
+**Schema Refinement (2026-05-04) — REQ-312**:
+
+The three Mixed Mode–specific config fields are now enforced as mandatory at multiple layers:
+
+| Layer | Mechanism | Scope |
+|-------|-----------|-------|
+| Mongoose schema | Conditional `required` validator: required only when `config.maxK` is set (to avoid breaking Batch/Manual documents) | MongoDB persistence |
+| GraphQL `GroupConfigInput` | Fields declared `Int!` (non-nullable) | Schema-level — client gets error before resolver runs |
+| Resolver logic | Explicit `if (!maxK)` / `if (!scenariosPerSession)` / `if (!targetSizePerScenario)` throw guards | Runtime — defense-in-depth |
+| TypeScript `SessionGroup.config` | Fields typed as `number` (not `number \| null`) | Compile-time on frontend call sites |
+
+**Conflict note**: Mongoose `required: true` applied unconditionally would reject Batch Mode documents (which have no `maxK`). The recommended resolution is a conditional validator:
+
+```javascript
+maxK: {
+  type: Number,
+  min: 1,
+  max: 12,
+  required: function() { return !!this.config?.maxK; }  // Only required if set (Mixed Mode)
+}
+```
+
+Alternatively, enforcement is delegated entirely to the GraphQL layer (`Int!` in `GroupConfigInput` + resolver guards) which already catches all callers before any DB write happens. See Open Question #7 for decision.
+
 **Mode detection**:
 ```javascript
 function getGroupMode(group) {
@@ -302,7 +368,7 @@ function getGroupMode(group) {
 - `{ status: 1 }`
 - `{ createdAt: -1 }`
 
-**Maps to**: REQ-301 (Batch), REQ-306 (Mixed)
+**Maps to**: REQ-301 (Batch), REQ-306 (Mixed), REQ-312 (Mixed Mode mandatory config)
 
 ---
 
@@ -827,8 +893,9 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 - `clearDatabase` hard-blocked in production
 - No CSRF tokens (relies on same-site cookies + JSON content type)
 
-**Mixed Mode consideration**: 
-- Participant ID uniqueness relies on localStorage — consider adding cookie fingerprinting or requiring email registration to prevent repeat submissions.
+**Mixed Mode Participant Identification** (REQ-311):
+- **Current Implementation**: Random 16-character ID stored in localStorage (easily cleared)
+- **Enhanced Approach**: Device fingerprinting with multi-layer fallback strategy
 
 ---
 
@@ -857,6 +924,7 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 | REQ-201..203 | Manual Mode: `createManualSession` resolver, UI | ✅ Complete |
 | REQ-301..304 | Batch Mode: `createBatchSessions` resolver, UI | ✅ Complete |
 | REQ-306..309 | Mixed Mode: `createMixedGroup`, `startMixedSession` resolvers, `MixedModeConfig` | ✅ Complete |
+| REQ-312 | `SessionGroup.config` conditional required validators, `GroupConfigInput` non-nullable fields, TypeScript types | 🔧 In Progress (Phase 24) |
 | REQ-310 | Scenario heatmap visualization | ⏸️ Deferred |
 | REQ-321 | `Scenario` model with independent collection | ✅ Complete |
 | REQ-322 | `Session` model with `scenarioIds` reference array | ✅ Complete |
@@ -864,6 +932,225 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 | REQ-401..405 | Survey flow: routing, response capture, completion | ✅ Complete |
 | REQ-308 | `saveSurveyAnswer` atomically increments `Scenario.responseCount` | ✅ Complete |
 | REQ-309 | `completeSurvey` checks scenario-level completion | ✅ Complete |
+
+---
+
+## Device Fingerprinting Architecture (REQ-311)
+
+### Overview
+
+Replace random localStorage-based participant IDs with browser fingerprinting to provide more stable participant identification while remaining privacy-friendly.
+
+### Fingerprinting Strategy
+
+#### Multi-Layer Identification Approach
+
+```
+Layer 1: Device Fingerprint (Primary)
+  ↓
+Layer 2: Browser Storage (Secondary)
+  ↓
+Layer 3: Random ID (Fallback)
+```
+
+### Technical Design
+
+#### 1. Fingerprint Generation (`utils/participantId.ts`)
+
+```typescript
+import FingerprintJS from '@fingerprintjs/fingerprintjs';
+
+interface FingerprintResult {
+  visitorId: string;     // Stable fingerprint hash
+  confidence: number;    // 0-1 score
+  components: object;    // Raw fingerprint data (not stored)
+}
+
+/**
+ * Generate device fingerprint
+ * Uses: Canvas, WebGL, fonts, screen, timezone, audio context
+ */
+async function generateFingerprint(): Promise<string> {
+  try {
+    // Check DNT (Do Not Track) header
+    if (navigator.doNotTrack === '1') {
+      console.log('[Fingerprint] DNT enabled, using anonymous mode');
+      return generateRandomId('dnt');
+    }
+    
+    // Initialize FingerprintJS
+    const fp = await FingerprintJS.load({
+      monitoring: false  // Disable telemetry for privacy
+    });
+    
+    // Get fingerprint
+    const result = await fp.get();
+    
+    // Confidence check
+    if (result.confidence.score < 0.5) {
+      console.warn('[Fingerprint] Low confidence, using hybrid ID');
+      return `fp-${result.visitorId.substring(0, 8)}-${generateRandomId('hybrid').substring(0, 8)}`;
+    }
+    
+    return `fp-${result.visitorId}`;
+    
+  } catch (error) {
+    console.error('[Fingerprint] Generation failed:', error);
+    return generateRandomId('fallback');
+  }
+}
+
+/**
+ * Get or create participant ID with fingerprinting
+ */
+export async function getParticipantId(): Promise<string> {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return generateRandomId('server');
+  }
+  
+  const STORAGE_KEY = 'pd_participant_id';
+  const FINGERPRINT_KEY = 'pd_fingerprint_v1';
+  
+  // Check if we already have a fingerprint-based ID
+  let storedId = localStorage.getItem(STORAGE_KEY);
+  let storedFingerprint = localStorage.getItem(FINGERPRINT_KEY);
+  
+  // Generate current fingerprint
+  const currentFingerprint = await generateFingerprint();
+  
+  // If fingerprint matches stored, reuse ID
+  if (storedFingerprint === currentFingerprint && storedId) {
+    return storedId;
+  }
+  
+  // New fingerprint: create new ID or migrate old random ID
+  if (!storedId) {
+    storedId = currentFingerprint;
+  } else if (!storedId.startsWith('fp-')) {
+    // Migrate random ID to fingerprint-based
+    console.log('[Fingerprint] Migrating random ID to fingerprint');
+    storedId = currentFingerprint;
+  }
+  
+  // Store both ID and fingerprint
+  localStorage.setItem(STORAGE_KEY, storedId);
+  localStorage.setItem(FINGERPRINT_KEY, currentFingerprint);
+  
+  return storedId;
+}
+```
+
+#### 2. Privacy Safeguards
+
+```typescript
+/**
+ * Privacy-first fingerprinting configuration
+ */
+const FINGERPRINT_CONFIG = {
+  // Exclude sensors that might be considered invasive
+  excludePixelRatio: false,
+  excludeScreenResolution: false,
+  excludeAvailableScreenResolution: true,  // Can reveal window manager
+  excludeSessionStorage: true,              // Privacy concern
+  excludeIndexedDB: true,                   // Privacy concern
+  
+  // Use only stable, non-invasive components
+  components: [
+    'canvas',          // Canvas rendering fingerprint
+    'webgl',           // WebGL rendering
+    'fonts',           // Installed fonts
+    'timezone',        // Browser timezone
+    'colorDepth',      // Screen color depth
+    'platform',        // OS platform
+    'plugins',         // Browser plugins (deprecated but still used)
+    'touchSupport',    // Touch capability
+    'hardwareConcurrency', // CPU cores
+  ]
+};
+```
+
+#### 3. UI Disclosure (Privacy Compliance)
+
+Add notice to [`SurveyWelcome.tsx`](../components/SurveyWelcome.tsx):
+
+```typescript
+<Alert severity="info" sx={{ mt: 2 }}>
+  本研究使用裝置指紋技術以防止重複提交,不會收集任何個人識別資訊。
+  指紋技術僅分析您的瀏覽器配置(如字體、螢幕解析度),不涉及生物特徵或跨網站追蹤。
+  <br />
+  This study uses device fingerprinting to prevent duplicate submissions without
+  collecting personal information. We analyze only browser configuration (fonts,
+  screen resolution), not biometric data or cross-site tracking.
+</Alert>
+```
+
+#### 4. Database Schema (No Changes Needed)
+
+Fingerprint IDs are stored as regular strings in existing fields:
+- `Session.metadata.participantId` (String)
+- `Submission.participantId` (String)
+
+ID format examples:
+- Fingerprint-based: `fp-a1b2c3d4e5f6g7h8`
+- DNT fallback: `dnt-a1b2c3d4e5f6g7h8`
+- Error fallback: `fallback-a1b2c3d4e5f6g7h8`
+- Hybrid (low confidence): `fp-a1b2c3d4-hybrid-e5f6g7h8`
+
+### Library Choice Analysis
+
+| Library | Pros | Cons | Recommendation |
+|---------|------|------|----------------|
+| **FingerprintJS (open-source)** | Free, privacy-friendly, good accuracy (90-95%) | Lower accuracy than Pro version | ✅ **Recommended** for academic use |
+| **Fingerprint Pro (commercial)** | Higher accuracy (99.5%), server-side verification | $200/month, overkill for research | ❌ Not cost-effective |
+| **Custom implementation** | Full control, no dependencies | Complex, maintenance burden, lower accuracy | ❌ Not recommended |
+
+**Decision**: Use open-source FingerprintJS v3 (MIT license)
+
+### Implementation Phases
+
+#### Phase 21: Fingerprinting Core (1-2 days)
+- Install `@fingerprintjs/fingerprintjs` package
+- Refactor `utils/participantId.ts` with fingerprinting
+- Add privacy notices to survey welcome page
+- Handle DNT headers and error fallbacks
+
+#### Phase 22: Testing & Validation (1 day)
+- Test fingerprint stability across sessions
+- Test fallback scenarios (DNT, errors, low confidence)
+- Verify existing Mixed Mode flows still work
+- Performance testing (<100ms fingerprint generation)
+
+#### Phase 23: Migration Strategy (if needed)
+- Existing random IDs can coexist with fingerprint IDs
+- No database migration needed (both are strings)
+- Admin can filter by ID prefix to analyze adoption
+
+### Performance Considerations
+
+- Fingerprint generation: ~50-100ms (async, non-blocking)
+- Cache fingerprint in memory after first generation
+- Only regenerate if localStorage is cleared
+- No impact on backend performance (client-side only)
+
+### Privacy & Compliance
+
+✅ **Compliant with**:
+- GDPR (no PII, transparent disclosure)
+- CCPA (no sale of data, opt-out via DNT)
+- Research ethics (informed consent via notice)
+
+❌ **Does NOT**:
+- Track users across websites
+- Collect biometric data
+- Store raw fingerprint components
+- Identify individuals personally
+
+### Monitoring & Analytics
+
+Add optional tracking in Admin UI:
+- Count of fingerprint-based vs. fallback IDs
+- Fingerprint collision rate (multiple participants with same ID)
+- DNT opt-out rate
 
 ---
 
@@ -875,6 +1162,10 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 - Legacy API removal
 - Mixed Mode core implementation
 - Bug fixes (NetworkGraph, SurveyOutro)
+- Scenario schema refinement
+
+### In Progress 🔄
+- **Phase 21-23**: Device fingerprinting implementation (REQ-311)
 
 ### Remaining 🟡
 - **REQ-310**: Scenario completion heatmap for Mixed Mode groups
@@ -884,5 +1175,5 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 ### Future Enhancements 💡
 - CSV export of submissions
 - Real-time admin dashboards
-- Enhanced participant uniqueness enforcement
 - Multi-language support (i18n expansion)
+- Email verification as additional layer (post-fingerprinting)

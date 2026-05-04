@@ -29,7 +29,6 @@ async function toScenarioGraph(doc) {
     edgeStates: doc.edgeStates || {},
     scenarioIndex: doc.scenarioIndex,
     groupId: doc.groupId || null,
-    setupId: doc.setupId || null,
     targetSize: doc.targetSize || 0,
     responseCount: doc.responseCount || 0,
     status: doc.status || 'active',
@@ -253,7 +252,6 @@ export const resolvers = {
         edgeStates: scenario.edgeStates,
         scenarioIndex: index,
         groupId: null,
-        setupId: null,
         targetSize: 0,  // Manual mode 不追蹤 scenario-level
         responseCount: 0,
         status: 'active',
@@ -359,7 +357,6 @@ export const resolvers = {
               edgeStates: scenario.edgeStates,
               scenarioIndex: index,
               groupId,
-              setupId: null,
               targetSize: targetSizePerScenario,
               responseCount: 0,
               status: 'active',

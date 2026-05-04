@@ -84,6 +84,7 @@ export const INITIAL_SETUP: Session = {
   scenarios: [],
   focalNode: 'A1',
   opponentNode: 'A2',
+  activeEdgeIds: [],
   sampleSize: 20,
   submissionCount: 0,
   createdAt: '',

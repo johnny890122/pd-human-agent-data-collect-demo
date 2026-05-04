@@ -66,6 +66,7 @@ describe('Scenario Model', () => {
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
       edgeStates: new Map([['A1-A2', 'give']]),
+      scenarioIndex: 0,
       targetSize: 10,
       responseCount: 3,
       status: 'active',
@@ -81,6 +82,7 @@ describe('Scenario Model', () => {
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
       edgeStates: new Map([['A1-A2', 'give']]),
+      scenarioIndex: 0,
       targetSize: 10,
       responseCount: 0,
       status: 'active',
@@ -110,6 +112,7 @@ describe('Session Model', () => {
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
       edgeStates: new Map([['A1-A2', 'give']]),
+      scenarioIndex: 0,
       status: 'active',
     });
 
@@ -117,6 +120,7 @@ describe('Session Model', () => {
       focalNode: 'A1',
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
+      scenarioIndex: 1,
       edgeStates: new Map([['A1-A2', 'not give']]),
       status: 'active',
     });
@@ -144,6 +148,7 @@ describe('Session Model', () => {
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
       edgeStates: { 'A1-A2': 'give' },  // 使用 Object 而非 Map
+      scenarioIndex: 0,
       status: 'active',
     });
 
@@ -152,6 +157,7 @@ describe('Session Model', () => {
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
       edgeStates: { 'A1-A2': 'not give' },  // 使用 Object 而非 Map
+      scenarioIndex: 1,
       status: 'active',
     });
 
@@ -542,6 +548,7 @@ describe('Updated Submission Schema', () => {
       opponentNode: 'A2',
       activeEdgeIds: ['A1-A2'],
       edgeStates: new Map([['A1-A2', 'give']]),
+      scenarioIndex: 0,
       status: 'active',
     });
 

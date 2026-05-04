@@ -119,7 +119,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('isAuthenticated');
+    localStorage.removeItem('token');
     navigate('/login', { replace: true });
   };
 

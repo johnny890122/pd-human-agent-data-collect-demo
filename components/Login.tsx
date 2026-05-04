@@ -31,7 +31,7 @@ const Login: React.FC = () => {
         return;
       }
 
-      localStorage.setItem('isAuthenticated', 'true');
+      localStorage.setItem('token', data.token);
       navigate(from, { replace: true });
     } catch {
       setError('無法連線到伺服器，請再試一次。');

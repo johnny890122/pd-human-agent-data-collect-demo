@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { ApolloServer } from '@apollo/server';
 import { expressMiddleware } from '@as-integrations/express5';
+import jwt from 'jsonwebtoken';
 import { typeDefs, resolvers } from './backend/graphql/index.js';
 import { connectToDatabase, isDbConfigured } from './backend/db.js';
 
@@ -81,11 +82,27 @@ async function startServer() {
     }
     next();
   }, express.json({ limit: '50mb' }), expressMiddleware(apolloServer, {
-    context: async ({ req, res }) => ({
-      req,
-      res,
-      isTurnstileVerified: isTurnstileVerifiedFromRequest(req),
-    }),
+    context: async ({ req, res }) => {
+      let isAdmin = false;
+      const authHeader = req.headers.authorization || '';
+      if (authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+          if (decoded.role === 'admin') {
+            isAdmin = true;
+          }
+        } catch (err) {
+          // invalid token
+        }
+      }
+      return {
+        req,
+        res,
+        isTurnstileVerified: isTurnstileVerifiedFromRequest(req),
+        isAdmin,
+      };
+    },
   }));
 
   app.use(express.json({ limit: '50mb' }));
@@ -110,7 +127,8 @@ async function startServer() {
     }
 
     if (submittedPassword === configuredPassword) {
-      return res.json({ success: true });
+      const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '24h' });
+      return res.json({ success: true, token });
     }
 
     return res.status(401).json({

@@ -12,9 +12,15 @@ interface GraphQLResponse<TData> {
 // ============================================================================
 
 async function runGraphQL<TData>(query: string, variables?: Record<string, unknown>): Promise<TData> {
+  const token = localStorage.getItem('token');
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({ query, variables }),
   });
 

@@ -261,7 +261,7 @@ node scripts/test-manual-mode-no-turnstile.mjs
 ## 🔍 後續行動
 
 ### 建議的清理任務 (可選)
-- [ ] 重命名 `backend/models/SessionSetup.js` → `SessionLegacy.js` 並標記 deprecated
+- [x] 重命名 `backend/models/SessionSetup.js` → `Submission.js` ✅ **COMPLETED 2026-05-04**
 - [ ] 審查 `types.ts` 移除不需要的 legacy types
 - [ ] 更新前端測試以使用新 API
 

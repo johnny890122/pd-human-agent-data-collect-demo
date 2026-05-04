@@ -1,5 +1,5 @@
 import { connectToDatabase, isDbConfigured } from '../db.js';
-import { SubmissionModel } from '../models/SessionSetup.js';
+import { SubmissionModel } from '../models/Submission.js';
 import { ScenarioModel } from '../models/Scenario.js';
 import { SessionModel } from '../models/Session.js';
 // SessionReplayModel removed per REQ-413

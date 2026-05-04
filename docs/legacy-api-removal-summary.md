@@ -239,7 +239,7 @@
 - ⏸️ Mixed Mode (Phase 17) - 架構已就緒，可開始實現
 
 ### 可選清理
-- [ ] 移除 `backend/models/SessionSetup.js` 中的舊模型定義
+- [x] 重構 `backend/models/SessionSetup.js` → `Submission.js` ✅ **COMPLETED 2026-05-04**
 - [ ] 移除測試腳本中的 legacy references
 - [ ] 更新 `types.ts` 移除不需要的 legacy 類型
 
@@ -342,7 +342,7 @@
 ### 後續開發
 - [ ] 驗證 Batch Mode 是否完全遷移
 - [ ] 開始實現 Mixed Mode (Phase 17)
-- [ ] 清理 backend/models/SessionSetup.js 中的舊模型
+- [x] 重構 backend/models/SessionSetup.js → Submission.js ✅ **COMPLETED 2026-05-04**
 
 ---
 
@@ -350,9 +350,9 @@
 
 以下項目可選清理（不影響功能）：
 
-1. **SessionSetup.js 模型檔案**
-   - 舊的 `SessionSetupModel` 和 `SubmissionModel` 仍在文件中
-   - 建議: 重命名為 `backend/models/SessionLegacy.js` 並標記 deprecated
+1. **~~SessionSetup.js 模型檔案~~** ✅ **COMPLETED 2026-05-04**
+   - ✅ 已重構為 `backend/models/Submission.js`
+   - ✅ 所有引用已更新
    
 2. **types.ts 類型定義**
    - 可能還有 legacy 類型定義

@@ -1,4 +1,4 @@
-ㄌㄜ/**
+/**
  * Unit Tests for New Data Model (Scenario-Centric Architecture)
  * Tests Manual Mode and Batch Mode with new Scenario/Session models
  */
@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 import { randomUUID } from 'crypto';
 import { ScenarioModel } from '../models/Scenario.js';
 import { SessionModel } from '../models/Session.js';
-import { SubmissionModel } from '../models/SessionSetup.js';
+import { SubmissionModel } from '../models/Submission.js';
 import { SessionGroupModel } from '../models/SessionGroup.js';
 import { generateDesignMatrix } from '../../utils/mathBackend.js';
 import { generateEdgeCombinations } from '../../utils/combinations.js';

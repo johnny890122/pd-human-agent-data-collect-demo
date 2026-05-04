@@ -2,13 +2,13 @@ import mongoose from 'mongoose';
 
 const submissionSchema = new mongoose.Schema(
   {
-    sessionId: { type: String, required: true }, // point to Session._id (was SessionSetup)
+    sessionId: { type: String, required: true }, // point to Session._id
     participantId: { type: String, required: false, default: null }, // Mixed Mode: 唯一性檢查
     
     // 回應（現在引用 Scenario UUIDs）
     results: {
       type: [{
-        scenarioId: { type: String, required: true },  // 引用 Scenario._id (was: Number index)
+        scenarioId: { type: String, required: true },  // 引用 Scenario._id
         cooperationProbability: { type: Number, required: true, min: 0, max: 1 },
         responseTime: { type: Number, required: false }, // milliseconds
         answeredAt: { type: Date, required: false }
@@ -43,5 +43,3 @@ submissionSchema.index({ isCompleted: 1, createdAt: -1 });
 export const SubmissionModel =
   mongoose.models.Submission ||
   mongoose.model('Submission', submissionSchema);
-
-

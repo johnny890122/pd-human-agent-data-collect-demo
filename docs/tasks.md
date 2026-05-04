@@ -146,7 +146,7 @@ Format: `- [ ] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
   - Add indexes: `{ groupId: 1 }`, `{ 'metadata.participantId': 1 }`
   - [REQ-322]
 
-- [x] **TASK-1203**: Update `backend/models/SessionSetup.js` Submission schema ✅ **COMPLETED 2026-04-28**
+- [x] **TASK-1203**: Update `backend/models/Submission.js` Submission schema ✅ **COMPLETED 2026-04-28**
   - Change `results[].scenarioId` from Number to String (UUID reference)
   - Add `participantId` field (String, optional)
   - Add `responseTime` field to results

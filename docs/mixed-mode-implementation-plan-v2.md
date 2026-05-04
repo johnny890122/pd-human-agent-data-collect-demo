@@ -133,7 +133,7 @@ SessionSchema.virtual('scenarios', {
 ### 3. Submission (輕微調整)
 
 ```javascript
-// backend/models/Submission.js (修改 SessionSetup.js 內的)
+// backend/models/Submission.js (Refactored from SessionSetup.js)
 const SubmissionSchema = new mongoose.Schema({
   _id: { type: mongoose.Schema.Types.ObjectId },
   
@@ -870,13 +870,13 @@ function SurveyView({ sessionId }) {
 
 ### Phase 12: 數據模型重構 (核心)
 
-- [ ] **TASK-1201**: 創建 `backend/models/Scenario.js` 新模型,定義 schema 和索引
-- [ ] **TASK-1202**: 重構 `backend/models/SessionSetup.js` → `Session.js`:
+- [x] **TASK-1201**: 創建 `backend/models/Scenario.js` 新模型,定義 schema 和索引 ✅
+- [x] **TASK-1202**: 重構 `backend/models/Session.js` (from SessionSetup.js) ✅:
   - 移除內嵌 `scenarios` 陣列
   - 添加 `scenarioIds` 引用陣列
   - 添加 `metadata` 欄位
   - 配置 virtual populate
-- [ ] **TASK-1203**: 修改 `backend/models/SessionSetup.js` 中的 `Submission` schema:
+- [x] **TASK-1203**: 修改 `backend/models/Submission.js` 中的 schema ✅:
   - `results[].scenarioId` 類型改為 String
   - 添加 `participantId` 欄位
 - [ ] **TASK-1204**: 簡化 `backend/models/SessionGroup.js`:

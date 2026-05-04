@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 
 /**
  * Scenario Schema - Atomic Unit of Experiment
- * 每個 Scenario 代表一個獨立的實驗條件，包含完整的配置和數據追蹤
+ * 每個 Scenario 代表一個獨立的 # of edges + edge conditions 組合
  */
 const scenarioSchema = new mongoose.Schema(
   {

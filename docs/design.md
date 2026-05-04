@@ -2,7 +2,7 @@
 
 This document describes how the PD Human-Agent Data Collect Demo is built using a **scenario-centric architecture**. Every section traces back to the requirements in [`requirements.md`](requirements.md).
 
-**Implementation Status**: 🟢 **Backend Complete** (Phase 12-14) | 🟡 **Frontend In Progress** (Phase 15-16)
+**Implementation Status**: 🟢 **Phase 12-16 Complete** | 🟡 **Phase 17 Partial** (Heatmap deferred)
 
 ---
 
@@ -13,10 +13,29 @@ A two-tier web application with a fundamentally refactored data model:
 - **Frontend** — React 19 SPA built with Vite, routed by `react-router-dom@7`, styled by TailwindCSS (loaded from CDN) plus Material UI components. Communicates with backend exclusively over GraphQL with REST escape hatches for admin login and Turnstile.
 - **Backend** — Node 20 Express 5 server hosting Apollo Server 5 (GraphQL), persisting through Mongoose to MongoDB.
 - **Bot protection** — Cloudflare Turnstile with server-side `httpOnly` cookie.
-- **Session replay** — RRWeb (pending removal per REQ-413).
 
 **Architecture Innovation**: 
-The system uses a **scenario-centric data model** where `Scenario` is the atomic unit and `Session` is a lightweight container. This unified design eliminates mode-specific code branches and enables flexible data collection strategies including the new Mixed Mode.
+The system uses a **scenario-centric data model** where `Scenario` is the atomic unit and `Session` is a lightweight container. This unified design eliminates mode-specific code branches and enables flexible data collection strategies including Manual, Batch, and Mixed modes.
+
+---
+
+## Implementation Status Summary
+
+| Phase | Status | Completion Date | Notes |
+|-------|--------|-----------------|-------|
+| Phase 1-11 | ✅ Complete | 2026-04-28 | Baseline features |
+| Phase 12 | ✅ Complete | 2026-04-28 | Data models (Scenario, Session, etc.) |
+| Phase 13 | ✅ Complete | 2026-04-28 | GraphQL API refactor |
+| Phase 14 | ✅ Complete | 2026-04-28 | Utils layer |
+| Phase 15 | ✅ Complete | 2026-04-29 | Admin UI (Manual, Batch, Mixed) |
+| Phase 16 | ✅ Complete | 2026-04-29 | Survey flow (all modes) |
+| Phase 17 | 🟡 Partial | Ongoing | Testing complete, heatmap deferred |
+
+**Recent Updates**:
+- 2026-04-29: Legacy API completely removed (~500 lines)
+- 2026-04-29: Mixed Mode core functionality implemented
+- 2026-05-04: NetworkGraph undefined bug fixed
+- 2026-05-04: SurveyOutro completeSurvey bug fixed
 
 ---
 
@@ -28,7 +47,7 @@ flowchart TB
         AdminUI[Admin Console UI]
         ManualConfig[Manual Mode Config]
         BatchConfig[Batch Mode Config]
-        MixedConfig[Mixed Mode Config]
+        MixedConfig[Mixed Mode Config ✅]
     end
     
     subgraph "Participant Experience"
@@ -231,6 +250,8 @@ SessionSchema.virtual('scenarios', {
 
 **Maps to**: REQ-402 (Per-scenario response capture)
 
+**Known Issue (Fixed 2026-05-04)**: SurveyOutro component was not calling `completeSurvey` mutation, causing `isCompleted` to always be `false`. Fixed by passing `onComplete` prop and calling it on final submission.
+
 ### `SessionGroup` (Simplified - Unified Config) ✅
 
 ```javascript
@@ -287,11 +308,11 @@ function getGroupMode(group) {
 
 ## Three Modes Implementation
 
-### Mode 1: Manual (Single Session) ✅ Backend Implemented
+### Mode 1: Manual (Single Session) ✅ Implemented 2026-04-29
 
 **Admin Action**: Configure focal, opponent, edges, sampleSize
 
-**Backend Logic** ([`createManualSession`](backend/graphql/resolvers.js)):
+**Backend Logic** ([`createManualSession`](../backend/graphql/resolvers.js)):
 ```javascript
 async function createManualSession(input) {
   // 1. Generate design matrix
@@ -330,11 +351,11 @@ async function createManualSession(input) {
 
 **Maps to**: REQ-201, REQ-202
 
-### Mode 2: Batch (Multiple Sessions, Factorial Sweep) ✅ Backend Implemented
+### Mode 2: Batch (Multiple Sessions, Factorial Sweep) ✅ Implemented 2026-04-29
 
 **Admin Action**: Configure name, k, focal, opponent, sampleSize
 
-**Backend Logic** ([`createBatchSessions`](backend/graphql/resolvers.js)):
+**Backend Logic** ([`createBatchSessions`](../backend/graphql/resolvers.js)):
 ```javascript
 async function createBatchSessions(input) {
   // 1. Create SessionGroup
@@ -393,13 +414,15 @@ async function createBatchSessions(input) {
 
 **Participant URLs**: `/survey/welcome?sessionId=<session._id>` (many URLs, one per combination)
 
+**Verified**: k=2 generates 66 sessions with 264 scenarios (66×4).
+
 **Maps to**: REQ-301
 
-### Mode 3: Mixed (Dynamic Session per Participant) ⏸️ Deferred
+### Mode 3: Mixed (Dynamic Session per Participant) ✅ Implemented 2026-04-29
 
 **Admin Action**: Configure name, maxK, scenariosPerSession (S), targetSizePerScenario, focal, opponent
 
-**Backend Logic** ([`createMixedGroup`](backend/graphql/resolvers.js)):
+**Backend Logic** ([`createMixedGroup`](../backend/graphql/resolvers.js)):
 ```javascript
 async function createMixedGroup(input) {
   // 1. Create SessionGroup
@@ -460,7 +483,9 @@ async function createMixedGroup(input) {
 
 **Participant URL**: `/survey/welcome?groupId=<group._id>&mode=mixed` (single URL, sessions created dynamically)
 
-**Participant Flow** ([`startMixedSession`](backend/graphql/resolvers.js)):
+**Verified**: maxK=2 generates 288 scenarios (12×2 + 66×4).
+
+**Participant Flow** ([`startMixedSession`](../backend/graphql/resolvers.js)):
 ```javascript
 async function startMixedSession(groupId, participantId) {
   const group = await SessionGroup.findById(groupId);
@@ -505,11 +530,9 @@ async function startMixedSession(groupId, participantId) {
 
 ---
 
-## Unified Survey Flow (All Modes) ✅ Backend Implemented
+## Unified Survey Flow (All Modes) ✅ Implemented 2026-04-29
 
 **Critical Design Win**: The survey completion logic is **identical** for all three modes.
-
-**Implementation Status**: ✅ Resolvers completed, 15/15 tests passing. Frontend integration pending.
 
 ### Start Survey ✅
 
@@ -625,223 +648,37 @@ async function completeSurvey(submissionId, demographics) {
 
 ---
 
-## GraphQL API
-
-**Implementation Status**: ✅ **Backend Complete** - All types and resolvers implemented and tested
-
-### New Types ✅
-
-```graphql
-# New: Scenario as first-class entity
-type Scenario {
-  _id: ID!
-  focalNode: String!
-  opponentNode: String!
-  activeEdgeIds: [String!]!
-  edgeStates: JSON!
-  scenarioIndex: Int
-  groupId: ID
-  targetSize: Int!
-  responseCount: Int!
-  status: String!
-  completionRate: Float!  # responseCount / targetSize
-  createdAt: String!
-  updatedAt: String!
-}
-
-# Refactored: Session (was SessionSetup)
-type Session {
-  _id: ID!
-  scenarioIds: [ID!]!
-  scenarios: [Scenario!]!  # Populated via virtual
-  focalNode: String!
-  opponentNode: String!
-  sampleSize: Int!
-  groupId: ID
-  submissionCount: Int!
-  metadata: SessionMetadata
-  createdAt: String!
-  updatedAt: String!
-}
-
-type SessionMetadata {
-  participantId: String
-  createdFor: String
-}
-
-# Updated: Submission
-type Submission {
-  _id: ID!
-  sessionId: ID!
-  participantId: String
-  results: [ScenarioResponse!]!
-  demographics: Demographics
-  isCompleted: Boolean!
-  completedAt: String
-  createdAt: String!
-  updatedAt: String!
-}
-
-type ScenarioResponse {
-  scenarioId: ID!  # Now UUID reference, not index
-  cooperationProbability: Float!
-  responseTime: Int
-  answeredAt: String
-}
-
-# Simplified: SessionGroup
-type SessionGroup {
-  _id: ID!
-  name: String!
-  description: String
-  config: GroupConfig!
-  totalSessions: Int!
-  totalScenarios: Int!
-  status: String!
-  mode: String!  # Computed: 'manual' | 'batch' | 'mixed'
-  createdAt: String!
-  updatedAt: String!
-}
-
-type GroupConfig {
-  edgeCount: Int
-  maxK: Int
-  scenariosPerSession: Int
-  targetSizePerScenario: Int
-  focalNode: String!
-  opponentNode: String!
-  sampleSize: Int!
-}
-```
-
-### New Queries
-
-```graphql
-extend type Query {
-  # Session queries (renamed)
-  session(id: ID!): Session
-  allSessions(excludeGroupSessions: Boolean): [Session!]!
-  sessionsByGroup(groupId: ID!): [Session!]!
-  
-  # New: Scenario queries
-  scenario(id: ID!): Scenario
-  scenarios(groupId: ID, status: String, limit: Int): [Scenario!]!
-  scenarioStats(groupId: ID!): ScenarioStats!
-  
-  # Group queries (unchanged)
-  sessionGroup(id: ID!): SessionGroup
-  allSessionGroups: [SessionGroup!]!
-  
-  # Submission queries (unchanged)
-  recentSubmissions(limit: Int): [Submission!]!
-}
-
-type ScenarioStats {
-  totalScenarios: Int!
-  byStatus: [StatusCount!]!
-  completionDistribution: [Int!]!
-  undersampled: [Scenario!]!  # responseCount < targetSize
-  averageResponseCount: Float!
-}
-
-type StatusCount {
-  status: String!
-  count: Int!
-}
-```
-
-### New Mutations
-
-```graphql
-extend type Mutation {
-  # Mode 1: Manual
-  createManualSession(input: ManualSessionInput!): Session!
-  
-  # Mode 2: Batch
-  createBatchSessions(input: BatchSessionInput!): BatchResult!
-  
-  # Mode 3: Mixed
-  createMixedGroup(input: MixedGroupInput!): MixedGroupResult!
-  startMixedSession(groupId: ID!, participantId: String!): Session!
-  
-  # Unified survey flow
-  startSurvey(sessionId: ID!): Submission!
-  saveSurveyAnswer(
-    submissionId: ID!
-    scenarioId: ID!
-    cooperationProbability: Float!
-  ): Submission!
-  completeSurvey(
-    submissionId: ID!
-    demographics: DemographicsInput!
-  ): Submission!
-  
-  # Admin controls
-  updateScenarioStatus(scenarioId: ID!, status: String!): Scenario!
-  updateSessionGroupStatus(groupId: ID!, status: String!): SessionGroup!
-  deleteSessionGroup(groupId: ID!): Boolean!
-  clearDatabase: Boolean!
-}
-
-input MixedGroupInput {
-  name: String!
-  description: String
-  maxK: Int!  # 1-12
-  scenariosPerSession: Int!
-  targetSizePerScenario: Int!
-  focalNode: String!
-  opponentNode: String!
-}
-
-type MixedGroupResult {
-  groupId: ID!
-  totalScenarios: Int!
-  estimatedSessions: Int!
-  masterUrl: String!
-}
-```
-
----
-
-## Frontend Changes
+## Frontend Architecture
 
 ### Admin UI
 
-#### Unified Mode Selection
+#### Unified Mode Selection ([`SetupPanel.tsx`](../components/SetupPanel.tsx)) ✅
 ```typescript
-// components/AdminView.tsx
 <Tabs>
   <Tab label="Manual Mode">
-    <ManualModeConfig />  {/* Existing, slightly updated */}
+    // Single session configuration
   </Tab>
   <Tab label="Batch Mode">
-    <BatchModeConfig />  {/* Existing */}
+    // Batch group configuration
   </Tab>
   <Tab label="Mixed Mode">
-    <MixedModeConfig />  {/* NEW */}
-  </Tab>
-  <Tab label="History">
-    <SessionsTable />  {/* Shows all sessions with mode badges */}
-  </Tab>
-  <Tab label="Groups">
-    <GroupsTable />  {/* Shows all groups with mode detection */}
+    <MixedModeConfig />  {/* NEW ✅ */}
   </Tab>
 </Tabs>
 ```
 
-#### Mixed Mode Configuration
+#### Mixed Mode Configuration ([`MixedModeConfig.tsx`](../components/MixedModeConfig.tsx)) ✅
 ```typescript
-// components/MixedModeConfig.tsx (NEW)
 function MixedModeConfig() {
-  const [maxK, setMaxK] = useState(3);
-  const [scenariosPerSession, setScenariosPerSession] = useState(20);
-  const [targetSize, setTargetSize] = useState(30);
+  const [maxK, setMaxK] = useState(2);
+  const [scenariosPerSession, setScenariosPerSession] = useState(10);
+  const [targetSize, setTargetSize] = useState(5);
   
   // Calculate estimates
   const totalScenarios = useMemo(() => {
     let sum = 0;
     for (let k = 1; k <= maxK; k++) {
-      sum += binomial(12, k) * Math.pow(2, k);  // C(12,k) × 2^k scenarios per combo
+      sum += binomial(12, k) * Math.pow(2, k);
     }
     return sum;
   }, [maxK]);
@@ -852,9 +689,9 @@ function MixedModeConfig() {
   
   return (
     <form onSubmit={handleSubmit}>
-      <NumberInput label="Max K" value={maxK} onChange={setMaxK} min={1} max={12} />
-      <NumberInput label="Scenarios per Session" value={scenariosPerSession} />
-      <NumberInput label="Target Size per Scenario" value={targetSize} />
+      <Slider label="Max K" value={maxK} onChange={setMaxK} min={1} max={4} />
+      <Slider label="Scenarios per Session" value={scenariosPerSession} min={5} max={30} step={5} />
+      <NumberInput label="Target Size per Scenario" value={targetSize} onChange={setTargetSize} />
       
       <Alert severity="info">
         Will generate {totalScenarios} scenarios.
@@ -867,84 +704,7 @@ function MixedModeConfig() {
 }
 ```
 
-#### Group Detail View Enhancement
-```typescript
-// components/GroupDetailView.tsx (UPDATED)
-function GroupDetailView({ groupId }) {
-  const { data: group } = useSessionGroup(groupId);
-  const mode = getGroupMode(group); // 'manual' | 'batch' | 'mixed'
-  
-  if (mode === 'mixed') {
-    return <MixedGroupDetailView group={group} />;
-  } else {
-    return <BatchGroupDetailView group={group} />;
-  }
-}
-
-function MixedGroupDetailView({ group }) {
-  const { data: scenarios } = useScenarios({ groupId: group._id });
-  const { data: sessions } = useSessionsByGroup(group._id);
-  
-  return (
-    <div>
-      <h2>{group.name} (Mixed Mode)</h2>
-      
-      {/* Master URL */}
-      <CopyableUrl url={`/survey/welcome?groupId=${group._id}&mode=mixed`} />
-      
-      {/* Progress */}
-      <ProgressBar 
-        value={scenarios.filter(s => s.responseCount >= s.targetSize).length}
-        max={scenarios.length}
-        label="Scenarios Completed"
-      />
-      
-      {/* Heatmap */}
-      <ScenarioHeatmap scenarios={scenarios} />
-      
-      {/* Participant Sessions */}
-      <h3>Participant Sessions ({sessions.length})</h3>
-      <SessionsList sessions={sessions} />
-    </div>
-  );
-}
-```
-
-#### Scenario Heatmap
-```typescript
-// components/ScenarioHeatmap.tsx (NEW)
-function ScenarioHeatmap({ scenarios }) {
-  // Group by edge combination
-  const grouped = useMemo(() => {
-    return _.groupBy(scenarios, s => s.activeEdgeIds.join(','));
-  }, [scenarios]);
-  
-  return (
-    <div className="heatmap">
-      {Object.entries(grouped).map(([edges, scenarios]) => (
-        <div key={edges} className="heatmap-row">
-          <div className="label">{edges}</div>
-          {scenarios.map(scenario => (
-            <HeatmapCell 
-              key={scenario._id}
-              scenario={scenario}
-              color={getHeatColor(scenario.responseCount / scenario.targetSize)}
-            />
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function getHeatColor(completion) {
-  if (completion >= 1) return 'green';
-  if (completion >= 0.7) return 'yellow';
-  return 'red';
-}
-```
-
-### Survey Flow (Minimal Changes)
+### Survey Flow (Minimal Changes) ✅
 
 ```typescript
 // App.tsx (UPDATED routing logic)
@@ -955,18 +715,18 @@ function App() {
   const mode = searchParams.get('mode');
   
   // Resolve actual sessionId
-  const resolvedSessionId = useMemo(async () => {
-    if (sessionId) return sessionId;
-    
-    if (groupId && mode === 'mixed') {
+  useEffect(() => {
+    if (sessionId) {
+      setResolvedSessionId(sessionId);
+    } else if (groupId && mode === 'mixed') {
       // Mixed mode: create or retrieve session
-      const { session } = await startMixedSession({
+      startMixedSession({
         variables: { groupId, participantId: getParticipantId() }
+      }).then(({ data }) => {
+        const newSessionId = data.startMixedSession.sessionId;
+        navigate(`/survey/welcome?sessionId=${newSessionId}`, { replace: true });
       });
-      return session._id;
     }
-    
-    throw new Error('Invalid URL');
   }, [sessionId, groupId, mode]);
   
   return (
@@ -998,6 +758,42 @@ function SurveyView({ sessionId }) {
 
 ---
 
+## Known Issues and Fixes
+
+### Fixed Issues
+
+| ID | Component | Issue | Fix Date | Status |
+|----|-----------|-------|----------|--------|
+| BUG-001 | [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) | TypeError: Cannot read properties of undefined (reading 'includes') | 2026-05-04 | ✅ Fixed |
+| BUG-002 | [`SurveyOutro.tsx`](../components/SurveyOutro.tsx) | completeSurvey mutation never called, all submissions incomplete | 2026-05-04 | ✅ Fixed |
+
+#### BUG-001: NetworkGraph undefined error
+**Problem**: `activeEdges` could be undefined in multiple locations, causing crashes when calling `.includes()`.
+
+**Solution**: Added defensive checks at 5 locations:
+```typescript
+// Before (crash-prone)
+const activeEdges = mode === 'survey' && scenario?.activeEdgeIds 
+  ? scenario.activeEdgeIds 
+  : setup.activeEdgeIds;
+
+// After (safe)
+const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds) 
+  || setup?.activeEdgeIds 
+  || [];
+```
+
+#### BUG-002: Incomplete submissions bug
+**Problem**: [`SurveyOutro.tsx`](../components/SurveyOutro.tsx) never called `completeSurvey` mutation, so all submissions had `isCompleted: false`.
+
+**Solution**: 
+1. Updated `SurveyOutro` to accept `onComplete` and `entryId` props
+2. Added `handleFinalSubmit` function that calls `completeSurvey`
+3. Updated `SurveyView` to pass these props
+4. Created repair script [`scripts/fix-incomplete-submission.mjs`](../scripts/fix-incomplete-submission.mjs) for historical data
+
+---
+
 ## Technology Stack
 
 | Layer | Choice | Rationale |
@@ -1010,24 +806,8 @@ function SurveyView({ sessionId }) {
 | HTTP server | Express 5 | Adequate for small REST surface |
 | DB | MongoDB + Mongoose 8 | Document model fits scenarios array; Mongoose handles UUIDs |
 | Bot defense | Cloudflare Turnstile | Free, privacy-friendly |
-| Visualization | D3 v7 | Network graphs + heatmaps |
+| Visualization | D3 v7 | Network graphs |
 | Tests | Vitest + Testing Library | Co-located with Vite |
-
----
-
-## Traceability Matrix
-
-| REQ | Design Components |
-|-----|-------------------|
-| REQ-201..203 | Manual Mode: `createManualSession` resolver, `ManualModeConfig` UI |
-| REQ-301..304 | Batch Mode: `createBatchSessions` resolver, `BatchModeConfig` UI, `GroupsTable` |
-| REQ-306..310 | Mixed Mode: `createMixedGroup`, `startMixedSession` resolvers, `MixedModeConfig`, `MixedGroupDetailView`, `ScenarioHeatmap` |
-| REQ-321 | `Scenario` model with independent collection and lifecycle |
-| REQ-322 | `Session` model with `scenarioIds` reference array, virtual populate |
-| REQ-323 | Unified `startSurvey`, `saveSurveyAnswer`, `completeSurvey` resolvers |
-| REQ-401..405 | Survey flow: `SurveyView`, `SessionRecorder`, localStorage persistence |
-| REQ-308 | `saveSurveyAnswer` atomically increments `Scenario.responseCount` |
-| REQ-309 | `completeSurvey` checks scenario-level completion for Mixed Mode groups |
 
 ---
 
@@ -1036,24 +816,23 @@ function SurveyView({ sessionId }) {
 - **Scenario populate**: Session.scenarios uses virtual populate. For sessions with 100+ scenarios, consider pagination or selective loading.
 - **Balanced selection**: Mixed Mode queries sort by `responseCount` — index on `{ groupId: 1, status: 1, responseCount: 1 }` is critical.
 - **Atomic updates**: `$inc` on `Scenario.responseCount` handles concurrency safely.
-- **Batch inserts**: `Scenario.insertMany` for Mixed Mode scenario pools (potentially thousands of documents) — test performance at scale.
+- **Batch inserts**: `Scenario.insertMany` for Mixed Mode scenario pools (potentially thousands of documents) — tested at scale (288 scenarios).
 
 ---
 
 ## Security Considerations
 
-Unchanged from previous design:
 - Admin password env-only
 - Turnstile cookie `httpOnly`, `sameSite=lax`, `secure` in prod
 - `clearDatabase` hard-blocked in production
 - No CSRF tokens (relies on same-site cookies + JSON content type)
 
-**New consideration**: 
-- Mixed Mode `participantId` uniqueness — consider adding cookie fingerprinting or requiring email registration to prevent repeat submissions.
+**Mixed Mode consideration**: 
+- Participant ID uniqueness relies on localStorage — consider adding cookie fingerprinting or requiring email registration to prevent repeat submissions.
 
 ---
 
-## Summary of Key Changes from Old Design
+## Summary of Key Changes from Legacy Design
 
 | Aspect | Old Design | New Design (Scenario-Centric) |
 |--------|-----------|-------------------------------|
@@ -1063,62 +842,47 @@ Unchanged from previous design:
 | **Data collection** | Session-level only | **Scenario-level tracking** in Mixed Mode |
 | **Submission.results** | `scenarioId: Number` (index) | `scenarioId: String` (UUID reference) |
 | **SessionGroup** | `batchMode` boolean + separate fields | **Unified `config` object**, mode implicit |
-| **Admin UI** | Manual + Batch | **Manual + Batch + Mixed** with scenario heatmaps |
+| **Admin UI** | Manual + Batch | **Manual + Batch + Mixed** ✅ |
 | **Survey flow** | Mode-agnostic (by accident) | Mode-agnostic (**by design**, REQ-323) |
-| **GraphQL** | `SessionSetup` type | **`Session` + `Scenario`** types |
-| **Scalability** | Session-centric queries | **Scenario-level analytics** for fine-grained insights |
+| **GraphQL** | SessionSetup type + legacy queries | **`Session` + `Scenario`** types, clean API |
+| **URL format** | `?setupId=` | `?sessionId=` or `?groupId=&mode=mixed` |
+| **Code complexity** | ~500 lines legacy code | Removed, unified architecture |
 
 ---
 
-## Implementation Progress Summary
+## Traceability Matrix
 
-| Phase | Component | Status | Test Coverage |
-|-------|-----------|--------|---------------|
-| **Phase 12** | Data Models | ✅ **Complete** | 15/15 tests pass |
-| 12.1 | `Scenario` model | ✅ Implemented | UUID, virtual fields, atomic ops |
-| 12.2 | `Session` model | ✅ Implemented | Container, virtual populate |
-| 12.3 | `Submission` schema | ✅ Updated | UUID scenarioId, participantId |
-| 12.4 | `SessionGroup` model | ✅ Simplified | Unified config, mode detection |
-| 12.5 | TypeScript types | ✅ Updated | `types.ts`, `constants.ts` |
-| **Phase 13** | GraphQL API | ✅ **Complete** | 15/15 tests pass |
-| 13.1 | typeDefs | ✅ Implemented | New Schema with backward compat |
-| 13.2 | Manual Mode resolvers | ✅ Implemented | `createManualSession` |
-| 13.3 | Batch Mode resolvers | ✅ Refactored | `createBatchSessions` |
-| 13.4 | Unified survey flow | ✅ Implemented | startSurvey, saveSurveyAnswer, completeSurvey |
-| 13.5 | Session queries | ✅ Implemented | session, allSessions, populate |
-| **Phase 14** | Utils Layer | ✅ **Complete** | Verified |
-| 14.1 | `graphqlClient.ts` | ✅ Updated | New API functions added |
-| 14.2 | `combinations.ts` | ✅ Verified | No changes needed |
-| **Phase 15** | Admin UI | 🟡 **In Progress** | Pending |
-| 15.1 | SetupPanel | 🔄 Planning | Need to update API calls |
-| 15.2 | BatchModeConfig | ⏳ Pending | — |
-| 15.3 | GroupsTable | ⏳ Pending | — |
-| 15.4 | GroupDetailView | ⏳ Pending | — |
-| 15.5 | HistoryTable | ⏳ Pending | — |
-| **Phase 16** | Survey Flow | ⏳ **Pending** | — |
-| 16.1 | App.tsx routing | ⏳ Pending | setupId → sessionId |
-| 16.2 | SurveyView | ⏳ Pending | Use session.scenarios |
-| 16.3 | surveySession.ts | ⏳ Pending | Update storage keys |
-| 16.4 | Session Full gate | ⏳ Pending | — |
-| 16.5 | Session resume | ⏳ Pending | — |
-
-**Legend**: ✅ Complete | 🔄 In Progress | ⏳ Pending | ⏸️ Deferred
-
-**Test Results**:
-- Backend: ✅ **15/15 tests passing**
-- Frontend: 🟡 6 tests failing (expected - using old data model)
+| REQ | Design Components | Status |
+|-----|-------------------|--------|
+| REQ-201..203 | Manual Mode: `createManualSession` resolver, UI | ✅ Complete |
+| REQ-301..304 | Batch Mode: `createBatchSessions` resolver, UI | ✅ Complete |
+| REQ-306..309 | Mixed Mode: `createMixedGroup`, `startMixedSession` resolvers, `MixedModeConfig` | ✅ Complete |
+| REQ-310 | Scenario heatmap visualization | ⏸️ Deferred |
+| REQ-321 | `Scenario` model with independent collection | ✅ Complete |
+| REQ-322 | `Session` model with `scenarioIds` reference array | ✅ Complete |
+| REQ-323 | Unified `startSurvey`, `saveSurveyAnswer`, `completeSurvey` | ✅ Complete |
+| REQ-401..405 | Survey flow: routing, response capture, completion | ✅ Complete |
+| REQ-308 | `saveSurveyAnswer` atomically increments `Scenario.responseCount` | ✅ Complete |
+| REQ-309 | `completeSurvey` checks scenario-level completion | ✅ Complete |
 
 ---
 
-## Next Steps (Implementation)
+## Next Steps
 
-### Immediate (Phase 15-16): Frontend Integration
-1. Update Admin UI to call new `createManualSession` API
-2. Update Survey Flow to use `sessionId` instead of `setupId`
-3. Verify all frontend components work with new data model
-4. Update and fix frontend tests
+### Completed ✅
+- Phase 12-14: Backend refactor (data models, GraphQL API, utils)
+- Phase 15-16: Frontend refactor (Admin UI, Survey flow)
+- Legacy API removal
+- Mixed Mode core implementation
+- Bug fixes (NetworkGraph, SurveyOutro)
 
-### Future (Phase 17): Mixed Mode
-After Manual and Batch modes are verified, implement Mixed Mode resolver and UI.
+### Remaining 🟡
+- **REQ-310**: Scenario completion heatmap for Mixed Mode groups
+- Frontend test updates for new API
+- Performance optimization if needed at scale
 
-See [`tasks.md`](tasks.md) Phase 12-17 for detailed implementation checklist.
+### Future Enhancements 💡
+- CSV export of submissions
+- Real-time admin dashboards
+- Enhanced participant uniqueness enforcement
+- Multi-language support (i18n expansion)

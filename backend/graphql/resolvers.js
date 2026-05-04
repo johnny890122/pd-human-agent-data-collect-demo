@@ -2,11 +2,10 @@ import { connectToDatabase, isDbConfigured } from '../db.js';
 import { SubmissionModel } from '../models/Submission.js';
 import { ScenarioModel } from '../models/Scenario.js';
 import { SessionModel } from '../models/Session.js';
-// SessionReplayModel removed per REQ-413
 import { SessionGroupModel } from '../models/SessionGroup.js';
 import GraphQLJSON from 'graphql-type-json';
 import { randomUUID } from 'crypto';
-import { generateEdgeCombinations, validateBatchParams } from '../../utils/combinations.js';
+import { generateEdgeCombinations } from '../../utils/combinations.js';
 import { generateDesignMatrix } from '../../utils/mathBackend.js';
 import { balancedSelect } from '../../utils/scenarioSelection.js';
 
@@ -108,51 +107,6 @@ function toSubmissionGraph(doc) {
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
-}
-
-// ============================================================================
-// Helper Functions - Legacy (Backward Compatibility)
-// ============================================================================
-
-async function toSetupGraph(doc) {
-  if (!doc) return null;
-  const submissionCount = await SubmissionModel.countDocuments({
-    sessionId: String(doc._id),
-    isCompleted: true
-  });
-  return {
-    id: String(doc._id),
-    groupId: doc.groupId || null,
-    activeEdgeIds: doc.activeEdgeIds || [],
-    scenarios: doc.scenarios || [],
-    focalNode: doc.focalNode,
-    opponentNode: doc.opponentNode,
-    sampleSize: doc.sampleSize || 20,
-    submissionCount,
-    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
-  };
-}
-
-function mapEntry(doc) {
-  return {
-    _id: String(doc._id),
-    id: String(doc._id),  // Keep for backward compatibility
-    sessionId: doc.sessionId,
-    edgeId: doc.edgeId || '',
-    results: doc.results || [],
-    demographics: doc.demographics || null,
-    isCompleted: doc.isCompleted === true,
-    createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
-    updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
-  };
-}
-
-function validateResults(results) {
-  for (const answer of results) {
-    if (answer.cooperationProbability < 0 || answer.cooperationProbability > 1) {
-      throw new Error('cooperationProbability must be between 0 and 1');
-    }
-  }
 }
 
 // ============================================================================

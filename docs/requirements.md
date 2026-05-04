@@ -19,6 +19,10 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-05-04 | **SCHEMA REFINEMENT** Scenario model improvements | `scenarioIndex` now required for traceability. `status` enum simplified from `['active', 'completed', 'paused']` to `['active', 'inactive']` to explicitly control scenario availability without redundant completion states (already tracked by `responseCount >= targetSize`). |
 | 2026-05-04 | **PARTICIPANT IDENTIFICATION ENHANCEMENT** Device fingerprinting for Mixed Mode (REQ-311) | Replace random participant ID with browser fingerprinting for more reliable duplicate detection. Addresses Open Question #5. |
 | 2026-05-04 | **SCHEMA CONSTRAINT TIGHTENING** Mixed Mode config fields are now mandatory (REQ-312) | `SessionGroup.config.maxK`, `scenariosPerSession`, and `targetSizePerScenario` changed from `required: false` to `required: true` on the Mongoose schema. These three fields are the defining configuration of a Mixed Mode group and must always be present when a Mixed Mode group is created. This change has cascading impact on GraphQL input types, TypeScript types, and test fixtures — see REQ-312 and TASK-2401..TASK-2407. **Open conflict flagged**: Mongoose `required: true` applies collection-wide; Batch Mode groups do not have these fields. Resolution needed — see Open Questions #7. |
+| 2026-05-04 | **UI ENHANCEMENT** Survey intro relationship structure display expanded (REQ-405.1) | The "關係結構" introduction step now displays ALL participant interactions (4 participants, 4 edges), not just interactions involving You and Opponent. This provides participants with a complete view of the network history before making decisions. |
+| 2026-05-04 | **BUG IDENTIFIED & FIXED** Admin history view read-only mode shows 0 active edges (BUG-003) | When clicking session ID from history table to view in read-only setup panel, "Active Edges" section displays as empty despite history table showing correct edge count. Fixed by modifying `toSessionGraph` resolver to derive virtual `activeEdgeIds` field from first scenario. |
+| 2026-05-05 | **UI CONSOLIDATION** Admin setup page now hosts both Manual and Mixed mode via inline `LaunchMode` selector (REQ-204, REQ-205) | The `/admin/setup` page exposes a two-button mode toggle ("Manual" / "Mixed") so administrators can choose their launch strategy without leaving the setup tab. Batch mode remains accessible via the Groups tab. `SetupPanel.tsx` `LaunchMode` type is `'manual' \| 'mixed'`. |
+| 2026-05-05 | **URL DIFFERENTIATION** Admin setup mode is now reflected in the URL via `?mode=` query parameter (REQ-204, REQ-205, REQ-206) | `/admin/setup?mode=manual` and `/admin/setup?mode=mixed` open `SetupPanel` in the corresponding mode. Navigating to `/admin/setup` with no param defaults to Manual. Changing the toggle updates the URL in-place (replace, not push) via `useSearchParams`. Enables bookmarking and deep-linking to a specific mode. |
 
 ---
 
@@ -27,11 +31,11 @@ This document is the single source of truth for the functional and non-functiona
 The platform supports two primary user roles cooperating around an experimental flow:
 
 1. An **Administrator** designs a network topology (4 named/colored nodes, up to 12 directed edges), picks a focal node and an opponent node, sets a target sample size, and launches experiments in one of three modes:
-   - **Manual Mode**: Single session with fixed edges
-   - **Batch Mode**: Multiple sessions, one per k-edge combination (complete factorial sweep)
-   - **Mixed Mode**: Cross-k sampling with scenario-level targeting ✅ **COMPLETED 2026-04-29**
+   - **Manual Mode** (`/admin/setup?mode=manual`): Single session with fixed edges chosen on the network graph.
+   - **Mixed Mode** (`/admin/setup?mode=mixed`): Cross-k sampling with scenario-level targeting. Admin picks maxK, scenariosPerSession, and targetSizePerScenario; the system generates a scenario pool and serves balanced sessions to each arriving participant. ✅ **COMPLETED 2026-04-29**
+   - **Batch Mode** (`/admin/groups`): Multiple sessions, one per k-edge combination (complete factorial sweep). Accessible via the Groups tab, not the Setup tab.
    
-   They distribute survey URLs and monitor responses at both session and scenario levels.
+   Manual Mode and Mixed Mode share the `/admin/setup` page and are selected with an inline two-button `LaunchMode` toggle. The active mode is always reflected in the URL as a `?mode=` query parameter, enabling bookmarking and direct links to each mode. Navigating to `/admin/setup` without the parameter defaults to Manual Mode. They distribute survey URLs and monitor responses at both session and scenario levels.
 
 2. A **Participant** opens a survey URL, passes a Cloudflare Turnstile bot check, completes a sequence of cooperation-probability scenarios, fills demographics, and submits. Their progress is persisted.
 
@@ -86,6 +90,26 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   
 - **REQ-203 — Visualize the network graph.** The setup panel renders the 4-node directed graph with selectable edges and color-coded groups (Group A blue, Group B red).
   - *Acceptance:* Toggling an edge updates `activeEdgeIds`. Selecting focal/opponent nodes updates the corresponding fields.
+
+- **REQ-204 — Mode toggle with URL synchronization.** The `/admin/setup` page MUST expose a two-button toggle (labeled "Manual" and "Mixed") that selects the active launch strategy. The toggle state MUST be reflected in the URL as a `?mode=` query parameter at all times, so the current mode is always bookmarkable and shareable.
+  - *Acceptance:*
+    - Clicking "Manual" sets the URL to `/admin/setup?mode=manual` and renders the Manual Mode configuration UI.
+    - Clicking "Mixed" sets the URL to `/admin/setup?mode=mixed` and renders the Mixed Mode configuration UI.
+    - URL update MUST use history replace (not push), so toggling the mode does not add entries to the browser history stack.
+    - A user who copies the URL `/admin/setup?mode=mixed` and opens it in a new tab MUST land directly in Mixed Mode.
+    - A user who copies the URL `/admin/setup?mode=manual` and opens it in a new tab MUST land directly in Manual Mode.
+    - The browser back button reflects natural navigation history, not toggling between modes.
+
+- **REQ-205 — Default mode when param is absent or invalid.** Navigating to `/admin/setup` without a `?mode=` parameter, or with an unrecognized value (e.g., `?mode=foo`), MUST default to Manual Mode. The URL MUST be corrected to `?mode=manual` immediately on load (via replace, not push).
+  - *Acceptance:*
+    - `GET /admin/setup` (no param) → renders Manual Mode; URL becomes `/admin/setup?mode=manual`.
+    - `GET /admin/setup?mode=invalid` → renders Manual Mode; URL becomes `/admin/setup?mode=manual`.
+    - No flash of the wrong mode is visible before the URL correction.
+
+- **REQ-206 — Internal admin links preserve mode context.** Any link within the admin console that navigates to `/admin/setup` MUST include a `?mode=` parameter. The default when generating such links programmatically (e.g., "go to setup" buttons) MUST be `?mode=manual`.
+  - *Acceptance:*
+    - No internal navigation produces a bare `/admin/setup` URL without a `?mode=` param.
+    - Where the originating context already knows the target mode (e.g., "Edit in Mixed Mode" from a Mixed Mode group), the link uses `?mode=mixed`.
 
 ### REQ-300 — Batch Launch / Session Groups (`/admin/groups`)
 
@@ -214,10 +238,25 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 |----------|-------------|----------|--------|
 | BUG-001 | NetworkGraph TypeError: Cannot read properties of undefined (reading 'includes') | 2026-05-04 | ✅ Fixed |
 | BUG-002 | SurveyOutro not calling completeSurvey, causing all submissions to show as incomplete | 2026-05-04 | ✅ Fixed |
+| BUG-003 | Admin history view: clicking session ID shows 0 active edges in read-only setup panel | 2026-05-04 | ✅ Fixed |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.
 
 **BUG-002**: [`SurveyOutro.tsx`](../components/SurveyOutro.tsx) never called `completeSurvey` mutation, causing all submissions to remain `isCompleted: false`. Fixed by passing `onComplete` and `entryId` props and calling `completeSurvey` when user submits email/code. A repair script [`scripts/fix-incomplete-submission.mjs`](../scripts/fix-incomplete-submission.mjs) is available for fixing historical data.
+
+**BUG-003**: Read-only setup view displays zero active edges despite history table showing correct edge count.
+- **Symptom**: In [`/admin/history`](../components/HistoryTable.tsx), the "Active Edges" column correctly displays edge list (e.g., 3 edges with names). When clicking the session ID to enter read-only setup view ([`/admin/setup`](../components/SetupPanel.tsx)), the "Setting Preview" section shows "Active Edges" as empty (k=0), and the Network Graph shows no highlighted edges.
+- **Root Cause - Multi-Layer Issue**:
+  1. **GraphQL Schema**: `Session` type didn't declare `activeEdgeIds` field
+  2. **GraphQL Resolver**: [`toSessionGraph`](../backend/graphql/resolvers.js:41) didn't populate the virtual field
+  3. **Frontend Query**: [`fetchAllSessions`](../utils/graphqlClient.ts:88) didn't request `activeEdgeIds` field
+  4. **Frontend Mapping**: [`AdminView.tsx`](../components/AdminView.tsx:47) tried to derive from scenarios array
+- **Impact**: Admins cannot properly view and verify historical session configurations in read-only mode. The complexity check shows incorrect values (k=0, scenarios=1 instead of actual values).
+- **Fix Applied - Four-Layer Solution**:
+  1. **Schema**: Added `activeEdgeIds: [String!]!` to [`Session` type](../backend/graphql/typeDefs.js:31)
+  2. **Resolver**: Modified [`toSessionGraph`](../backend/graphql/resolvers.js:56-67) to derive virtual field from first scenario
+  3. **Query**: Updated [`fetchAllSessions`](../utils/graphqlClient.ts:88) GraphQL query to request `activeEdgeIds`
+  4. **Component**: Simplified [`AdminView.tsx:47`](../components/AdminView.tsx:47) to use `session.activeEdgeIds` directly
 
 ---
 

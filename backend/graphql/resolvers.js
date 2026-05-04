@@ -53,10 +53,22 @@ async function toSessionGraph(doc, populateScenarios = true) {
     isCompleted: true
   });
   
+  let activeEdgeIds = [];
+  if (scenarios.length > 0) {
+    activeEdgeIds = scenarios[0].activeEdgeIds || [];
+  } else if (doc.scenarioIds && doc.scenarioIds.length > 0) {
+    // If scenarios not populated, fetch just the first one's activeEdgeIds
+    const firstScenario = await ScenarioModel.findById(doc.scenarioIds[0]).select('activeEdgeIds').lean();
+    if (firstScenario) {
+      activeEdgeIds = firstScenario.activeEdgeIds || [];
+    }
+  }
+  
   return {
     _id: String(doc._id),
     scenarioIds: doc.scenarioIds || [],
     scenarios,
+    activeEdgeIds, // Virtual field derived from scenarios for UI compatibility
     focalNode: doc.focalNode,
     opponentNode: doc.opponentNode,
     sampleSize: doc.sampleSize || 20,

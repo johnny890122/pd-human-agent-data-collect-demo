@@ -39,6 +39,9 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 - 2026-05-04: Scenario schema refined (scenarioIndex required, status simplified)
 - 2026-05-04: Device fingerprinting design for participant identification (REQ-311)
 - 2026-05-04: Mixed Mode config fields (`maxK`, `scenariosPerSession`, `targetSizePerScenario`) tightened to required (REQ-312) — see SessionGroup data model and Open Question #7
+- 2026-05-04: Survey intro "關係結構" page now displays complete network history (REQ-405.1)
+- 2026-05-04: **BUG FIXED** Admin history view read-only mode shows 0 active edges (BUG-003) — fixed by adding virtual activeEdgeIds field in toSessionGraph resolver
+- 2026-05-05: URL-level mode differentiation design added — `SetupPanel.tsx` syncs `LaunchMode` toggle to `?mode=` query param via `useSearchParams` (REQ-204, REQ-205, REQ-206) — see Phase 26
 
 ---
 
@@ -102,7 +105,7 @@ flowchart TB
 
 ### The Unified Abstraction
 
-```
+```text
 Scenario (atomic) → self-contained experiment condition
     ↓
 Session (container) → participant experience (ordered list of scenario IDs)
@@ -110,7 +113,7 @@ Session (container) → participant experience (ordered list of scenario IDs)
 Submission → responses to a session's scenarios
 ```
 
-**Key Insight**: 
+**Key Insight**:
 > All three launch modes (Manual, Batch, Mixed) are identical from the participant's perspective: they complete a Session. The difference is **how** that Session's scenarios are selected and composed, not **what** happens during completion.
 
 ### Three Modes, One Model
@@ -193,6 +196,7 @@ UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID(
 ```
 
 **Schema Refinements (2026-05-04)**:
+
 - `scenarioIndex` changed from optional to **required** to ensure all scenarios are traceable to their design matrix position
 - `status` enum simplified from `['active', 'completed', 'paused']` to `['active', 'inactive']`:
   - Removes redundancy: scenario completion is already determinable via `responseCount >= targetSize`
@@ -201,6 +205,7 @@ UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID(
   - 'inactive' = scenario is excluded (e.g., admin paused a problematic configuration)
 
 **Indexes**:
+
 - `{ groupId: 1, status: 1, responseCount: 1 }` — Mixed Mode balanced selection
 - `{ setupId: 1, scenarioIndex: 1 }` — Traceability
 - `{ status: 1 }` — Status queries
@@ -240,6 +245,7 @@ UUIDs are used as primary keys (`_id: { type: String, default: () => randomUUID(
 ```
 
 **Virtual field**:
+
 ```javascript
 SessionSchema.virtual('scenarios', {
   ref: 'Scenario',
@@ -249,6 +255,7 @@ SessionSchema.virtual('scenarios', {
 ```
 
 **Indexes**:
+
 - `{ groupId: 1 }`
 - `{ metadata.participantId: 1 }` — Mixed Mode participant lookup
 
@@ -287,6 +294,7 @@ SessionSchema.virtual('scenarios', {
 ```
 
 **Indexes**:
+
 - `{ sessionId: 1 }`
 - `{ sessionId: 1, participantId: 1 }` — Prevent duplicate Mixed Mode submissions
 
@@ -356,6 +364,7 @@ maxK: {
 Alternatively, enforcement is delegated entirely to the GraphQL layer (`Int!` in `GroupConfigInput` + resolver guards) which already catches all callers before any DB write happens. See Open Question #7 for decision.
 
 **Mode detection**:
+
 ```javascript
 function getGroupMode(group) {
   if (group.config.maxK) return 'mixed';
@@ -365,6 +374,7 @@ function getGroupMode(group) {
 ```
 
 **Indexes**:
+
 - `{ status: 1 }`
 - `{ createdAt: -1 }`
 
@@ -379,6 +389,7 @@ function getGroupMode(group) {
 **Admin Action**: Configure focal, opponent, edges, sampleSize
 
 **Backend Logic** ([`createManualSession`](../backend/graphql/resolvers.js)):
+
 ```javascript
 async function createManualSession(input) {
   // 1. Generate design matrix
@@ -422,6 +433,7 @@ async function createManualSession(input) {
 **Admin Action**: Configure name, k, focal, opponent, sampleSize
 
 **Backend Logic** ([`createBatchSessions`](../backend/graphql/resolvers.js)):
+
 ```javascript
 async function createBatchSessions(input) {
   // 1. Create SessionGroup
@@ -489,6 +501,7 @@ async function createBatchSessions(input) {
 **Admin Action**: Configure name, maxK, scenariosPerSession (S), targetSizePerScenario, focal, opponent
 
 **Backend Logic** ([`createMixedGroup`](../backend/graphql/resolvers.js)):
+
 ```javascript
 async function createMixedGroup(input) {
   // 1. Create SessionGroup
@@ -552,6 +565,7 @@ async function createMixedGroup(input) {
 **Verified**: maxK=2 generates 288 scenarios (12×2 + 66×4).
 
 **Participant Flow** ([`startMixedSession`](../backend/graphql/resolvers.js)):
+
 ```javascript
 async function startMixedSession(groupId, participantId) {
   const group = await SessionGroup.findById(groupId);
@@ -718,22 +732,81 @@ async function completeSurvey(submissionId, demographics) {
 
 ### Admin UI
 
-#### Unified Mode Selection ([`SetupPanel.tsx`](../components/SetupPanel.tsx)) ✅
+#### Unified Mode Selection with URL Sync ([`SetupPanel.tsx`](../components/SetupPanel.tsx)) ✅ — *Updated 2026-05-05*
+
+`SetupPanel.tsx` uses React Router v7 `useSearchParams()` to keep the two-button `LaunchMode` toggle and the URL's `?mode=` query parameter in sync at all times. No full-page reload occurs when the mode changes.
+
+**Reading mode on mount / navigation:**
+
 ```typescript
-<Tabs>
-  <Tab label="Manual Mode">
-    // Single session configuration
-  </Tab>
-  <Tab label="Batch Mode">
-    // Batch group configuration
-  </Tab>
-  <Tab label="Mixed Mode">
-    <MixedModeConfig />  {/* NEW ✅ */}
-  </Tab>
-</Tabs>
+import { useSearchParams } from 'react-router-dom';
+
+type LaunchMode = 'manual' | 'mixed';
+
+function SetupPanel() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Parse and validate the ?mode= param; default to 'manual' for absent/invalid values
+  const rawMode = searchParams.get('mode');
+  const launchMode: LaunchMode =
+    rawMode === 'manual' || rawMode === 'mixed' ? rawMode : 'manual';
+
+  // Correct the URL immediately if the param was absent or invalid (replace, not push)
+  useEffect(() => {
+    if (rawMode !== launchMode) {
+      setSearchParams({ mode: launchMode }, { replace: true });
+    }
+  }, []);  // Run once on mount
 ```
 
+**Writing mode when the toggle is clicked:**
+
+```typescript
+  const handleModeChange = (newMode: LaunchMode) => {
+    // replace: true prevents a new browser-history entry
+    setSearchParams({ mode: newMode }, { replace: true });
+    // launchMode is re-derived on next render from searchParams
+  };
+```
+
+**Rendering the toggle and conditional UI:**
+
+```typescript
+  return (
+    <>
+      {/* Two-button mode selector */}
+      <ButtonGroup>
+        <Button
+          variant={launchMode === 'manual' ? 'contained' : 'outlined'}
+          onClick={() => handleModeChange('manual')}
+        >
+          Manual
+        </Button>
+        <Button
+          variant={launchMode === 'mixed' ? 'contained' : 'outlined'}
+          onClick={() => handleModeChange('mixed')}
+        >
+          Mixed
+        </Button>
+      </ButtonGroup>
+
+      {/* Conditional configuration panel */}
+      {launchMode === 'manual' && <ManualModeForm />}
+      {launchMode === 'mixed' && <MixedModeConfig />}
+    </>
+  );
+}
+```
+
+**Design rationale:**
+
+- `useSearchParams` is the idiomatic React Router v7 way to own a URL slice without a full navigation. It avoids a separate `useState` for mode that would need to be manually kept in sync with the URL.
+- `{ replace: true }` on every write means the browser back button reflects page-level navigation (e.g., Admin → Setup), not mode toggling within Setup.
+- The validation-and-correction `useEffect` runs once on mount. It fires `replace` only when the URL is stale (absent or invalid param), so a bookmarked `/admin/setup?mode=mixed` opens directly in Mixed Mode without any observable flash.
+- This pattern is consistent with the `?sessionId=` and `?groupId=&mode=mixed` patterns used in the participant survey flow.
+
 #### Mixed Mode Configuration ([`MixedModeConfig.tsx`](../components/MixedModeConfig.tsx)) ✅
+
 ```typescript
 function MixedModeConfig() {
   const [maxK, setMaxK] = useState(2);
@@ -822,6 +895,117 @@ function SurveyView({ sessionId }) {
 
 **Key Insight**: `SurveyView` doesn't need to know which mode created the session!
 
+### Survey Introduction - Relationship Structure Display (REQ-405.1)
+
+#### Current Implementation Analysis
+
+In [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) at the "關係結構" step (introStep 2), the history legend displays interaction records filtered to only show edges involving the focal participant or opponent:
+
+```typescript
+// Line 336-339: Current filtering logic
+{networkDemoSetup.activeEdgeIds.filter(edgeId => {
+  const [source, target] = edgeId.split('-');
+  return source === setup.focalNode || target === setup.focalNode || source === setup.opponentNode || target === setup.opponentNode;
+}).map(edgeId => {
+  // ... render history record
+})}
+```
+
+**Problem**: This filter restricts the display to only 2 edges (You ↔ Opponent), hiding the interactions between the other two participants. Participants cannot see the complete network structure.
+
+#### Enhanced Design
+
+**Remove the filter** to display all 4 edges in `networkDemoSetup.activeEdgeIds`:
+
+```typescript
+// Enhanced: Display ALL interactions
+{networkDemoSetup.activeEdgeIds.map(edgeId => {
+  const [source, target] = edgeId.split('-');
+  const isGive = networkDemoScenario.edgeStates[edgeId] === 'give';
+  
+  // Enhanced participant labeling
+  const getName = (id: string, agent: any) => {
+    if (id === setup.focalNode) return "您";
+    if (id === setup.opponentNode) return "對手";
+    // For other participants, show generic label
+    return `參與者 ${agent.group}`;
+  };
+  
+  const sourceName = getName(source, AGENTS[source as AgentId]);
+  const targetName = getName(target, AGENTS[target as AgentId]);
+  
+  return (
+    <div key={edgeId} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+      <div className="flex items-center gap-2">
+        <span className={`font-bold ${source === setup.focalNode ? 'text-indigo-600' : 'text-gray-700'}`}>
+          {sourceName}
+        </span>
+        <span className="text-gray-300">➜</span>
+        <span className="text-gray-600">{targetName}</span>
+      </div>
+      <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
+        {isGive ? '給予' : '不給予'}
+      </span>
+    </div>
+  );
+})}
+```
+
+#### Enhanced Grouping and Labeling Strategy
+
+**Two-Group Display**: Records are organized into two distinct sections to improve clarity:
+
+##### Group 1: Your Pair (您這對的互動)
+
+- Blue-tinted background for visual distinction
+- Label: "您這對的互動"
+- Contains interactions between `focalNode` (您) and `opponentNode` (對手)
+
+##### Group 2: Other Pair (另一對參與者的互動)
+
+- White background
+- Label: "另一對參與者的互動"
+- Contains interactions between the other two participants
+- Uses **in-group/out-group** labeling relative to focal participant's group
+
+| Participant Role | Display Label | Logic |
+|-----------------|---------------|-------|
+| `focalNode` (You) | "您" | Always in Group 1 |
+| `opponentNode` (Opponent) | "對手" | Always in Group 1 |
+| Other participant (same group as focal) | "組內成員 (KMT)" or "組內成員 (DPP)" | In-group member |
+| Other participant (different group from focal) | "組外成員 (KMT)" or "組外成員 (DPP)" | Out-group member |
+
+**Example**: If focal participant is KMT1:
+
+- KMT2 (same group) → "組內成員 (KMT)"
+- DPP3 (different group) → "組外成員 (DPP)"
+
+#### Expected Output
+
+**Before (2 records, ungrouped)**:
+
+- 您 → 對手: 給予
+- 對手 → 您: 不給予
+
+**After (4 records, grouped)**:
+
+**您這對的互動** (blue background)
+
+- 您 → 對手: 不給予
+- 對手 → 您: 給予
+
+**另一對參與者的互動** (white background)
+
+- 組內成員 (KMT) → 組外成員 (DPP): 不給予
+- 組外成員 (DPP) → 組內成員 (KMT): 給予
+
+#### Implementation Impact
+
+- **Code changes**: 1 file ([`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx))
+- **Lines modified**: ~4 lines (remove filter condition)
+- **Testing**: Visual verification on `/survey/intro/2?sessionId=<any>`
+- **Backward compatibility**: ✅ No data model changes, UI-only enhancement
+
 ---
 
 ## Known Issues and Fixes
@@ -832,11 +1016,14 @@ function SurveyView({ sessionId }) {
 |----|-----------|-------|----------|--------|
 | BUG-001 | [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) | TypeError: Cannot read properties of undefined (reading 'includes') | 2026-05-04 | ✅ Fixed |
 | BUG-002 | [`SurveyOutro.tsx`](../components/SurveyOutro.tsx) | completeSurvey mutation never called, all submissions incomplete | 2026-05-04 | ✅ Fixed |
+| BUG-003 | [`AdminView.tsx`](../components/AdminView.tsx) / [`SetupPanel.tsx`](../components/SetupPanel.tsx) | Read-only setup view shows 0 active edges despite history table showing correct count | 2026-05-04 | ✅ Fixed |
 
 #### BUG-001: NetworkGraph undefined error
+
 **Problem**: `activeEdges` could be undefined in multiple locations, causing crashes when calling `.includes()`.
 
 **Solution**: Added defensive checks at 5 locations:
+
 ```typescript
 // Before (crash-prone)
 const activeEdges = mode === 'survey' && scenario?.activeEdgeIds 
@@ -850,13 +1037,57 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 ```
 
 #### BUG-002: Incomplete submissions bug
+
 **Problem**: [`SurveyOutro.tsx`](../components/SurveyOutro.tsx) never called `completeSurvey` mutation, so all submissions had `isCompleted: false`.
 
-**Solution**: 
+**Solution**:
+
 1. Updated `SurveyOutro` to accept `onComplete` and `entryId` props
 2. Added `handleFinalSubmit` function that calls `completeSurvey`
 3. Updated `SurveyView` to pass these props
 4. Created repair script [`scripts/fix-incomplete-submission.mjs`](../scripts/fix-incomplete-submission.mjs) for historical data
+
+#### BUG-003: Admin history read-only view shows zero active edges
+
+**Problem**: When clicking a session ID from [`/admin/history`](../components/HistoryTable.tsx) to view configuration in read-only mode ([`/admin/setup`](../components/SetupPanel.tsx)), the "Active Edges" section displays as empty (k=0, no edge list) and the Network Graph shows no highlighted edges, despite the history table correctly showing the edge count and edge names.
+
+**Root Cause**:
+In the scenario-centric data model (REQ-320), `Session` documents do not store `activeEdgeIds` directly — this field only exists in `Scenario` documents. The [`AdminView.tsx`](../components/AdminView.tsx) history loader (lines 40-53) derives `activeEdgeIds` from `session.scenarios?.[0]?.activeEdgeIds || []` when mapping fetched sessions to local state. However, if the scenarios array is empty or not properly populated by the backend, this fallback results in `activeEdgeIds: []`, which gets passed to [`SetupPanel`](../components/SetupPanel.tsx), causing the UI to display zero edges.
+
+**Impact**:
+
+- Admins cannot verify historical session configurations in read-only mode
+- Complexity check shows incorrect values (k=0, 2^k=1 instead of actual scenario count)
+- Network graph visualization is blank, defeating the purpose of the read-only view
+
+**Proposed Solutions** (choose one):
+
+1. **Frontend fix in AdminView**: Ensure `activeEdgeIds` is always extracted from scenarios when loading history. If `scenarios` is empty, explicitly refetch or warn.
+2. **Frontend fix in SetupPanel**: Add defensive logic to derive `activeEdgeIds` from `setup.scenarios[0]` if `setup.activeEdgeIds` is empty.
+3. **Backend fix in resolvers**: Modify [`toSessionGraph`](../backend/graphql/resolvers.js:41) to always populate a virtual `activeEdgeIds` field by extracting from the first scenario for UI compatibility. This maintains backwards compatibility with UI expectations while preserving the scenario-centric model.
+
+**Fix Applied**: Four-layer complete solution addressing all parts of the data pipeline:
+
+1. **GraphQL Schema Layer** ([`backend/graphql/typeDefs.js:31`](../backend/graphql/typeDefs.js)):
+   - Added `activeEdgeIds: [String!]!` to `Session` type as virtual field
+   - Enables GraphQL to recognize and validate the field
+
+2. **GraphQL Resolver Layer** ([`backend/graphql/resolvers.js:56-67`](../backend/graphql/resolvers.js)):
+   - Modified `toSessionGraph` to derive `activeEdgeIds` from first scenario
+   - Handles two cases: scenarios populated (extract from array) or not populated (query first scenario)
+   - Ensures field is always populated with correct data
+
+3. **Frontend Query Layer** ([`utils/graphqlClient.ts:88`](../utils/graphqlClient.ts)):
+   - Updated `fetchAllSessions` GraphQL query to request `activeEdgeIds` field
+   - Also added `activeEdgeIds` to nested `scenarios` query for consistency
+   - Without this, frontend would not receive the field even if backend provides it
+
+4. **Frontend Component Layer** ([`components/AdminView.tsx:47`](../components/AdminView.tsx)):
+   - Simplified to use `session.activeEdgeIds` directly instead of deriving from scenarios
+   - Added null coalescing (`|| []`) for TypeScript safety
+   - Removed complex fallback logic that was masking the underlying issue
+
+This complete solution ensures data flows correctly: Database → Resolver → GraphQL Schema → Frontend Query → Component Rendering.
 
 ---
 
@@ -894,6 +1125,7 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 - No CSRF tokens (relies on same-site cookies + JSON content type)
 
 **Mixed Mode Participant Identification** (REQ-311):
+
 - **Current Implementation**: Random 16-character ID stored in localStorage (easily cleared)
 - **Enhanced Approach**: Device fingerprinting with multi-layer fallback strategy
 
@@ -922,6 +1154,7 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 | REQ | Design Components | Status |
 |-----|-------------------|--------|
 | REQ-201..203 | Manual Mode: `createManualSession` resolver, UI | ✅ Complete |
+| REQ-204..206 | `SetupPanel.tsx` `useSearchParams()` toggle ↔ URL sync; default to `manual`; internal link hygiene | 📋 Planned (Phase 26) |
 | REQ-301..304 | Batch Mode: `createBatchSessions` resolver, UI | ✅ Complete |
 | REQ-306..309 | Mixed Mode: `createMixedGroup`, `startMixedSession` resolvers, `MixedModeConfig` | ✅ Complete |
 | REQ-312 | `SessionGroup.config` conditional required validators, `GroupConfigInput` non-nullable fields, TypeScript types | 🔧 In Progress (Phase 24) |
@@ -932,6 +1165,7 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 | REQ-401..405 | Survey flow: routing, response capture, completion | ✅ Complete |
 | REQ-308 | `saveSurveyAnswer` atomically increments `Scenario.responseCount` | ✅ Complete |
 | REQ-309 | `completeSurvey` checks scenario-level completion | ✅ Complete |
+| REQ-405.1 | Complete network history display in survey introduction | 📋 Planned |
 
 ---
 

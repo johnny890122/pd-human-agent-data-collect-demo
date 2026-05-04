@@ -87,8 +87,10 @@ export async function fetchAllSessions(excludeGroupSessions = false): Promise<Se
       allSessions(excludeGroupSessions: $excludeGroupSessions) {
         _id
         scenarioIds
+        activeEdgeIds
         scenarios {
           _id
+          activeEdgeIds
           edgeStates
           scenarioIndex
         }

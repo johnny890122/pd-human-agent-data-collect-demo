@@ -44,7 +44,8 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
             scenarios: session.scenarios || [],
             focalNode: session.focalNode,
             opponentNode: session.opponentNode,
-            activeEdgeIds: session.scenarios?.[0]?.activeEdgeIds || [],
+            // Use activeEdgeIds from backend resolver (BUG-003 fix)
+            activeEdgeIds: session.activeEdgeIds || [],
             sampleSize: session.sampleSize,
             submissionCount: session.submissionCount,
             groupId: session.groupId,
@@ -85,8 +86,9 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   };
 
   const toggleEdge = (edgeId: string) => {
-    const isActive = setup.activeEdgeIds.includes(edgeId);
-    let newActive = [...setup.activeEdgeIds];
+    const currentEdges = setup.activeEdgeIds || [];
+    const isActive = currentEdges.includes(edgeId);
+    let newActive = [...currentEdges];
     if (isActive) {
       newActive = newActive.filter((id) => id !== edgeId);
     } else {

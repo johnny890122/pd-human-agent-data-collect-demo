@@ -29,6 +29,7 @@ export const typeDefs = `#graphql
     _id: ID!
     scenarioIds: [ID!]!
     scenarios: [Scenario!]!
+    activeEdgeIds: [String!]!          # Virtual field derived from first scenario (BUG-003 fix)
     focalNode: String!
     opponentNode: String!
     sampleSize: Int!

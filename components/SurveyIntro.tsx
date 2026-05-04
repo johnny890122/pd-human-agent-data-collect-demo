@@ -162,6 +162,33 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       );
     }
 
+    // Mini avatar component for history legend
+    const MiniAvatar = ({ agent, size = 20 }: { agent: typeof agentMe, size?: number }) => {
+      const clipPathId = `mini-avatar-${agent.id}`;
+      const groupColor = agent.group === 'KMT' ? COLORS.kmt : COLORS.dpp;
+      const r = size / 2;
+      
+      return (
+        <svg width={size} height={size} viewBox={`${-r} ${-r} ${size} ${size}`} className="inline-block">
+          <defs>
+            <clipPath id={clipPathId}>
+              <circle cx={0} cy={0} r={r} />
+            </clipPath>
+          </defs>
+          <circle cx={0} cy={0} r={r} fill={groupColor} clipPath={`url(#${clipPathId})`} />
+          <rect x={-r} y={r * 0.25} width={size} height={r} fill={agent.group === 'KMT' ? COLORS.avatarClothKmt : COLORS.avatarClothDpp} clipPath={`url(#${clipPathId})`} />
+          <circle cx={0} cy={-r * 0.1} r={r * 0.36} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
+          {agent.group === 'KMT' && (
+            <g clipPath={`url(#${clipPathId})`}>
+              <rect x={-r * 0.3} y={-r * 0.25} width={r * 0.25} height={r * 0.2} rx={r * 0.05} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.5" />
+              <rect x={r * 0.05} y={-r * 0.25} width={r * 0.25} height={r * 0.2} rx={r * 0.05} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.5" />
+            </g>
+          )}
+          <circle cx={0} cy={0} r={r} fill="none" stroke={groupColor} strokeWidth="1.5" />
+        </svg>
+      );
+    };
+
     const InteractiveInlineEdge = ({ isRevealed, onReveal }: { isRevealed: boolean, onReveal: () => void }) => {
       const COOP_COLOR = COLORS.coop; // green-600
       const UNREVEALED_COLOR = COLORS.neutral; // gray-400
@@ -332,37 +359,110 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
                 <div className="w-full max-w-lg md:max-w-sm flex-1">
                   <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center md:text-left">歷史紀錄說明</p>
-                  <div className="grid grid-cols-1 gap-3 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                    {networkDemoSetup.activeEdgeIds.filter(edgeId => {
-                      const [source, target] = edgeId.split('-');
-                      return source === setup.focalNode || target === setup.focalNode || source === setup.opponentNode || target === setup.opponentNode;
-                    }).map(edgeId => {
-                      const [source, target] = edgeId.split('-');
-                      const isGive = networkDemoScenario.edgeStates[edgeId] === 'give';
-                      const isYou = source === setup.focalNode;
-                      
-                      const getName = (id: string, agent: any) => {
-                        if (id === setup.focalNode) return "您";
-                        if (id === setup.opponentNode) return "對手";
-
-                        return `參與者 ${agent.group}`;
-                      };
-                      
-                      const sourceName = getName(source, AGENTS[source as AgentId]);
-                      const targetName = getName(target, AGENTS[target as AgentId]);
-                      return (
-                        <div key={edgeId} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
-                          <div className="flex items-center gap-2">
-                            <span className={`font-bold ${isYou ? 'text-indigo-600' : 'text-gray-700'}`}>{sourceName}</span>
-                            <span className="text-gray-300">➜</span>
-                            <span className="text-gray-600">{targetName}</span>
-                          </div>
-                          <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
-                            {isGive ? '給予' : '不給予'}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  <div className="grid grid-cols-1 gap-4 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                    {/* Group 1: Your pair (You and Opponent) */}
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider px-2">您這對的互動</p>
+                      {networkDemoSetup.activeEdgeIds
+                        .filter(edgeId => {
+                          const [source, target] = edgeId.split('-');
+                          return (source === setup.focalNode || target === setup.focalNode) ||
+                                 (source === setup.opponentNode || target === setup.opponentNode);
+                        })
+                        .map(edgeId => {
+                          const [source, target] = edgeId.split('-');
+                          const isGive = networkDemoScenario.edgeStates[edgeId] === 'give';
+                          const isYou = source === setup.focalNode;
+                          
+                          const getName = (id: string) => {
+                            if (id === setup.focalNode) return "您";
+                            if (id === setup.opponentNode) return "對手";
+                            return "";
+                          };
+                          
+                          const sourceName = getName(source);
+                          const targetName = getName(target);
+                          
+                          // Only render if both are in your pair
+                          if (!sourceName || !targetName) return null;
+                          
+                          return (
+                            <div key={edgeId} className="flex items-center justify-between bg-white-50 px-3 py-2 rounded-lg border border-white-200 shadow-sm">
+                              <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1">
+                                  <MiniAvatar agent={AGENTS[source as AgentId]} size={18} />
+                                  <span className={`font-bold ${isYou ? 'text-indigo-600' : 'text-white-700'}`}>{sourceName}</span>
+                                </div>
+                                <span className="text-white-300">➜</span>
+                                <div className="flex items-center gap-1">
+                                  <MiniAvatar agent={AGENTS[target as AgentId]} size={18} />
+                                  <span className="text-white-600">{targetName}</span>
+                                </div>
+                              </div>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                                {isGive ? '給予' : '不給予'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                    
+                    {/* Group 2: Other pair */}
+                    <div className="space-y-2">
+                      <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider px-2">另一對參與者的互動</p>
+                      {(() => {
+                        // Find the other two participants (not focalNode or opponentNode)
+                        const allParticipants = ['KMT1', 'KMT2', 'DPP3', 'DPP4'];
+                        const otherParticipants = allParticipants.filter(
+                          id => id !== setup.focalNode && id !== setup.opponentNode
+                        );
+                        
+                        // Create simple numbering for the other pair: 參與者 1, 參與者 2
+                        const participantNumbers: Record<string, number> = {};
+                        otherParticipants.forEach((id, index) => {
+                          participantNumbers[id] = index + 1;
+                        });
+                        
+                        return networkDemoSetup.activeEdgeIds
+                          .filter(edgeId => {
+                            const [source, target] = edgeId.split('-');
+                            return otherParticipants.includes(source) && otherParticipants.includes(target);
+                          })
+                          .map(edgeId => {
+                            const [source, target] = edgeId.split('-');
+                            const isGive = networkDemoScenario.edgeStates[edgeId] === 'give';
+                            const sourceAgent = AGENTS[source as AgentId];
+                            const targetAgent = AGENTS[target as AgentId];
+                            
+                            // Simple labeling: 參與者 1, 參與者 2
+                            const getLabel = (id: string) => {
+                              return `參與者 ${participantNumbers[id]}`;
+                            };
+                            
+                            const sourceName = getLabel(source);
+                            const targetName = getLabel(target);
+                            
+                            return (
+                              <div key={edgeId} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-1">
+                                    <MiniAvatar agent={sourceAgent} size={18} />
+                                    <span className="font-bold text-gray-700">{sourceName}</span>
+                                  </div>
+                                  <span className="text-gray-300">➜</span>
+                                  <div className="flex items-center gap-1">
+                                    <MiniAvatar agent={targetAgent} size={18} />
+                                    <span className="text-gray-600">{targetName}</span>
+                                  </div>
+                                </div>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                                  {isGive ? '給予' : '不給予'}
+                                </span>
+                              </div>
+                            );
+                          });
+                      })()}
+                    </div>
                   </div>
                 </div>
               </div>

@@ -19,9 +19,11 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 | Phase 15 | ✅ Complete | 2026-04-29 | Admin UI |
 | Phase 16 | ✅ Complete | 2026-04-29 | Survey flow |
 | Phase 17 | 🟡 Partial | Ongoing | Testing done, heatmap deferred |
-| Bug Fixes | ✅ Complete | 2026-05-04 | NetworkGraph, SurveyOutro |
+| Bug Fixes | ✅ Complete | 2026-05-04 | NetworkGraph ✅, SurveyOutro ✅, Admin history view ✅ |
 | Schema Refinement | 🔧 In Progress | 2026-05-04 | Scenario model improvements |
 | Phase 24 | 📋 Planned | 2026-05-04 | Mixed Mode config fields mandatory (REQ-312) |
+| Phase 25 | 📋 Planned | 2026-05-04 | Survey intro complete network history (REQ-405.1) |
+| Phase 26 | 📋 Planned | 2026-05-05 | URL-level mode differentiation for `/admin/setup` (REQ-204, REQ-205, REQ-206) |
 
 ---
 
@@ -448,6 +450,19 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
   - Can check and fix incomplete submissions that have complete results
   - [BUG-002]
 
+- [x] **TASK-1904**: Fix admin history read-only view showing 0 active edges ✅
+  - **Problem**: Clicking session ID from history table loads read-only setup with empty activeEdgeIds (k=0)
+  - **Root Cause**: Multi-layer missing data flow - schema didn't declare field, resolver didn't populate it, query didn't request it, component tried to derive incorrectly
+  - **Solution Applied**: Four-layer complete fix addressing entire data pipeline
+  - **Implementation**:
+    1. **Schema**: Added `activeEdgeIds: [String!]!` to [`Session` type](../backend/graphql/typeDefs.js:31)
+    2. **Resolver**: Modified `toSessionGraph` in [`backend/graphql/resolvers.js:56-67`](../backend/graphql/resolvers.js) to derive virtual field from first scenario
+    3. **Query**: Updated [`fetchAllSessions`](../utils/graphqlClient.ts:88) to explicitly request `activeEdgeIds` field
+    4. **Component**: Simplified [`AdminView.tsx:47`](../components/AdminView.tsx) to use `session.activeEdgeIds` directly with null coalescing
+  - **Result**: Admin can now properly view and verify historical session configurations with correct edge count, edge names, and network graph visualization
+  - **Files Modified**: 4 files (1 schema, 1 resolver, 1 query utility, 1 component)
+  - [BUG-003]
+
 ---
 
 ## Phase 20: Documentation Consolidation
@@ -650,6 +665,63 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 - `startMixedSession` no longer uses the `|| 20` fallback — fails explicitly if `scenariosPerSession` is absent
 - Frontend TypeScript `SessionGroup.config.maxK` is typed as `number` (not `number | null`) — compile-time enforcement
 - All existing backend tests continue to pass (no regression on Batch/Manual Mode group creation)
+
+---
+
+## Phase 26: URL-Level Mode Differentiation for Admin Setup (REQ-204, REQ-205, REQ-206)
+
+**Status**: 📋 **Planned** (2026-05-05)
+
+**Objective**: Sync the `LaunchMode` toggle in `SetupPanel.tsx` with a `?mode=` URL query parameter so that each mode (`manual` / `mixed`) is bookmarkable, shareable, and deep-linkable without a full page reload.
+
+**Scope**: Frontend only — no backend changes, no data model changes.
+
+**Key design constraint**: All URL writes MUST use `{ replace: true }` (history replace, not push) so mode toggling does not pollute the browser history stack.
+
+---
+
+- [ ] **TASK-2601**: Read `?mode=` from search params in `SetupPanel.tsx` — replace any `useState` holding `launchMode` with a value derived from `useSearchParams()` [REQ-204, REQ-205]
+  - Import `useSearchParams` from `react-router-dom`.
+  - Derive `launchMode: LaunchMode` by reading `searchParams.get('mode')` and validating it against `'manual' | 'mixed'`.
+  - Any value that is `null`, empty, or not one of the two valid strings MUST resolve to `'manual'`.
+  - Remove any existing `useState<LaunchMode>` that held this value, since URL params become the single source of truth.
+  - *Acceptance:* `SetupPanel` re-renders with the correct mode when the URL `?mode=` param changes (e.g., via browser history navigation).
+
+- [ ] **TASK-2602**: Correct absent or invalid `?mode=` param on mount — add a `useEffect` that replaces the URL when the param is stale [REQ-205]
+  - On first render, compare `rawMode` (the raw string from the URL) to the validated `launchMode`.
+  - If they differ (param was absent or invalid), call `setSearchParams({ mode: launchMode }, { replace: true })` once.
+  - This ensures `/admin/setup` (no param) immediately corrects to `/admin/setup?mode=manual` without a visible flash and without adding a history entry.
+  - *Acceptance:* Navigating to `/admin/setup` (bare) in the browser address bar results in the URL changing to `/admin/setup?mode=manual` within the same render cycle, with no observable mode mismatch displayed to the user.
+
+- [ ] **TASK-2603**: Sync mode toggle click to URL via `setSearchParams` — wire the two-button toggle so clicking a button calls `setSearchParams({ mode: newMode }, { replace: true })` [REQ-204]
+  - Remove any `setState` call that previously updated a local `launchMode` state variable.
+  - The mode is now exclusively set by writing to the URL; the component re-derives it from `useSearchParams` on each render.
+  - *Acceptance:* Clicking "Manual" updates the address bar to `?mode=manual`. Clicking "Mixed" updates it to `?mode=mixed`. The browser back button does not cycle between the two modes.
+
+- [ ] **TASK-2604**: Verify deep links open `SetupPanel` in the correct mode — manual end-to-end check [REQ-204, REQ-205]
+  - Open `/admin/setup?mode=mixed` directly in a fresh browser tab (not via in-app navigation). Confirm that Mixed Mode UI is rendered immediately, with no flash of Manual Mode first.
+  - Open `/admin/setup?mode=manual` directly. Confirm Manual Mode UI renders.
+  - Open `/admin/setup` (no param). Confirm Manual Mode renders and URL corrects to `?mode=manual`.
+  - Open `/admin/setup?mode=bogus`. Confirm Manual Mode renders and URL corrects to `?mode=manual`.
+  - Confirm that bookmarking `/admin/setup?mode=mixed` and reopening it later lands in Mixed Mode.
+  - *Acceptance:* All four cases above behave as specified, verified manually across Chrome and at least one other browser.
+
+- [ ] **TASK-2605**: Audit and update internal links to `/admin/setup` to include a `?mode=` param [REQ-206]
+  - Search the codebase for any strings or template literals that produce a bare `/admin/setup` URL (without `?mode=`): check `App.tsx`, `AdminView.tsx`, `HistoryTable.tsx`, `GroupDetailView.tsx`, and any other component that renders a link or calls `navigate('/admin/setup')`.
+  - Update each occurrence to append `?mode=manual` (or `?mode=mixed` where the target mode is known from context).
+  - In particular: if any "view in setup" or "edit configuration" link targets `/admin/setup`, it MUST include the mode param.
+  - *Acceptance:* A global search for `"/admin/setup"` (bare, without `?mode`) in `.tsx` / `.ts` source files returns zero results.
+
+---
+
+**Acceptance Criteria for Phase 26**:
+- `/admin/setup?mode=mixed` opens directly in Mixed Mode (no flash, no redirect loop). [REQ-204]
+- `/admin/setup?mode=manual` opens directly in Manual Mode. [REQ-204]
+- `/admin/setup` (no param) defaults to Manual Mode and corrects the URL to `?mode=manual`. [REQ-205]
+- `/admin/setup?mode=bogus` defaults to Manual Mode and corrects the URL to `?mode=manual`. [REQ-205]
+- Clicking the toggle writes to the URL (`replace` not `push`); browser back button is unaffected. [REQ-204]
+- No internal link in the admin console navigates to bare `/admin/setup` without `?mode=`. [REQ-206]
+- No new backend changes required. All changes are confined to `SetupPanel.tsx` and any files that link to `/admin/setup`.
 
 ---
 
@@ -960,3 +1032,169 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 - Async changes may require UI loading states
 - Browser compatibility testing is critical for production use
 - Privacy compliance review recommended before deployment
+
+---
+
+## Phase 25: Survey Intro Complete Network History Display (REQ-405.1)
+
+**Status**: 📋 **PLANNED 2026-05-04**
+
+**Objective**: Enhance the "關係結構" introduction step to display ALL participant interactions (4 edges) instead of only those involving You/Opponent (2 edges), providing participants with complete network context.
+
+**Priority**: 🟢 Low (UI enhancement, non-breaking)
+
+**Estimated Effort**: 0.5 day (UI-only change)
+
+---
+
+### Tasks
+
+- [ ] **TASK-2501**: Remove edge filter in SurveyIntro history legend 🎨
+  - **File**: [`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx)
+  - **Location**: Lines 336-339 (introStep 2, history legend)
+  - **Change**: Remove `.filter()` condition that restricts to edges involving `focalNode` or `opponentNode`
+  - **Before**:
+    ```typescript
+    {networkDemoSetup.activeEdgeIds.filter(edgeId => {
+      const [source, target] = edgeId.split('-');
+      return source === setup.focalNode || target === setup.focalNode
+          || source === setup.opponentNode || target === setup.opponentNode;
+    }).map(edgeId => {
+    ```
+  - **After**:
+    ```typescript
+    {networkDemoSetup.activeEdgeIds.map(edgeId => {
+    ```
+  - **Impact**: History legend will show 4 records instead of 2
+  - **Testing**: Navigate to `/survey/intro/2?sessionId=<any>` and verify 4 interaction records are displayed
+  - [REQ-405.1]
+
+- [ ] **TASK-2502**: Verify participant labeling logic 🔍
+  - **File**: [`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx)
+  - **Location**: Lines 344-351 (`getName` function)
+  - **Verify**: Current logic already handles all four participants correctly:
+    - `focalNode` → "您"
+    - `opponentNode` → "對手"
+    - Others → "參與者 [group]" (e.g., "參與者 KMT", "參與者 DPP")
+  - **Action**: Confirm no changes needed, existing logic is correct
+  - **Testing**: Verify labels are displayed correctly for all 4 edges
+  - [REQ-405.1]
+
+- [ ] **TASK-2503**: Visual regression testing 📸
+  - **Test**: Open survey intro on multiple browser sizes
+  - **Verify**:
+    - History legend scrolls correctly with 4 records (max-height + overflow-y-auto)
+    - Card layout remains intact with increased content
+    - Text colors and badges display correctly for all records
+    - Responsive layout works on mobile (grid-cols-1)
+  - **Browsers**: Chrome, Firefox, Safari
+  - **Screen sizes**: Desktop (1920x1080), Tablet (768x1024), Mobile (375x667)
+  - [REQ-405.1]
+
+- [ ] **TASK-2504**: Content verification and translation check ✅
+  - **Verify**: Explanation text on "關係結構" page still accurate
+  - **Current text**: "下面這張圖展示的是四位參與者彼此之間的**互動記錄**"
+  - **Action**: Text is already correct (mentions "四位參與者"), no change needed
+  - **Header text**: "歷史紀錄說明" remains appropriate
+  - [REQ-405.1]
+
+- [ ] **TASK-2505**: Update test fixtures if needed 🧪
+  - **Check**: Review existing test files for SurveyIntro component
+  - **File**: [`components/__tests__/SurveyIntro.test.tsx`](../components/__tests__/SurveyIntro.test.tsx)
+  - **Action**:
+    - If test counts number of history records, update expectation from 2 to 4
+    - If test checks specific edge IDs, ensure all 4 are covered
+  - **Acceptance**: All tests pass with new display logic
+  - [REQ-405.1]
+
+- [ ] **TASK-2506**: Documentation update 📝
+  - **File**: [`docs/testing-guide.md`](../docs/testing-guide.md) or inline comments
+  - **Action**: Add note that "關係結構" step displays complete network (4 edges)
+  - **Update**: Component docstring or inline comments if helpful for future maintainers
+  - **Optional**: Screenshot for documentation
+  - [REQ-405.1]
+
+---
+
+### Implementation Summary
+
+| Aspect | Details |
+|--------|---------|
+| **Files changed** | 1 file ([`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx)) |
+| **Lines modified** | ~4 lines (remove filter condition) |
+| **Breaking changes** | None (UI-only enhancement) |
+| **Data model impact** | None |
+| **API changes** | None |
+| **Test updates** | Minimal (adjust expectations if tests check record count) |
+| **Deployment risk** | 🟢 Very low (cosmetic change) |
+
+---
+
+### Acceptance Criteria
+
+✅ **TASK-2501 Complete**: History legend displays 4 interaction records (all `activeEdgeIds`)
+
+✅ **TASK-2502 Complete**: All 4 participants are labeled correctly:
+- "您" for focal participant
+- "對手" for opponent
+- "參與者 KMT" / "參與者 DPP" for others
+
+✅ **Visual Quality**: Layout remains clean and readable with 4 records
+
+✅ **Responsive**: Works on mobile, tablet, desktop
+
+✅ **Tests Passing**: No regression in existing tests
+
+---
+
+### Testing Checklist
+
+```bash
+# 1. Start dev server
+npm run dev
+
+# 2. Create a test session (any mode)
+# Navigate to Admin → Setup → Manual Mode
+# Configure and create session
+
+# 3. Open survey intro
+# Navigate to: /survey/intro/2?sessionId=<session-id>
+
+# 4. Visual verification
+☐ History legend shows 4 interaction records
+☐ Labels are correct: "您", "對手", "參與者 [group]", "參與者 [group]"
+☐ Each record shows source → target with decision badge
+☐ Badges display "給予" or "不給予" correctly
+☐ Layout is clean and scrollable if needed
+☐ Graph visualization matches the history records
+
+# 5. Cross-browser check
+☐ Chrome: Display correct
+☐ Firefox: Display correct
+☐ Safari: Display correct
+
+# 6. Responsive check
+☐ Desktop (1920x1080): Good
+☐ Tablet (768x1024): Good
+☐ Mobile (375x667): Good
+```
+
+---
+
+### Rollback Plan
+
+If issues arise:
+1. Revert the single line change (restore `.filter()` condition)
+2. No database migration needed
+3. No API changes to rollback
+4. Zero downtime deployment
+
+---
+
+### Priority Rationale
+
+**Priority: 🟢 Low** — This is a UI enhancement that improves participant understanding but does not affect data collection functionality. It can be deployed independently without coordinating with other phases.
+
+**Effort: 0.5 day** — Single file change with minimal testing overhead.
+
+**Risk: Very Low** — Cosmetic change only, no backend dependencies.

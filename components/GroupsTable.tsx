@@ -126,7 +126,7 @@ const GroupsTable: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3 font-mono text-purple-700 font-bold text-base">
-                      {group.config.edgeCount || '-'}
+                      {undefined || '-'}
                     </td>
                     <td className="py-3">
                       <span className="font-bold text-gray-700 text-sm">

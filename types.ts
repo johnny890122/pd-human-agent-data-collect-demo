@@ -2,7 +2,7 @@ export type AgentId = 'A1' | 'A2' | 'B3' | 'B4';
 export type GroupId = 'A' | 'B';
 export type EdgeState = 'not give' | 'give';
 export type ScenarioStatus = 'active' | 'completed' | 'paused';
-export type SessionMode = 'manual' | 'batch' | 'mixed';
+export type SessionMode = 'manual' | 'mixed';
 export type GroupStatus = 'creating' | 'active' | 'completed' | 'archived';
 
 export interface Agent {
@@ -97,7 +97,6 @@ export interface SessionGroup {
   name: string;
   description?: string | null;
   config: {
-    edgeCount?: number | null;  // Batch mode
     maxK?: number | null;  // Mixed mode
     scenariosPerSession?: number | null;  // Mixed mode
     targetSizePerScenario?: number | null;  // Mixed mode

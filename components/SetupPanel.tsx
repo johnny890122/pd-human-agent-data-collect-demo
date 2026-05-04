@@ -8,15 +8,13 @@ import { AGENTS, ALL_EDGES } from '../constants';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
 import { combinationCount } from '../utils/combinations';
-import { createBatchSessions, createManualSession, createMixedGroup } from '../utils/graphqlClient';
+import { createManualSession, createMixedGroup } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
-import BatchModeConfig from './BatchModeConfig';
-import BatchConfirmModal from './BatchConfirmModal';
 import MixedModeConfig from './MixedModeConfig';
 
 import AgentAvatar from './AgentAvatar';
 
-type LaunchMode = 'manual' | 'batch' | 'mixed';
+type LaunchMode = 'manual' | 'mixed';
 
 interface SetupPanelProps {
   setup: SessionSetup;
@@ -66,8 +64,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const scenariosCount = Math.pow(2, k);
   const isHighLoad = k > 4;
   
-  // Batch mode combination count
-  const batchCombinationCount = combinationCount(12, batchEdgeCount);
 
   const handleFocalGroupChange = (group: string) => {
     setSetup((prev) => ({
@@ -118,41 +114,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
     setIsSaving(false);
   };
 
-  const handleBatchLaunch = async () => {
-    setIsBatchCreating(true);
-    setShowBatchConfirmModal(false);
-    
-    try {
-      const finalGroupName = groupName || `Batch k=${batchEdgeCount} (${new Date().toLocaleDateString('en-US')})`;
-      
-      const result = await createBatchSessions(
-        finalGroupName,
-        batchEdgeCount,
-        setup.focalNode,
-        setup.opponentNode,
-        setup.sampleSize,
-        groupDescription || undefined
-      );
-      
-      toast.success(
-        `Successfully created ${result.sessionsCreated} sessions!`,
-        { duration: 5000 }
-      );
-      
-      // Navigate to group details page
-      navigate(`/admin/groups/${result.groupId}`);
-      
-      // Reset batch parameters
-      setGroupName('');
-      setGroupDescription('');
-      
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Batch creation failed: ${message}`);
-    } finally {
-      setIsBatchCreating(false);
-    }
-  };
 
   const handleMixedLaunch = async () => {
     setIsMixedCreating(true);
@@ -204,14 +165,12 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               <span className="text-sm font-medium text-emerald-700">Focal Node:</span>
               <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-900 bg-white px-2 py-0.5 rounded shadow-sm">
                 <AgentAvatar agent={AGENTS[setup.focalNode as AgentId]} size={16} />
-                {getNodeDisplayName(setup.focalNode, setup.focalNode, setup.opponentNode)}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium text-emerald-700">Partner Node:</span>
               <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-900 bg-white px-2 py-0.5 rounded shadow-sm">
                 <AgentAvatar agent={AGENTS[setup.opponentNode as AgentId]} size={16} />
-                {getNodeDisplayName(setup.opponentNode, setup.focalNode, setup.opponentNode)}
               </span>
             </div>
           </div>
@@ -253,16 +212,14 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           <div className={`p-4 bg-gradient-to-r rounded-xl border ${
             launchMode === 'manual'
               ? 'from-green-50 to-emerald-50 border-green-200'
-              : launchMode === 'batch'
-              ? 'from-purple-50 to-indigo-50 border-purple-200'
               : 'from-teal-50 to-cyan-50 border-teal-200'
           }`}>
             <label className={`block text-sm font-semibold mb-3 uppercase ${
-              launchMode === 'manual' ? 'text-green-900' : launchMode === 'batch' ? 'text-purple-900' : 'text-teal-900'
+              launchMode === 'manual' ? 'text-green-900' : 'text-teal-900'
             }`}>
               Launch Mode
             </label>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setLaunchMode('manual')}
@@ -280,26 +237,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                 </div>
                 <p className="text-xs text-gray-600">
                   Select edges, single session
-                </p>
-              </button>
-              
-              <button
-                type="button"
-                onClick={() => setLaunchMode('batch')}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  launchMode === 'batch'
-                    ? 'border-purple-500 bg-purple-50 shadow-md'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
-                  </svg>
-                  <span className="font-bold text-sm">Batch</span>
-                </div>
-                <p className="text-xs text-gray-600">
-                  All combinations sweep
                 </p>
               </button>
               
@@ -328,7 +265,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
         
         <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
           <h3 className="text-sm font-semibold text-gray-500 tracking-wider mb-3 uppercase">
-            {launchMode === 'batch' ? 'Basic Configuration' : 'Configuration'}
+            {'Configuration'}
           </h3>
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -404,19 +341,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           </div>
         </div>
 
-        {/* Batch Mode Configuration */}
-        {launchMode === 'batch' && !readOnly && (
-          <BatchModeConfig
-            batchEdgeCount={batchEdgeCount}
-            setBatchEdgeCount={setBatchEdgeCount}
-            groupName={groupName}
-            setGroupName={setGroupName}
-            groupDescription={groupDescription}
-            setGroupDescription={setGroupDescription}
-            sampleSize={setup.sampleSize}
-          />
-        )}
-
         {/* Mixed Mode Configuration */}
         {launchMode === 'mixed' && !readOnly && (
           <MixedModeConfig
@@ -482,50 +406,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           </div>
         )}
 
-        {launchMode === 'batch' && (
-          <div className="p-4 bg-purple-50 rounded-lg border border-purple-100">
-           <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider mb-2">
-             Batch Information
-           </h3>
-           <div className="space-y-1.5">
-             <div className="flex justify-between items-center text-sm">
-               <span>Focal Group:</span>
-               <span className="font-mono font-bold text-purple-700">{getFocalGroupLabel(setup.focalNode)}</span>
-             </div>
-             <div className="flex justify-between items-center text-sm">
-               <span>Partner Group:</span>
-               <span className="font-mono font-bold text-purple-700">{getPartnerGroupLabel(setup.opponentNode)}</span>
-             </div>
-             <div className="flex justify-between items-center text-sm">
-               <span>Target Size per Session:</span>
-               <span className="font-mono font-bold text-purple-700">{setup.sampleSize}</span>
-             </div>
-             {/* Add a divider  */}
-             <div className="border-t border-purple-200 my-2"></div>
-             <div className="flex justify-between items-center text-sm">
-               <span>Edge Count (k):</span>
-               <span className="font-mono font-bold text-purple-700">{batchEdgeCount}</span>
-             </div>
-             <div className="flex justify-between items-center text-sm">
-               <span>Sessions to Create:</span>
-               <span className="font-mono font-bold text-purple-700">{batchCombinationCount}</span>
-             </div>
-             <div className="border-t border-purple-200 my-2"></div>
-             <div className="flex justify-between items-center text-sm">
-               <span>Total Participants:</span>
-               <span className="font-mono font-bold text-purple-700">{batchCombinationCount * setup.sampleSize}</span>
-             </div>
-           </div>
-            {batchEdgeCount >= 5 && (
-              <div className="mt-3 p-2 bg-amber-100 text-amber-700 text-xs rounded border border-amber-200 flex items-start">
-                <span className="mr-2">!</span>
-                Warning: High combination count, creation may take longer.
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="pt-2 mt-auto">
+      <div className="pt-2 mt-auto">
           {readOnly ? (
             <button
               onClick={onBack}
@@ -537,9 +418,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             <>
               <button
                 onClick={() => {
-                  if (launchMode === 'batch') {
-                    setShowBatchConfirmModal(true);
-                  } else if (launchMode === 'mixed') {
+                  if (launchMode === 'mixed') {
                     handleMixedLaunch();
                   } else {
                     setShowConfirmModal(true);
@@ -548,23 +427,19 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                 disabled={
                   (launchMode === 'manual' && k === 0) ||
                   isSaving ||
-                  isBatchCreating ||
+
                   isMixedCreating
                 }
                 className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] ${
-                  ((launchMode === 'manual' && k === 0) || isSaving || isBatchCreating || isMixedCreating)
+                  ((launchMode === 'manual' && k === 0) || isSaving || isMixedCreating)
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : launchMode === 'batch'
-                    ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-purple-200'
                     : launchMode === 'mixed'
                     ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-teal-200'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
                 }`}
               >
                 {isMixedCreating ? 'Creating Mixed Group...' :
-                 isBatchCreating ? 'Creating Batch...' :
                  isSaving ? 'Generating...' :
-                 launchMode === 'batch' ? 'Batch Launch Sessions' :
                  launchMode === 'mixed' ? 'Create Mixed Mode Group' :
                  'Launch Session'}
               </button>
@@ -597,18 +472,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                 </div>
               )}
               
-              {/* Batch Confirmation Modal */}
-              <BatchConfirmModal
-                show={showBatchConfirmModal || isBatchCreating}
-                onClose={() => setShowBatchConfirmModal(false)}
-                onConfirm={handleBatchLaunch}
-                batchEdgeCount={batchEdgeCount}
-                groupName={groupName}
-                sampleSize={setup.sampleSize}
-                focalNode={setup.focalNode}
-                opponentNode={setup.opponentNode}
-                isBatchCreating={isBatchCreating}
-              />
               
               {generatedUrl && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4 transition-all opacity-100 visible">

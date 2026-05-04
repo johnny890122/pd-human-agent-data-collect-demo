@@ -28,7 +28,7 @@ describe('AdminView', () => {
     );
 
     expect(screen.getByText('Setup')).toBeInTheDocument();
-    expect(screen.getByText('Session Configuration')).toBeInTheDocument();
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
     expect(screen.getByText('Click nodes to assign roles. Click edges to toggle factors.')).toBeInTheDocument();
   });
 
@@ -77,7 +77,7 @@ describe('AdminView', () => {
     fireEvent.click(setupButton);
 
     expect(setSetup).toHaveBeenCalledWith(historySetup);
-    expect(screen.getByText('Session Configuration')).toBeInTheDocument();
+    expect(screen.getByText('Configuration')).toBeInTheDocument();
     expect(screen.getByText('Click nodes to assign roles. Click edges to toggle factors.')).toBeInTheDocument();
   });
 });

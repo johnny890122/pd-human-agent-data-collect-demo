@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 
 /**
  * SessionGroup Schema
- * 用於管理批次創建的 session 群組
+ * 用於管理由 Mixed Mode 創建的 session 群組
  */
 const sessionGroupSchema = new mongoose.Schema(
   {
@@ -15,9 +15,6 @@ const sessionGroupSchema = new mongoose.Schema(
     
     // 統一配置（mode 由哪些欄位被設定來隱含判斷）
     config: {
-      // Batch Mode 欄位
-      edgeCount: { type: Number, required: false, min: 1, max: 12 },
-      
       // Mixed Mode 欄位
       maxK: { type: Number, required: false, min: 1, max: 12 },
       scenariosPerSession: { type: Number, required: false },
@@ -26,7 +23,7 @@ const sessionGroupSchema = new mongoose.Schema(
       // 共用欄位
       focalNode: { type: String, required: true },
       opponentNode: { type: String, required: true },
-      sampleSize: { type: Number, required: true, default: 20 }  // Per-session target (Batch/Manual)
+      sampleSize: { type: Number, required: true, default: 20 }  // Per-session target
     },
     
     // 快取統計
@@ -53,7 +50,6 @@ sessionGroupSchema.index({ status: 1 });
 // 虛擬欄位：mode 偵測
 sessionGroupSchema.virtual('mode').get(function() {
   if (this.config.maxK) return 'mixed';
-  if (this.config.edgeCount) return 'batch';
   return 'manual';  // 或 null for standalone sessions
 });
 
@@ -68,13 +64,13 @@ sessionGroupSchema.virtual('completionPercentage').get(function() {
     // 實際計算需要在 resolver 中進行
     return 0; // placeholder
   } else {
-    // Batch/Manual mode: 基於 session-level 完成度
+    // Manual mode: 基於 session-level 完成度
     if (this.totalSessions === 0) return 0;
     return (this.completedSessions / this.totalSessions) * 100;
   }
 });
 
-// 實例方法：更新完成數量（Batch/Manual mode）
+// 實例方法：更新完成數量（Manual mode）
 sessionGroupSchema.methods.updateCompletedCount = async function() {
   const SessionModel = mongoose.model('Session');
   const SubmissionModel = mongoose.model('Submission');

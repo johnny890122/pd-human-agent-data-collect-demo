@@ -134,12 +134,6 @@ export const typeDefs = `#graphql
   # Result Types
   # ============================================================================
 
-  type BatchLaunchResult {
-    groupId: ID!
-    sessionsCreated: Int!
-    sessionIds: [ID!]!
-  }
-
   type ManualSessionResult {
     session: Session!
     scenariosCreated: Int!
@@ -190,9 +184,6 @@ export const typeDefs = `#graphql
   type Mutation {
     # Mode 1: Manual (NEW - replaces saveSessionSetup)
     createManualSession(input: SessionInput!): ManualSessionResult!
-    
-    # Mode 2: Batch (REFACTORED)
-    createBatchSessions(input: GroupConfigInput!, name: String!, description: String): BatchLaunchResult!
     
     # Mode 3: Mixed (NEW)
     createMixedGroup(input: GroupConfigInput!, name: String!, description: String): MixedGroupResult!

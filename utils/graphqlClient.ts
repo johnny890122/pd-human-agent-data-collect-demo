@@ -232,47 +232,6 @@ export async function createManualSession(
 }
 
 // ============================================================================
-// NEW API: Batch Mode (Refactored)
-// ============================================================================
-
-export interface BatchLaunchResult {
-  groupId: string;
-  sessionsCreated: number;
-  sessionIds: string[];
-}
-
-export async function createBatchSessions(
-  name: string,
-  edgeCount: number,
-  focalNode: string,
-  opponentNode: string,
-  sampleSize: number,
-  description?: string
-): Promise<BatchLaunchResult> {
-  const mutation = `
-    mutation CreateBatchSessions($input: GroupConfigInput!, $name: String!, $description: String) {
-      createBatchSessions(input: $input, name: $name, description: $description) {
-        groupId
-        sessionsCreated
-        sessionIds
-      }
-    }
-  `;
-
-  const data = await runGraphQL<{ createBatchSessions: BatchLaunchResult }>(mutation, {
-    input: {
-      edgeCount,
-      focalNode,
-      opponentNode,
-      sampleSize,
-    },
-    name,
-    description: description || null,
-  });
-
-  return data.createBatchSessions;
-}
-
 // ============================================================================
 // Mode 3: Mixed Mode (NEW)
 // ============================================================================

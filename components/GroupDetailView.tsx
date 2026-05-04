@@ -145,7 +145,7 @@ const GroupDetailView: React.FC = () => {
             <div className="bg-white rounded-lg p-3 shadow-sm">
               <div className="text-xs text-gray-500 mb-1">{isMixedMode ? 'Max Edge Count (k)' : 'Edge Count (k)'}</div>
               <div className="text-2xl font-bold text-purple-700">
-                {isMixedMode ? `≤${group.config.maxK || 'N/A'}` : (group.config.edgeCount || 'N/A')}
+                {isMixedMode ? `≤${group.config.maxK || 'N/A'}` : (undefined || 'N/A')}
               </div>
             </div>
             <div className="bg-white rounded-lg p-3 shadow-sm">

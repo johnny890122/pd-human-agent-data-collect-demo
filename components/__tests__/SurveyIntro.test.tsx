@@ -7,8 +7,8 @@ import { Session } from '../../types';
 describe('SurveyIntro', () => {
   const setup = {
     scenarios: [],
-    focalNode: 'A1',
-    opponentNode: 'A2',
+    focalNode: 'KMT1',
+    opponentNode: 'KMT2',
     sampleSize: 20,
     submissionCount: 0,
   };

@@ -13,9 +13,9 @@ import { SubmissionModel } from '../backend/models/SessionSetup.js';
 dotenv.config();
 
 const TEST_CONFIG = {
-  activeEdgeIds: ['A1-B3', 'B3-A1'],
-  focalNode: 'A1',
-  opponentNode: 'A2',
+  activeEdgeIds: ['KMT1-DPP3', 'DPP3-KMT1'],
+  focalNode: 'KMT1',
+  opponentNode: 'KMT2',
   sampleSize: 10
 };
 

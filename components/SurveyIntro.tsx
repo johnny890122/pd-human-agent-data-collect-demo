@@ -30,7 +30,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
   const safeOpponentNode = (
     AGENTS[setup.opponentNode as AgentId] && setup.opponentNode !== safeFocalNode
       ? setup.opponentNode
-      : (safeFocalNode === 'A1' ? 'A2' : 'A1')
+      : (safeFocalNode === 'KMT1' ? 'KMT2' : 'KMT1')
   ) as AgentId;
 
   const agentMe = AGENTS[safeFocalNode];
@@ -64,8 +64,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
   const introNodePositions = useMemo(() => generateTrianglePositions(safeFocalNode, false), [safeFocalNode]);
 
-  const meAccent = agentMe.group === 'A' ? 'blue' : 'green';
-  const opponentAccent = agentOpponent.group === 'A' ? 'blue' : 'green';
+  const meAccent = agentMe.group === 'KMT' ? 'blue' : 'green';
+  const opponentAccent = agentOpponent.group === 'KMT' ? 'blue' : 'green';
   const meTitleClass = meAccent === 'blue' ? 'text-blue-900' : 'text-green-900';
   const meGroupClass = meAccent === 'blue' ? 'text-blue-700' : 'text-green-700';
   const opponentBorderClass = opponentAccent === 'blue' ? 'border-blue-100' : 'border-green-100';
@@ -91,7 +91,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       const clipPathId = `${React.useId().replace(/:/g, '')}-inline-clip-${role}`;
       const groupAColor = COLORS.kmt;
       const groupBColor = COLORS.dpp;
-      const groupColor = agent.group === 'A' ? groupAColor : groupBColor;
+      const groupColor = agent.group === 'KMT' ? groupAColor : groupBColor;
 
       const r = 36; // Survey standard size
       let strokeColor = groupColor;
@@ -107,13 +107,13 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
             <circle cx={0} cy={0} r={r} />
           </clipPath>
           <circle cx={0} cy={0} r={r} fill={groupColor} clipPath={`url(#${clipPathId})`} />
-          <rect x={-r} y={9} width={r * 2} height={r} fill={agent.group === 'A' ? COLORS.avatarClothKmt : COLORS.avatarClothDpp} clipPath={`url(#${clipPathId})`} />
+          <rect x={-r} y={9} width={r * 2} height={r} fill={agent.group === 'KMT' ? COLORS.avatarClothKmt : COLORS.avatarClothDpp} clipPath={`url(#${clipPathId})`} />
           <path d={`M -6 9 L -2 5 L 0 7 L 2 5 L 6 9 Z`} fill="white" clipPath={`url(#${clipPathId})`} />
           <rect x={-3} y={4} width={6} height={6} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
           <circle cx={0} cy={-4} r={13} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
           <circle cx={-13} cy={-3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={`url(#${clipPathId})`} />
           <circle cx={13} cy={-3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={`url(#${clipPathId})`} />
-          {agent.group === 'A' ? (
+          {agent.group === 'KMT' ? (
             <path d={`M -13 -8 Q -8 -22 0 -21 Q 8 -22 13 -8 Q 6 -14 0 -16 Q -6 -14 -13 -8 Z`} fill={COLORS.avatarHairKmt} clipPath={`url(#${clipPathId})`} />
           ) : (
             <path d={`M -13 -8 Q -11 -23 -4 -22 Q 0 -25 4 -22 Q 11 -23 13 -8 Q 5 -15 0 -17 Q -5 -15 -13 -8 Z`} fill={COLORS.avatarHairDppIntro} clipPath={`url(#${clipPathId})`} />
@@ -123,7 +123,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
           <circle cx={-3.8} cy={-5.2} r={0.7} fill="white" clipPath={`url(#${clipPathId})`} />
           <circle cx={5.2} cy={-5.2} r={0.7} fill="white" clipPath={`url(#${clipPathId})`} />
           <path d={`M -3.5 -0.5 Q 0 2 3.5 -0.5`} stroke={COLORS.avatarMouth} strokeWidth="1.2" fill="none" clipPath={`url(#${clipPathId})`} />
-          {agent.group === 'A' && (
+          {agent.group === 'KMT' && (
             <g clipPath={`url(#${clipPathId})`}>
               <rect x={-8.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
               <rect x={2.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
@@ -239,7 +239,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Model Group A */}
                 <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-200 min-w-[140px] max-w-[200px]">
                   <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['A1'], label: 'A' }} role="none" /></div>
+                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['KMT1'], label: 'KMT' }} role="none" /></div>
                     <span className="text-xl font-black text-blue-500">× 2</span>
                   </div>
                   <span className="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded mt-auto">國民黨</span>
@@ -250,7 +250,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Model Group B */}
                 <div className="flex-1 flex flex-col items-center p-2 bg-green-50/30 rounded-xl border border-green-100 min-w-[140px] max-w-[200px]">
                   <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['BB3'], label: 'B' }} role="none" /></div>
+                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['DPP3'], label: 'DPP' }} role="none" /></div>
                     <span className="text-xl font-black text-green-400">× 2</span>
                   </div>
                   <span className="text-xs font-bold text-green-900 bg-green-50 px-2 py-1 rounded mt-auto">民進黨</span>
@@ -274,7 +274,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   <div className="flex flex-col items-center transform scale-100">
                     <InlineNode agent={agentMe} role="me" />
                     <span className={`font-black ${meGroupClass} text-lg mt-2 tracking-tight`}>
-                      {agentMe.group === 'A' ? '國民黨' : '民進黨'}
+                      {agentMe.group === 'KMT' ? '國民黨' : '民進黨'}
                     </span>
                   </div>
                 </div>
@@ -286,7 +286,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                    <div className="flex flex-col items-center transform scale-100">
                      <InlineNode agent={agentOpponent} role="opponent" />
                      <span className={`font-black ${opponentGroupClass} text-lg mt-2 tracking-tight`}>
-                       {agentOpponent.group === 'A' ? '國民黨' : '民進黨'}
+                       {agentOpponent.group === 'KMT' ? '國民黨' : '民進黨'}
                      </span>
                    </div>
                 </div>

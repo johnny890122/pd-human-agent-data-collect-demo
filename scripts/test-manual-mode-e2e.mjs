@@ -63,9 +63,9 @@ async function testManualMode() {
   
   const createResult = await runGraphQL(createMutation, {
     input: {
-      activeEdgeIds: ['A1-A2'],
-      focalNode: 'A1',
-      opponentNode: 'B3',
+      activeEdgeIds: ['KMT1-KMT2'],
+      focalNode: 'KMT1',
+      opponentNode: 'DPP3',
       sampleSize: 3,
     },
   });

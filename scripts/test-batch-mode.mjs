@@ -50,8 +50,8 @@ async function testBatchMode() {
   const createResult = await runGraphQL(createMutation, {
     input: {
       edgeCount: 2,
-      focalNode: 'A1',
-      opponentNode: 'B3',
+      focalNode: 'KMT1',
+      opponentNode: 'DPP3',
       sampleSize: 5,
     },
     name: 'Test Batch k=2',

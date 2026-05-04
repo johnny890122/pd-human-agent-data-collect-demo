@@ -14,7 +14,8 @@ interface GraphQLResponse<TData> {
 async function runGraphQL<TData>(query: string, variables?: Record<string, unknown>): Promise<TData> {
   const token = localStorage.getItem('token');
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) {
+  // Only add Authorization header if token exists and is not the string "undefined" or "null"
+  if (token && token !== 'undefined' && token !== 'null') {
     headers['Authorization'] = `Bearer ${token}`;
   }
 

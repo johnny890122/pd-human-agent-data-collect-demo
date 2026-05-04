@@ -52,8 +52,8 @@ async function testMixedMode() {
         maxK: 2,  // Test with small number
         scenariosPerSession: 10,
         targetSizePerScenario: 5,
-        focalNode: 'A1',
-        opponentNode: 'B3',
+        focalNode: 'KMT1',
+        opponentNode: 'DPP3',
         sampleSize: 1,
       },
       name: 'Test Mixed Mode Group',

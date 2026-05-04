@@ -67,9 +67,9 @@ export function combinationCount(n: number, k: number): number {
  * @param k 選擇的邊緣數量
  * @returns 邊緣 ID 組合陣列
  * @example
- * const edges = [{ id: 'A1-A2' }, { id: 'A1-B3' }, { id: 'A2-B3' }];
+ * const edges = [{ id: 'KMT1-KMT2' }, { id: 'KMT1-DPP3' }, { id: 'KMT2-DPP3' }];
  * generateEdgeCombinations(edges, 2)
- * // 返回: [['A1-A2', 'A1-B3'], ['A1-A2', 'A2-B3'], ['A1-B3', 'A2-B3']]
+ * // 返回: [['KMT1-KMT2', 'KMT1-DPP3'], ['KMT1-KMT2', 'KMT2-DPP3'], ['KMT1-DPP3', 'KMT2-DPP3']]
  */
 export function generateEdgeCombinations(
   allEdges: Array<{ id: string }>,

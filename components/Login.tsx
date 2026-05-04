@@ -31,8 +31,17 @@ const Login: React.FC = () => {
         return;
       }
 
-      localStorage.setItem('token', data.token);
-      navigate(from, { replace: true });
+      // Debug: Log the response to see what we got
+      console.log('Login response:', data);
+
+      // Only store token if it's a valid string and not the literal string "undefined"
+      if (data.token && typeof data.token === 'string' && data.token !== 'undefined' && data.token !== 'null') {
+        localStorage.setItem('token', data.token);
+        navigate(from, { replace: true });
+      } else {
+        console.error('Invalid token received:', data.token);
+        setError(`登入響應無效：${data.token ? '無效的 token 格式' : 'Token 不存在'}，請再試一次。`);
+      }
     } catch {
       setError('無法連線到伺服器，請再試一次。');
     } finally {

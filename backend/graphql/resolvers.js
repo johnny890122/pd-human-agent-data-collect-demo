@@ -330,10 +330,10 @@ export const resolvers = {
       
       // 2. 生成 scenario pool: 所有 k=1..maxK 的組合
       const allEdges = [
-        { id: 'A1-A2' }, { id: 'A1-B3' }, { id: 'A1-B4' },
-        { id: 'A2-A1' }, { id: 'A2-B3' }, { id: 'A2-B4' },
-        { id: 'B3-A1' }, { id: 'B3-A2' }, { id: 'B3-B4' },
-        { id: 'B4-A1' }, { id: 'B4-A2' }, { id: 'B4-B3' },
+        { id: 'KMT1-KMT2' }, { id: 'KMT1-DPP3' }, { id: 'KMT1-DPP4' },
+        { id: 'KMT2-KMT1' }, { id: 'KMT2-DPP3' }, { id: 'KMT2-DPP4' },
+        { id: 'DPP3-KMT1' }, { id: 'DPP3-KMT2' }, { id: 'DPP3-DPP4' },
+        { id: 'DPP4-KMT1' }, { id: 'DPP4-KMT2' }, { id: 'DPP4-DPP3' },
       ];
       
       const scenariosPool = [];

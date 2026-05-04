@@ -41,12 +41,12 @@ beforeEach(async () => {
 describe('Scenario Model', () => {
   it('should create a scenario with UUID primary key', async () => {
     const scenario = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2', 'A2-B3'],
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2', 'KMT2-DPP3'],
       edgeStates: new Map([
-        ['A1-A2', 'give'],
-        ['A2-B3', 'not give']
+        ['KMT1-KMT2', 'give'],
+        ['KMT2-DPP3', 'not give']
       ]),
       scenarioIndex: 0,
       targetSize: 30,
@@ -56,16 +56,16 @@ describe('Scenario Model', () => {
 
     expect(scenario._id).toBeDefined();
     expect(scenario._id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-    expect(scenario.focalNode).toBe('A1');
+    expect(scenario.focalNode).toBe('KMT1');
     expect(scenario.activeEdgeIds).toHaveLength(2);
   });
 
   it('should calculate completionRate virtual field', async () => {
     const scenario = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
-      edgeStates: new Map([['A1-A2', 'give']]),
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
+      edgeStates: new Map([['KMT1-KMT2', 'give']]),
       scenarioIndex: 0,
       targetSize: 10,
       responseCount: 3,
@@ -78,10 +78,10 @@ describe('Scenario Model', () => {
 
   it('should support atomic responseCount increment', async () => {
     const scenario = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
-      edgeStates: new Map([['A1-A2', 'give']]),
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
+      edgeStates: new Map([['KMT1-KMT2', 'give']]),
       scenarioIndex: 0,
       targetSize: 10,
       responseCount: 0,
@@ -108,28 +108,28 @@ describe('Session Model', () => {
   it('should create a session as a scenario container', async () => {
     // 先建立 scenarios
     const scenario1 = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
-      edgeStates: new Map([['A1-A2', 'give']]),
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
+      edgeStates: new Map([['KMT1-KMT2', 'give']]),
       scenarioIndex: 0,
       status: 'active',
     });
 
     const scenario2 = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
       scenarioIndex: 1,
-      edgeStates: new Map([['A1-A2', 'not give']]),
+      edgeStates: new Map([['KMT1-KMT2', 'not give']]),
       status: 'active',
     });
 
     // 建立 session 引用 scenarios
     const session = await SessionModel.create({
       scenarioIds: [scenario1._id, scenario2._id],
-      focalNode: 'A1',
-      opponentNode: 'A2',
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
       sampleSize: 20,
       submissionCount: 0,
       metadata: { createdFor: 'manual' },
@@ -144,27 +144,27 @@ describe('Session Model', () => {
   it('should populate scenarios via virtual field', async () => {
     // 直接建立 scenarios，確保 _id 正確
     const scenario1 = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
-      edgeStates: { 'A1-A2': 'give' },  // 使用 Object 而非 Map
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
+      edgeStates: { 'KMT1-KMT2': 'give' },  // 使用 Object 而非 Map
       scenarioIndex: 0,
       status: 'active',
     });
 
     const scenario2 = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
-      edgeStates: { 'A1-A2': 'not give' },  // 使用 Object 而非 Map
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
+      edgeStates: { 'KMT1-KMT2': 'not give' },  // 使用 Object 而非 Map
       scenarioIndex: 1,
       status: 'active',
     });
 
     const session = await SessionModel.create({
       scenarioIds: [String(scenario1._id), String(scenario2._id)],
-      focalNode: 'A1',
-      opponentNode: 'A2',
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
       sampleSize: 20,
     });
 
@@ -177,7 +177,7 @@ describe('Session Model', () => {
     });
     
     expect(foundScenarios).toHaveLength(2);
-    expect(foundScenarios[0].focalNode).toBe('A1');
+    expect(foundScenarios[0].focalNode).toBe('KMT1');
   });
 });
 
@@ -187,9 +187,9 @@ describe('Session Model', () => {
 
 describe('Manual Mode (createManualSession)', () => {
   it('should create scenarios and session for manual mode', async () => {
-    const activeEdgeIds = ['A1-A2', 'A2-B3'];
-    const focalNode = 'A1';
-    const opponentNode = 'B3';
+    const activeEdgeIds = ['KMT1-KMT2', 'KMT2-DPP3'];
+    const focalNode = 'KMT1';
+    const opponentNode = 'DPP3';
     const sampleSize = 20;
 
     // 1. 生成 design matrix
@@ -235,12 +235,12 @@ describe('Manual Mode (createManualSession)', () => {
 
   it('should handle different edge counts correctly', async () => {
     // k=1: 1 edge
-    const activeEdgeIds1 = ['A1-A2'];
+    const activeEdgeIds1 = ['KMT1-KMT2'];
     const designMatrix1 = generateDesignMatrix(activeEdgeIds1);
     expect(designMatrix1).toHaveLength(2); // 2^1 = 2
 
     // k=3: 3 edges
-    const activeEdgeIds3 = ['A1-A2', 'A2-B3', 'B3-B4'];
+    const activeEdgeIds3 = ['KMT1-KMT2', 'KMT2-DPP3', 'DPP3-DPP4'];
     const designMatrix3 = generateDesignMatrix(activeEdgeIds3);
     expect(designMatrix3).toHaveLength(8); // 2^3 = 8
   });
@@ -253,8 +253,8 @@ describe('Manual Mode (createManualSession)', () => {
 describe('Batch Mode (createBatchSessions)', () => {
   it('should create scenarios and sessions for all edge combinations', async () => {
     const edgeCount = 2;
-    const focalNode = 'A1';
-    const opponentNode = 'B3';
+    const focalNode = 'KMT1';
+    const opponentNode = 'DPP3';
     const sampleSize = 20;
     const name = 'Test Batch Group';
 
@@ -276,10 +276,10 @@ describe('Batch Mode (createBatchSessions)', () => {
 
     // 2. 生成所有 C(12, 2) = 66 組合
     const allEdges = [
-      { id: 'A1-A2' }, { id: 'A1-B3' }, { id: 'A1-B4' },
-      { id: 'A2-A1' }, { id: 'A2-B3' }, { id: 'A2-B4' },
-      { id: 'B3-A1' }, { id: 'B3-A2' }, { id: 'B3-B4' },
-      { id: 'B4-A1' }, { id: 'B4-A2' }, { id: 'B4-B3' },
+      { id: 'KMT1-KMT2' }, { id: 'KMT1-DPP3' }, { id: 'KMT1-DPP4' },
+      { id: 'KMT2-KMT1' }, { id: 'KMT2-DPP3' }, { id: 'KMT2-DPP4' },
+      { id: 'DPP3-KMT1' }, { id: 'DPP3-KMT2' }, { id: 'DPP3-DPP4' },
+      { id: 'DPP4-KMT1' }, { id: 'DPP4-KMT2' }, { id: 'DPP4-DPP3' },
     ];
     const combinations = generateEdgeCombinations(allEdges, edgeCount);
     expect(combinations).toHaveLength(66);
@@ -355,8 +355,8 @@ describe('Batch Mode (createBatchSessions)', () => {
       name: 'Batch Group',
       config: {
         edgeCount: 3,
-        focalNode: 'A1',
-        opponentNode: 'A2',
+        focalNode: 'KMT1',
+        opponentNode: 'KMT2',
         sampleSize: 20,
       },
       totalSessions: 0,
@@ -369,8 +369,8 @@ describe('Batch Mode (createBatchSessions)', () => {
     const manualGroup = await SessionGroupModel.create({
       name: 'Manual Group',
       config: {
-        focalNode: 'A1',
-        opponentNode: 'A2',
+        focalNode: 'KMT1',
+        opponentNode: 'KMT2',
         sampleSize: 20,
       },
       totalSessions: 1,
@@ -393,20 +393,20 @@ describe('Unified Survey Flow', () => {
     // 準備測試 session
     const scenarioDocs = [
       {
-        focalNode: 'A1',
-        opponentNode: 'A2',
-        activeEdgeIds: ['A1-A2'],
-        edgeStates: new Map([['A1-A2', 'give']]),
+        focalNode: 'KMT1',
+        opponentNode: 'KMT2',
+        activeEdgeIds: ['KMT1-KMT2'],
+        edgeStates: new Map([['KMT1-KMT2', 'give']]),
         scenarioIndex: 0,
         targetSize: 10,
         responseCount: 0,
         status: 'active',
       },
       {
-        focalNode: 'A1',
-        opponentNode: 'A2',
-        activeEdgeIds: ['A1-A2'],
-        edgeStates: new Map([['A1-A2', 'not give']]),
+        focalNode: 'KMT1',
+        opponentNode: 'KMT2',
+        activeEdgeIds: ['KMT1-KMT2'],
+        edgeStates: new Map([['KMT1-KMT2', 'not give']]),
         scenarioIndex: 1,
         targetSize: 10,
         responseCount: 0,
@@ -418,8 +418,8 @@ describe('Unified Survey Flow', () => {
 
     session = await SessionModel.create({
       scenarioIds: scenarios.map(s => s._id),
-      focalNode: 'A1',
-      opponentNode: 'A2',
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
       sampleSize: 5,
       submissionCount: 0,
     });
@@ -539,9 +539,9 @@ describe('Unified Survey Flow', () => {
 describe('Updated Submission Schema', () => {
   it('should store scenarioId as String (UUID)', async () => {
     const scenario = await ScenarioModel.create({
-      focalNode: 'A1',
-      opponentNode: 'A2',
-      activeEdgeIds: ['A1-A2'],
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
+      activeEdgeIds: ['KMT1-KMT2'],
       edgeStates: new Map([['A1-A2', 'give']]),
       scenarioIndex: 0,
       status: 'active',
@@ -549,8 +549,8 @@ describe('Updated Submission Schema', () => {
 
     const session = await SessionModel.create({
       scenarioIds: [scenario._id],
-      focalNode: 'A1',
-      opponentNode: 'A2',
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
       sampleSize: 20,
     });
 
@@ -573,8 +573,8 @@ describe('Updated Submission Schema', () => {
   it('should support participantId for Mixed Mode', async () => {
     const session = await SessionModel.create({
       scenarioIds: [],
-      focalNode: 'A1',
-      opponentNode: 'A2',
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
       sampleSize: 1,
       metadata: { createdFor: 'mixed', participantId: 'participant-123' },
     });

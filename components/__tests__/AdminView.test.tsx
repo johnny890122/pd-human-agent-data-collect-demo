@@ -12,8 +12,8 @@ vi.mock('../../utils/graphqlClient', () => ({
 
 const baseSetup = {
   scenarios: [],
-  focalNode: 'A1',
-  opponentNode: 'A2',
+  focalNode: 'KMT1',
+  opponentNode: 'KMT2',
   sampleSize: 20,
   submissionCount: 0,
 };
@@ -53,8 +53,8 @@ describe('AdminView', () => {
     const setSetup = vi.fn();
     const historySetup = {
       scenarios: [],
-      focalNode: 'B3',
-      opponentNode: 'A2',
+      focalNode: 'DPP3',
+      opponentNode: 'KMT2',
       sampleSize: 30,
       submissionCount: 7,
       updatedAt: '2026-03-23T00:00:00.000Z',

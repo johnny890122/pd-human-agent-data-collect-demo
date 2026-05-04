@@ -1,31 +1,31 @@
 import { Agent, AgentId, EdgeDef, Session } from './types';
 
 export const AGENTS: Record<AgentId, Agent> = {
-  'A1': { id: 'A1', label: '1', group: 'A' },
-  'A2': { id: 'A2', label: '2', group: 'A' },
-  'B3': { id: 'B3', label: '3', group: 'B' },
-  'B4': { id: 'B4', label: '4', group: 'B' },
+  'KMT1': { id: 'KMT1', label: '1', group: 'KMT' },
+  'KMT2': { id: 'KMT2', label: '2', group: 'KMT' },
+  'DPP3': { id: 'DPP3', label: '3', group: 'DPP' },
+  'DPP4': { id: 'DPP4', label: '4', group: 'DPP' },
 };
 
 // Define all 12 possible edges in a fully connected directed graph of 4 nodes (excluding self-loops)
 export const ALL_EDGES: EdgeDef[] = [
-  { id: 'A1-A2', source: 'A1', target: 'A2' },
-  { id: 'A1-B3', source: 'A1', target: 'B3' },
-  { id: 'A1-B4', source: 'A1', target: 'B4' },
-  { id: 'A2-A1', source: 'A2', target: 'A1' },
-  { id: 'A2-B3', source: 'A2', target: 'B3' },
-  { id: 'A2-B4', source: 'A2', target: 'B4' },
-  { id: 'B3-A1', source: 'B3', target: 'A1' },
-  { id: 'B3-A2', source: 'B3', target: 'A2' },
-  { id: 'B3-B4', source: 'B3', target: 'B4' },
-  { id: 'B4-A1', source: 'B4', target: 'A1' },
-  { id: 'B4-A2', source: 'B4', target: 'A2' },
-  { id: 'B4-B3', source: 'B4', target: 'B3' },
+  { id: 'KMT1-KMT2', source: 'KMT1', target: 'KMT2' },
+  { id: 'KMT1-DPP3', source: 'KMT1', target: 'DPP3' },
+  { id: 'KMT1-DPP4', source: 'KMT1', target: 'DPP4' },
+  { id: 'KMT2-KMT1', source: 'KMT2', target: 'KMT1' },
+  { id: 'KMT2-DPP3', source: 'KMT2', target: 'DPP3' },
+  { id: 'KMT2-DPP4', source: 'KMT2', target: 'DPP4' },
+  { id: 'DPP3-KMT1', source: 'DPP3', target: 'KMT1' },
+  { id: 'DPP3-KMT2', source: 'DPP3', target: 'KMT2' },
+  { id: 'DPP3-DPP4', source: 'DPP3', target: 'DPP4' },
+  { id: 'DPP4-KMT1', source: 'DPP4', target: 'KMT1' },
+  { id: 'DPP4-KMT2', source: 'DPP4', target: 'KMT2' },
+  { id: 'DPP4-DPP3', source: 'DPP4', target: 'DPP3' },
 ];
 
 export const GROUP_DISPLAY_NAMES: Record<string, string> = {
-  'A': '國民黨',
-  'B': '民進黨',
+  'KMT': '國民黨',
+  'DPP': '民進黨',
 };
 
 export const RADIUS = 42; // Node radius for NetworkGraph
@@ -83,8 +83,8 @@ export const INITIAL_SETUP: Session = {
   _id: '',
   scenarioIds: [],
   scenarios: [],
-  focalNode: 'A1',
-  opponentNode: 'A2',
+  focalNode: 'KMT1',
+  opponentNode: 'KMT2',
   activeEdgeIds: [],
   sampleSize: 20,
   submissionCount: 0,

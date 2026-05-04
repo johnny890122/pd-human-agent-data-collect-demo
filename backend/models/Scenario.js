@@ -10,9 +10,9 @@ const scenarioSchema = new mongoose.Schema(
     _id: { type: String, default: () => randomUUID() },
     
     // 實驗配置（自包含）
-    focalNode: { type: String, required: true },      // 'A1' | 'A2' | 'B3' | 'B4'
+    focalNode: { type: String, required: true },      // 'KMT1' | 'KMT2' | 'DPP3' | 'DPP4'
     opponentNode: { type: String, required: true },
-    activeEdgeIds: { type: [String], required: true }, // e.g., ['A1-A2', 'A2-B3']
+    activeEdgeIds: { type: [String], required: true }, // e.g., ['KMT1-KMT2', 'KMT2-DPP3']
     
     // 特定狀態（此 scenario 的條件）
     edgeStates: { type: Map, of: String, required: true }, // edgeId → 'give' | 'not give'

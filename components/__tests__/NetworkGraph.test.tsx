@@ -8,8 +8,8 @@ describe('NetworkGraph', () => {
   it('does not render the decision bubble when decision maker equals opponent', () => {
     const setup = {
       scenarios: [],
-      focalNode: 'A1',
-      opponentNode: 'A2',
+      focalNode: 'KMT1',
+      opponentNode: 'KMT2',
       sampleSize: 20,
       submissionCount: 0,
     };

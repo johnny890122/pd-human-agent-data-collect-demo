@@ -1,5 +1,5 @@
-export type AgentId = 'A1' | 'A2' | 'B3' | 'B4';
-export type GroupId = 'A' | 'B';
+export type AgentId = 'KMT1' | 'KMT2' | 'DPP3' | 'DPP4';
+export type GroupId = 'KMT' | 'DPP';
 export type EdgeState = 'not give' | 'give';
 export type ScenarioStatus = 'active' | 'completed' | 'paused';
 export type SessionMode = 'manual' | 'mixed';

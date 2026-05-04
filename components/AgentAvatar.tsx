@@ -8,7 +8,7 @@ interface AgentAvatarProps {
 }
 
 const AgentAvatar: React.FC<AgentAvatarProps> = ({ agent, size = 48 }) => {
-  const groupColor = agent.group === 'A' ? COLORS.kmt : COLORS.dpp;
+  const groupColor = agent.group === 'KMT' ? COLORS.kmt : COLORS.dpp;
   const r = 42;
   const ax = 0;
   const ay = 0;
@@ -35,7 +35,7 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({ agent, size = 48 }) => {
   const avatarHairColor = getDarkerColor(groupColor);
   const avatarClothColor = getClothColor(groupColor);
   const avatarGlassesColor = getGlassesColor(groupColor);
-  const isGroupA = agent.group === 'A';
+  const isGroupA = agent.group === 'KMT';
   const clipId = `clip-${agent.id}-${Math.random().toString(36).substr(2, 9)}`;
 
   return (

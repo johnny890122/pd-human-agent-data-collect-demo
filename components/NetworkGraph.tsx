@@ -14,7 +14,7 @@ interface NetworkGraphProps {
   /** Optional override for node positions (randomized layout) */
   positionOverrides?: Record<AgentId, { x: number; y: number }>;
   /** Custom group names shown in node badges */
-  groupNames?: { A: string; B: string };
+  groupNames?: { KMT: string; DPP: string };
   /** The probability (0-100) of cooperating with the opponent */
   decision?: number;
   /** Callback for when the decision value is changed via interaction */
@@ -37,7 +37,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   onNodeClick,
   className = '',
   positionOverrides,
-  groupNames = { A: '國民黨', B: '民進黨' },
+  groupNames = { KMT: '國民黨', DPP: '民進黨' },
   decision = 50,
   onDecisionChange,
   revealedEdgeIds,
@@ -100,10 +100,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
   const positions = React.useMemo(() => {
     const defaultPositions: Record<AgentId, { x: number; y: number }> = {
-      'A1': { x: 100, y: 100 },
-      'A2': { x: 300, y: 100 },
-      'B3': { x: 100, y: 300 },
-      'B4': { x: 300, y: 300 },
+      'KMT1': { x: 100, y: 100 },
+      'KMT2': { x: 300, y: 100 },
+      'DPP3': { x: 100, y: 300 },
+      'DPP4': { x: 300, y: 300 },
     };
     return positionOverrides
       ? { ...defaultPositions, ...positionOverrides }
@@ -632,7 +632,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const isDecisionMaker = agent.id === setup.focalNode;
         const isOpponent = agent.id === setup.opponentNode;
 
-        const groupColor = agent.group === 'A' ? groupAColor : groupBColor;
+        const groupColor = agent.group === 'KMT' ? groupAColor : groupBColor;
         const r = RADIUS;
 
         let strokeColor = groupColor;
@@ -647,7 +647,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         }
 
         // ── Avatar body ──────────────────────────
-        const isGroupA = agent.group === 'A';
+        const isGroupA = agent.group === 'KMT';
         const clip = `url(#aclip-${agent.id})`;
         const ax = pos.x;
         const ay = pos.y;
@@ -756,7 +756,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
             {/* ── Group Badge (with Role if applicable) ── */}
             {(() => {
-              const baseName = agent.group === 'A' ? groupNames.A : groupNames.B;
+              const baseName = agent.group === 'KMT' ? groupNames.KMT : groupNames.DPP;
 
               let roleTag = null;
               let roleFill = '';
@@ -799,7 +799,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               <foreignObject x="-60" y="-90" width="120" height="52" className="pointer-events-none overflow-visible">
                 <div style={{ background: 'white', border: `2px solid ${groupColor}`, borderRadius: '10px', padding: '5px 8px', boxShadow: `0 4px 12px ${COLORS.blackShadow15}`, textAlign: 'center', fontSize: '11px', fontWeight: 700, color: groupColor, whiteSpace: 'nowrap', lineHeight: 1.4 }}>
                   <div style={{ fontSize: '9px', fontWeight: 600, color: COLORS.neutral, textTransform: 'uppercase', letterSpacing: '0.05em' }}>群組</div>
-                  <div>{agent.group === 'A' ? groupNames.A : groupNames.B}</div>
+                  <div>{agent.group === 'KMT' ? groupNames.KMT : groupNames.DPP}</div>
                 </div>
                 <svg style={{ position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)' }} width="12" height="6">
                   <polygon points="0,0 12,0 6,6" fill={groupColor} />

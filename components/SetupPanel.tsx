@@ -6,8 +6,6 @@ import 'rc-slider/assets/index.css';
 import { Session, AgentId } from '../types';
 import { AGENTS, ALL_EDGES } from '../constants';
 import NetworkGraph from './NetworkGraph';
-import { generateDesignMatrix } from '../utils/math';
-import { combinationCount } from '../utils/combinations';
 import { createManualSession, createMixedGroup } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import MixedModeConfig from './MixedModeConfig';
@@ -68,14 +66,14 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const handleFocalGroupChange = (group: string) => {
     setSetup((prev) => ({
       ...prev,
-      focalNode: group === 'A' ? 'A1' : 'B3',
+      focalNode: group === 'KMT' ? 'KMT1' : 'DPP3',
     }));
   };
 
   const handleOpponentGroupChange = (group: string) => {
     setSetup((prev) => ({
       ...prev,
-      opponentNode: group === 'A' ? 'A2' : 'B4',
+      opponentNode: group === 'KMT' ? 'KMT2' : 'DPP4',
     }));
   };
 
@@ -272,9 +270,9 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Focal Node</label>
                 <div className={`grid grid-cols-2 gap-1.5 ${readOnly ? 'opacity-80 pointer-events-none' : ''}`}>
-                  {['A', 'B'].map((group) => {
+                  {['KMT', 'DPP'].map((group) => {
                     const isSelected = AGENTS[setup.focalNode as AgentId].group === group;
-                    const representativeAgent = AGENTS[group === 'A' ? 'A1' : 'B3'];
+                    const representativeAgent = AGENTS[group === 'KMT' ? 'KMT1' : 'DPP3'];
                     return (
                       <button
                         key={`focal-group-${group}`}
@@ -286,7 +284,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                         `}
                       >
                         <AgentAvatar agent={representativeAgent} size={28} />
-                        <span className={`text-xs font-semibold ${isSelected ? 'text-amber-800' : 'text-gray-600'}`}>{group === 'A' ? '國民黨' : '民進黨'}</span>
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-amber-800' : 'text-gray-600'}`}>{group === 'KMT' ? '國民黨' : '民進黨'}</span>
                       </button>
                     );
                   })}
@@ -295,9 +293,9 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Partner Node</label>
                 <div className={`grid grid-cols-2 gap-1.5 ${readOnly ? 'opacity-80 pointer-events-none' : ''}`}>
-                   {['A', 'B'].map((group) => {
+                   {['KMT', 'DPP'].map((group) => {
                     const isSelected = AGENTS[setup.opponentNode as AgentId].group === group;
-                    const representativeAgent = AGENTS[group === 'A' ? 'A2' : 'B4'];
+                    const representativeAgent = AGENTS[group === 'KMT' ? 'KMT2' : 'DPP4'];
                     return (
                       <button
                         key={`opponent-group-${group}`}
@@ -309,7 +307,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                         `}
                       >
                         <AgentAvatar agent={representativeAgent} size={28} />
-                        <span className={`text-xs font-semibold ${isSelected ? 'text-gray-800' : 'text-gray-600'}`}>{group === 'A' ? '國民黨' : '民進黨'}</span>
+                        <span className={`text-xs font-semibold ${isSelected ? 'text-gray-800' : 'text-gray-600'}`}>{group === 'KMT' ? '國民黨' : '民進黨'}</span>
                       </button>
                     );
                   })}

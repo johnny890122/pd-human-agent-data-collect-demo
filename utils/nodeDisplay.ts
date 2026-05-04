@@ -32,7 +32,7 @@ export const getNodeDisplayName = (nodeId: string, focalNode: string, opponentNo
 
 /**
  * Returns a human-readable display name for an edge.
- * e.g. "A1-B3" → "Focal → Out-Group 1"
+ * e.g. "KMT1-DPP3" → "Focal → Out-Group 1"
  */
 export const getEdgeDisplayName = (edgeId: string, focalNode: string, opponentNode: string): string => {
   const [source, target] = edgeId.split('-');

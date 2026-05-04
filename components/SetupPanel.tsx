@@ -1,6 +1,6 @@
 import React from 'react';
 import { toast } from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
 import { Session, AgentId } from '../types';
@@ -9,6 +9,7 @@ import NetworkGraph from './NetworkGraph';
 import { createManualSession, createMixedGroup } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import MixedModeConfig from './MixedModeConfig';
+import { combinationCount } from '../utils/combinations';
 
 import AgentAvatar from './AgentAvatar';
 
@@ -42,10 +43,13 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   onBack,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showConfirmModal, setShowConfirmModal] = React.useState(false);
   
+  // Determine launch mode from URL
+  const launchMode: LaunchMode = location.pathname.includes('/admin/setup/mixed') ? 'mixed' : 'manual';
+  
   // Batch mode state
-  const [launchMode, setLaunchMode] = React.useState<LaunchMode>('manual');
   const [batchEdgeCount, setBatchEdgeCount] = React.useState(3);
   const [groupName, setGroupName] = React.useState('');
   const [groupDescription, setGroupDescription] = React.useState('');
@@ -61,6 +65,20 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const k = setup.activeEdgeIds?.length || 0;
   const scenariosCount = Math.pow(2, k);
   const isHighLoad = k > 4;
+  
+  // Calculate mixed mode statistics
+  const calculateMixedStats = () => {
+    let total = 0;
+    for (let k = 1; k <= maxK; k++) {
+      const combinations = combinationCount(12, k);
+      const scenariosPerCombo = Math.pow(2, k);
+      total += combinations * scenariosPerCombo;
+    }
+    const estimated = Math.ceil((total * targetSizePerScenario) / scenariosPerSession);
+    return { totalScenarios: total, estimatedParticipants: estimated };
+  };
+  
+  const mixedStats = launchMode === 'mixed' ? calculateMixedStats() : { totalScenarios: 0, estimatedParticipants: 0 };
   
 
   const handleFocalGroupChange = (group: string) => {
@@ -220,7 +238,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => setLaunchMode('manual')}
+                onClick={() => navigate('/admin/setup/manual')}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   launchMode === 'manual'
                     ? 'border-green-500 bg-green-50 shadow-md'
@@ -240,7 +258,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               
               <button
                 type="button"
-                onClick={() => setLaunchMode('mixed')}
+                onClick={() => navigate('/admin/setup/mixed')}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   launchMode === 'mixed'
                     ? 'border-teal-500 bg-teal-50 shadow-md'
@@ -315,27 +333,30 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Target Size</label>
-              <div className="flex items-center gap-3">
-                <div className={`flex-1 mx-2 flex items-center h-full pt-[2px] ${readOnly ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                  <Slider
-                    min={1}
-                    max={100}
-                    value={setup.sampleSize || 1}
-                    onChange={(val) => setSetup({ ...setup, sampleSize: val as number })}
-                    disabled={readOnly}
-                    trackStyle={{ backgroundColor: '#4f46e5', height: 8 }}
-                    handleStyle={{ borderColor: '#4f46e5', height: 16, width: 16, marginTop: -4, backgroundColor: '#fff', opacity: readOnly ? 1 : undefined }}
-                    railStyle={{ backgroundColor: '#e5e7eb', height: 8 }}
-                  />
-                </div>
+            {/* Target Size - Only for Manual Mode */}
+            {launchMode === 'manual' && (
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Target Size</label>
+                <div className="flex items-center gap-3">
+                  <div className={`flex-1 mx-2 flex items-center h-full pt-[2px] ${readOnly ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <Slider
+                      min={1}
+                      max={100}
+                      value={setup.sampleSize || 1}
+                      onChange={(val) => setSetup({ ...setup, sampleSize: val as number })}
+                      disabled={readOnly}
+                      trackStyle={{ backgroundColor: '#4f46e5', height: 8 }}
+                      handleStyle={{ borderColor: '#4f46e5', height: 16, width: 16, marginTop: -4, backgroundColor: '#fff', opacity: readOnly ? 1 : undefined }}
+                      railStyle={{ backgroundColor: '#e5e7eb', height: 8 }}
+                    />
+                  </div>
 
-                <span className="text-sm font-bold text-gray-700 min-w-[28px] text-right">
-                  {setup.sampleSize || 1}
-                </span>
+                  <span className="text-sm font-bold text-gray-700 min-w-[28px] text-right">
+                    {setup.sampleSize || 1}
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
 
@@ -372,13 +393,76 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
 
       {/* Column 2 (Right): Summary Preview & Complexity Check & Generate Button */}
       <div className="w-full xl:w-1/2 flex flex-col gap-6 xl:overflow-y-auto pr-2 xl:border-l border-gray-200 xl:px-6">
-        {/* Display Setting Preview in Manual Mode Only */}
+        {/* Display Setting Preview in Manual Mode */}
         {launchMode === 'manual' && (
           <div className="p-5 bg-gradient-to-br from-emerald-50 to-green-100 rounded-xl border border-emerald-100 shadow-inner">
             <h3 className="text-sm font-semibold text-emerald-800 uppercase tracking-wider mb-4">
               Setting Preview
             </h3>
             <SummaryWidget />
+          </div>
+        )}
+
+        {/* Display Setting Preview in Mixed Mode */}
+        {launchMode === 'mixed' && (
+          <div className="p-5 bg-gradient-to-br from-teal-50 to-cyan-100 rounded-xl border border-teal-100 shadow-inner">
+            <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider mb-4">
+              Setting Preview
+            </h3>
+            <div className="w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
+                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm justify-center">
+                  <span className="text-xs text-teal-800 font-semibold tracking-wider mb-1">Total Scenarios</span>
+                  <span className="text-4xl font-black text-teal-600">{mixedStats.totalScenarios}</span>
+                </div>
+                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm justify-center">
+                  <span className="text-xs text-teal-800 font-semibold tracking-wider mb-1">Est. Participants</span>
+                  <span className="text-4xl font-black text-teal-600">~{mixedStats.estimatedParticipants}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm mt-3">
+                <span className="text-xs text-teal-800 font-semibold tracking-wider mb-2">Configuration</span>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-teal-700">Max K:</span>
+                    <span className="text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                      {maxK}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-teal-700">Scenarios/Session:</span>
+                    <span className="text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                      {scenariosPerSession}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-teal-700">Target Size/Scenario:</span>
+                    <span className="text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                      {targetSizePerScenario}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm mt-3">
+                <span className="text-xs text-teal-800 font-semibold tracking-wider mb-1.5">Role Assignment</span>
+                <div className="flex flex-col gap-2 mt-auto">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-teal-700">Focal Node:</span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                      <AgentAvatar agent={AGENTS[setup.focalNode as AgentId]} size={16} />
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-teal-700">Partner Node:</span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                      <AgentAvatar agent={AGENTS[setup.opponentNode as AgentId]} size={16} />
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

@@ -21,6 +21,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   const activeTab: 'setup' | 'history' | 'groups' =
     location.pathname === '/admin/history' ? 'history' :
     location.pathname.startsWith('/admin/groups') ? 'groups' :
+    location.pathname.startsWith('/admin/setup') ? 'setup' :
     'setup';
   const isReadOnly = location.state?.readOnly === true;
   const [generatedUrl, setGeneratedUrl] = useState<string | null>(null);
@@ -100,7 +101,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   const handleLoadHistorySetup = (selectedSetup: Session) => {
     setSetup(selectedSetup);
     setGeneratedUrl(null);
-    navigate('/admin/setup', { state: { readOnly: true } });
+    navigate('/admin/setup/manual', { state: { readOnly: true } });
   };
 
   const handleBackFromReadOnly = () => {
@@ -135,7 +136,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
             <nav className="mt-4 space-y-2">
               <button
                 type="button"
-                onClick={() => navigate('/admin/setup')}
+                onClick={() => navigate('/admin/setup/manual')}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'setup' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
               >
                 Setup

@@ -698,7 +698,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
             </div>
             <h3 className="text-3xl font-bold text-gray-800">一切準備就緒！</h3>
             <p className="text-lg">
-              總共有 <strong className="text-indigo-600 text-2xl bg-indigo-50 px-3 py-1 rounded-xl shadow-sm mx-1">{Math.pow(2, setup.activeEdgeIds.length)}</strong> 個不同的情境。
+              總共有 <strong className="text-indigo-600 text-2xl bg-indigo-50 px-3 py-1 rounded-xl shadow-sm mx-1">{setup.scenarioIds?.length || setup.scenarios?.length || Math.pow(2, setup.activeEdgeIds?.length || 0)}</strong> 個不同的情境。
             </p>
             <p className="text-gray-500 max-w-sm mx-auto p-4 bg-gray-50 rounded-2xl border border-gray-100 shadow-inner">
               在做出每個決定之前，請花時間分析歷史紀錄。祝您好運！

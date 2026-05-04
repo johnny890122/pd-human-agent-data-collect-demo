@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>路由測試</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .link { display: block; margin: 10px 0; padding: 10px; background: #f0f0f0; border-radius: 5px; }
+        .link:hover { background: #e0e0e0; }
+    </style>
+</head>
+<body>
+    <h1>Admin Setup 路由測試</h1>
+    <p>點擊以下連結測試新路由：</p>
+    
+    <a class="link" href="http://localhost:3000/admin/setup" target="_blank">
+        <strong>/admin/setup</strong> → 應重定向到 /admin/setup/manual
+    </a>
+    
+    <a class="link" href="http://localhost:3000/admin/setup/manual" target="_blank">
+        <strong>/admin/setup/manual</strong> → Manual Mode
+    </a>
+    
+    <a class="link" href="http://localhost:3000/admin/setup/mixed" target="_blank">
+        <strong>/admin/setup/mixed</strong> → Mixed Mode
+    </a>
+    
+    <h2>測試步驟：</h2>
+    <ol>
+        <li>點擊上面的連結</li>
+        <li>確認 URL 是否正確</li>
+        <li>在頁面上嘗試切換 Manual/Mixed 按鈕</li>
+        <li>觀察 URL 是否隨之改變</li>
+        <li>使用瀏覽器前進/後退按鈕測試導航</li>
+    </ol>
+</body>
+</html>

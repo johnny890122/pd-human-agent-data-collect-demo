@@ -107,48 +107,24 @@ const MixedModeConfig: React.FC<MixedModeConfigProps> = ({
           Target Size Per Scenario <span className="text-teal-600">*</span>
         </label>
         <div className="flex items-center gap-3">
-          <input
-            type="number"
-            min={1}
-            max={100}
-            value={targetSizePerScenario}
-            onChange={(e) => setTargetSizePerScenario(Math.max(1, parseInt(e.target.value) || 1))}
-            className="w-24 px-3 py-2 border border-teal-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-          />
-          <span className="text-xs text-gray-500">
-            responses needed per scenario
-          </span>
-        </div>
-      </div>
-
-      {/* Estimates */}
-      <div className="mb-4 p-3 bg-white rounded border border-teal-100">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs text-gray-600">Total Scenarios:</span>
-          <span className="font-mono font-bold text-teal-700 text-xl">
-            {totalScenarios}
-          </span>
-        </div>
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs text-gray-600">Estimated Participants:</span>
-          <span className="font-mono font-bold text-teal-700 text-lg">
-            ~{estimatedParticipants}
-          </span>
-        </div>
-        <div className="text-xs text-gray-400 mt-2">
-          = ({totalScenarios} scenarios × {targetSizePerScenario} responses) ÷ {scenariosPerSession} per session
-        </div>
-        
-        {isHighLoad && (
-          <div className="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 flex items-start gap-2">
-            <svg className="w-4 h-4 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
-            <span>
-              <strong>Warning:</strong> Large scenario pool ({totalScenarios}), creation may take 1-2 minutes.
-            </span>
+          <div className="flex-1 mx-2 flex items-center h-full pt-[2px]">
+            <Slider
+              min={1}
+              max={100}
+              value={targetSizePerScenario}
+              onChange={(val) => setTargetSizePerScenario(val as number)}
+              trackStyle={{ backgroundColor: '#14b8a6', height: 8 }}
+              handleStyle={{ borderColor: '#14b8a6', height: 18, width: 18, marginTop: -5, backgroundColor: '#fff' }}
+              railStyle={{ backgroundColor: '#ccfbf1', height: 8 }}
+            />
           </div>
-        )}
+          <span className="text-lg font-bold text-teal-700 min-w-[28px]">
+            {targetSizePerScenario}
+          </span>
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          Responses needed per scenario
+        </div>
       </div>
       
       {/* Group Name */}
@@ -177,17 +153,6 @@ const MixedModeConfig: React.FC<MixedModeConfigProps> = ({
           rows={2}
           className="w-full px-3 py-2 border border-teal-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm resize-none"
         />
-      </div>
-
-      {/* Info Box */}
-      <div className="p-3 bg-teal-100 rounded-lg text-xs text-teal-900">
-        <div className="font-semibold mb-1">ℹ️ Mixed Mode Benefits:</div>
-        <ul className="list-disc list-inside space-y-1 text-teal-800">
-          <li>Each participant sees {scenariosPerSession} scenarios (manageable time commitment)</li>
-          <li>Balanced selection ensures even data distribution</li>
-          <li>Single master URL for all participants</li>
-          <li>Automatic completion when all scenarios reach target size</li>
-        </ul>
       </div>
     </div>
   );

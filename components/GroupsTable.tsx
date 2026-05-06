@@ -63,7 +63,7 @@ const GroupsTable: React.FC = () => {
     <div className="rounded-2xl border border-purple-100 bg-white shadow-sm">
       <div className="border-b border-purple-100 px-6 py-4 flex justify-between items-center">
         <h2 className="text-sm font-semibold text-purple-800 uppercase tracking-wider">
-          Batch Group Management
+          Batch & Progress
         </h2>
         <button
           onClick={loadGroups}
@@ -158,7 +158,7 @@ const GroupsTable: React.FC = () => {
                     <td className="py-3">
                       <div className="flex gap-2">
                         <button
-                          onClick={() => navigate(`/admin/groups/${group._id}`)}
+                          onClick={() => navigate(`/admin/view/batch/${group._id}`)}
                           className="text-purple-600 hover:text-purple-800 hover:underline font-medium"
                         >
                           View

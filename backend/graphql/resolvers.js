@@ -50,7 +50,8 @@ async function toSessionGraph(doc, populateScenarios = true) {
   
   const submissionCount = await SubmissionModel.countDocuments({
     sessionId: String(doc._id),
-    isCompleted: true
+    isCompleted: true,
+    isInvalid: { $ne: true },
   });
   
   let activeEdgeIds = [];
@@ -114,6 +115,7 @@ function toSubmissionGraph(doc) {
     demographics: doc.demographics || null,
     isCompleted: doc.isCompleted === true,
     completedAt: doc.completedAt ? (doc.completedAt instanceof Date ? doc.completedAt.toISOString() : doc.completedAt) : null,
+    isInvalid: doc.isInvalid === true,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
@@ -163,6 +165,22 @@ export const resolvers = {
       return await toSessionGraph(doc);
     },
     
+    findUserSession: async (_, { groupId, participantId }) => {
+      requireDb();
+      await connectToDatabase();
+      
+      if (!participantId) {
+        return null;
+      }
+      
+      const doc = await SessionModel.findOne({
+        groupId,
+        'metadata.participantId': participantId,
+      }).lean();
+      
+      return doc ? await toSessionGraph(doc) : null;
+    },
+    
     // ========================================================================
     // Scenario Queries (NEW)
     // ========================================================================
@@ -174,13 +192,20 @@ export const resolvers = {
       return await toScenarioGraph(doc);
     },
     
-    scenarios: async (_, { groupId, status, limit }) => {
+    scenarios: async (_, { groupId, status, limit, ids }) => {
       requireDb();
       await connectToDatabase();
       
       const query = {};
-      if (groupId) query.groupId = groupId;
-      if (status) query.status = status;
+      
+      // If ids provided, use $in query (takes precedence over other filters)
+      if (ids && ids.length > 0) {
+        query._id = { $in: ids };
+      } else {
+        // Otherwise apply standard filters
+        if (groupId) query.groupId = groupId;
+        if (status) query.status = status;
+      }
       
       let queryBuilder = ScenarioModel.find(query).sort({ createdAt: 1 });
       if (limit) queryBuilder = queryBuilder.limit(limit);
@@ -519,38 +544,47 @@ export const resolvers = {
     // Unified Survey Flow (REFACTORED)
     // ========================================================================
     
-    startSurvey: async (_, { sessionId }, context) => {
+    startSurvey: async (_, { sessionId, participantId }, context) => {
       if (!context?.isTurnstileVerified) {
         throw new Error('Turnstile verification required before starting survey.');
       }
-      
+
       requireDb();
       await connectToDatabase();
-      
+
       // 檢查 session 是否已滿
       const session = await SessionModel.findById(sessionId);
       if (!session) {
         throw new Error('Session not found');
       }
-      
+
       const submissionCount = await SubmissionModel.countDocuments({
         sessionId,
-        isCompleted: true
+        isCompleted: true,
+        isInvalid: { $ne: true },
       });
-      
+
       if (submissionCount >= session.sampleSize) {
         throw new Error('Session is full');
       }
-      
-      // 建立 submission
+
+      // REQ-313: 同一參與者不能對同一 session 重複提交 — 返回既有記錄以支援 resume
+      if (participantId) {
+        const existing = await SubmissionModel.findOne({ sessionId, participantId });
+        if (existing) {
+          return toSubmissionGraph(existing);
+        }
+      }
+
+      // 建立 submission（記錄 participantId 供後續重複偵測使用）
       const doc = await SubmissionModel.create({
         sessionId,
-        participantId: null,
+        participantId: participantId || null,
         results: [],
         demographics: null,
         isCompleted: false,
       });
-      
+
       return toSubmissionGraph(doc);
     },
     
@@ -665,6 +699,53 @@ export const resolvers = {
       return result.deletedCount > 0;
     },
     
+    invalidateSubmission: async (_, { submissionId, isInvalid }) => {
+      requireDb();
+      await connectToDatabase();
+
+      const submission = await SubmissionModel.findById(submissionId);
+      if (!submission) {
+        throw new Error('Submission not found');
+      }
+
+      // Idempotency: skip if already in desired state
+      if (submission.isInvalid === isInvalid) {
+        return toSubmissionGraph(submission);
+      }
+
+      const delta = isInvalid ? -1 : 1;
+
+      submission.isInvalid = isInvalid;
+      await submission.save();
+
+      // Adjust submissionCount on Session (only completed submissions contributed)
+      if (submission.isCompleted) {
+        await SessionModel.findByIdAndUpdate(
+          submission.sessionId,
+          { $inc: { submissionCount: delta } }
+        );
+      }
+
+      // Adjust responseCount on each answered Scenario (floor at 0 on decrement)
+      if (submission.results && submission.results.length > 0) {
+        for (const result of submission.results) {
+          if (delta < 0) {
+            await ScenarioModel.updateOne(
+              { _id: result.scenarioId, responseCount: { $gt: 0 } },
+              { $inc: { responseCount: -1 } }
+            );
+          } else {
+            await ScenarioModel.findByIdAndUpdate(
+              result.scenarioId,
+              { $inc: { responseCount: 1 } }
+            );
+          }
+        }
+      }
+
+      return toSubmissionGraph(submission);
+    },
+
     clearDatabase: async () => {
       if (process.env.NODE_ENV === 'production') {
         throw new Error('Action denied: You cannot clear the database in production.');

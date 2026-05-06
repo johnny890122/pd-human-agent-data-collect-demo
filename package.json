@@ -31,11 +31,13 @@
     "graphql": "^16.13.1",
     "graphql-type-json": "^0.3.2",
     "jsonwebtoken": "^9.0.3",
+    "katex": "^0.16.45",
     "mongoose": "^8.23.0",
     "rc-slider": "^11.1.9",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-hot-toast": "^2.6.0",
+    "react-katex": "^3.1.0",
     "react-router-dom": "^7.13.1",
     "uuid": "^13.0.0"
   },

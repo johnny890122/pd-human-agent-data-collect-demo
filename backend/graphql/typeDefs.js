@@ -64,6 +64,7 @@ export const typeDefs = `#graphql
     demographics: Demographics
     isCompleted: Boolean!
     completedAt: String
+    isInvalid: Boolean!
     createdAt: String!
     updatedAt: String!
   }
@@ -162,10 +163,11 @@ export const typeDefs = `#graphql
     allSessions(excludeGroupSessions: Boolean): [Session!]!
     sessionsByGroup(groupId: ID!): [Session!]!
     activeSession: Session
+    findUserSession(groupId: ID!, participantId: String!): Session
     
     # Scenario queries (NEW)
     scenario(id: ID!): Scenario
-    scenarios(groupId: ID, status: String, limit: Int): [Scenario!]!
+    scenarios(groupId: ID, status: String, limit: Int, ids: [ID!]): [Scenario!]!
     
     # SessionGroup queries
     sessionGroup(id: ID!): SessionGroup
@@ -189,13 +191,14 @@ export const typeDefs = `#graphql
     startMixedSession(groupId: ID!, participantId: String): MixedSessionResult!
     
     # Unified survey flow
-    startSurvey(sessionId: ID!): Submission!
+    startSurvey(sessionId: ID!, participantId: String): Submission!
     saveSurveyAnswer(submissionId: ID!, scenarioId: ID!, cooperationProbability: Float!): Submission!
     completeSurvey(submissionId: ID!, demographics: DemographicsInput!): Submission!
     
     # Admin controls
     deleteSessionGroup(groupId: ID!): Boolean!
     clearDatabase: Boolean!
+    invalidateSubmission(submissionId: ID!, isInvalid: Boolean!): Submission!
     
     # Session replay (pending removal per REQ-413)
     saveSessionEvents(sessionId: String!, events: [JSON!]!): Boolean!

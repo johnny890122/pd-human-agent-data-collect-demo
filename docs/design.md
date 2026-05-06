@@ -30,6 +30,8 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 | Phase 15 | ✅ Complete | 2026-04-29 | Admin UI (Manual, Batch, Mixed) |
 | Phase 16 | ✅ Complete | 2026-04-29 | Survey flow (all modes) |
 | Phase 17 | 🟡 Partial | Ongoing | Testing complete, heatmap deferred |
+| Phase 30 | 📋 Planned | — | Submission invalidation (REQ-350..354) |
+| Phase 31 | 📋 Planned | — | Complete submission data CSV export (REQ-360..363) |
 
 **Recent Updates**:
 - 2026-04-29: Legacy API completely removed (~500 lines)
@@ -42,6 +44,11 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 - 2026-05-04: Survey intro "關係結構" page now displays complete network history (REQ-405.1)
 - 2026-05-04: **BUG FIXED** Admin history view read-only mode shows 0 active edges (BUG-003) — fixed by adding virtual activeEdgeIds field in toSessionGraph resolver
 - 2026-05-05: URL-level mode differentiation design added — `SetupPanel.tsx` syncs `LaunchMode` toggle to `?mode=` query param via `useSearchParams` (REQ-204, REQ-205, REQ-206) — see Phase 26
+- 2026-05-06: One-submission-per-participant enforcement (REQ-313) — three-layer fix: unique sparse index on `Submission`, `startSurvey` accepts `participantId` and returns existing submission on duplicate, client passes fingerprint ID — see Phase 27
+- 2026-05-06: Submission progress tracking design added — `HistoryTable.tsx` enhanced submission detail view with progress bars and stage indicators (REQ-341, REQ-342) — see Phase 27
+- 2026-05-06: **BUG FIXED** Mixed Mode session creation timing issue (BUG-004) — `startMixedSession` now deferred until after intro completion to match Manual Mode behavior and prevent duplicate sessions from React StrictMode — see Phase 28
+- 2026-05-06: Submission invalidation feature designed (REQ-350..REQ-354) — new `isInvalid` field on `Submission`, `invalidateSubmission` mutation, cascading `submissionCount` and `Scenario.responseCount` corrections, admin UI filter — see Phase 30
+- 2026-05-06: Complete submission data CSV export designed (REQ-360..REQ-363) — client-side CSV generation with row-per-answer format including full scenario configurations, demographics, timestamps, and validity flags — see Phase 31
 
 ---
 
@@ -288,6 +295,12 @@ SessionSchema.virtual('scenarios', {
   isCompleted: Boolean,
   completedAt: Date | null,
   
+  isInvalid: Boolean,                    // NEW (2026-05-06, REQ-351)
+                                         // Default: false
+                                         // When true: excluded from submissionCount and
+                                         // Scenario.responseCount; slot is freed for new participant.
+                                         // Reversible: can be set back to false by admin.
+  
   createdAt: Date,
   updatedAt: Date
 }
@@ -297,8 +310,9 @@ SessionSchema.virtual('scenarios', {
 
 - `{ sessionId: 1 }`
 - `{ sessionId: 1, participantId: 1 }` — Prevent duplicate Mixed Mode submissions
+- `{ sessionId: 1, isInvalid: 1 }` — Efficient queries for valid-only submissions per session
 
-**Maps to**: REQ-402 (Per-scenario response capture)
+**Maps to**: REQ-402 (Per-scenario response capture), REQ-351 (invalidation flag)
 
 **Known Issue (Fixed 2026-05-04)**: SurveyOutro component was not calling `completeSurvey` mutation, causing `isCompleted` to always be `false`. Fixed by passing `onComplete` prop and calling it on final submission.
 
@@ -564,7 +578,21 @@ async function createMixedGroup(input) {
 
 **Verified**: maxK=2 generates 288 scenarios (12×2 + 66×4).
 
-**Participant Flow** ([`startMixedSession`](../backend/graphql/resolvers.js)):
+**Participant Flow** (Lazy Session Creation):
+
+**Before Fix (BUG-004)**: Session was created immediately on `/survey/welcome?groupId=xxx&mode=mixed` page load, before user saw welcome screen or clicked "開始實驗". React StrictMode's double-execution caused duplicate sessions.
+
+**After Fix (Phase 28)**:
+1. User opens `/survey/welcome?groupId=xxx&mode=mixed`
+2. [`App.tsx`](../App.tsx) detects Mixed Mode URL, stores `groupId` in state (`pendingMixedGroupId`), does NOT call `startMixedSession`
+3. User clicks "開始實驗" → navigates through intro with URL `?groupId=xxx&mode=mixed`
+4. User finishes intro step 8 → clicks "開始實驗！"
+5. [`handleSurveyStart`](../App.tsx:173) detects `pendingMixedGroupId` and NOW calls `startMixedSession`
+6. Session created, URL transitions to `?sessionId=xxx`, unified flow continues
+
+This matches Manual Mode behavior (which delays `startSurvey` until after intro) and prevents premature session creation.
+
+**Resolver Logic** ([`startMixedSession`](../backend/graphql/resolvers.js)):
 
 ```javascript
 async function startMixedSession(groupId, participantId) {
@@ -614,11 +642,12 @@ async function startMixedSession(groupId, participantId) {
 
 **Critical Design Win**: The survey completion logic is **identical** for all three modes.
 
-### Start Survey ✅
+### Start Survey ✅ 🔧 **UPDATED 2026-05-06 (REQ-313)**
 
 ```javascript
 // Unified: works for Manual, Batch, AND Mixed
-async function startSurvey(sessionId) {
+// participantId is optional; when present, enables duplicate detection
+async function startSurvey(sessionId, participantId) {
   // Turnstile check (REQ-102)
   if (!context.isTurnstileVerified) {
     throw new Error('Turnstile verification required');
@@ -630,9 +659,17 @@ async function startSurvey(sessionId) {
     throw new Error('Session full');
   }
   
-  // Create submission
+  // ** REQ-313: Duplicate participant check **
+  // If participant already has a submission for this session, resume it
+  if (participantId) {
+    const existing = await Submission.findOne({ sessionId, participantId });
+    if (existing) return existing;  // resume
+  }
+  
+  // Create submission (with participantId recorded for future dedup)
   const submission = await Submission.create({
     sessionId,
+    participantId: participantId || null,
     results: [],
     isCompleted: false
   });
@@ -641,7 +678,19 @@ async function startSurvey(sessionId) {
 }
 ```
 
-**Maps to**: REQ-401
+**DB enforcement (REQ-313)**:
+
+```javascript
+// backend/models/Submission.js
+submissionSchema.index(
+  { sessionId: 1, participantId: 1 },
+  { unique: true, sparse: true }  // sparse: true allows multiple null participantId rows
+);
+```
+
+**Why `sparse: true`**: Manual and Batch Mode participants may not have fingerprinting enabled, so their `participantId` is `null`. A regular unique index would reject a second `null` value. `sparse: true` skips the uniqueness check for documents where `participantId` is `null`, so only fingerprinted participants (Mixed Mode) are subject to the dedup constraint.
+
+**Maps to**: REQ-401, REQ-313
 
 ### Save Scenario Answer ✅
 
@@ -725,6 +774,384 @@ async function completeSurvey(submissionId, demographics) {
 ```
 
 **Maps to**: REQ-403, REQ-309
+
+### Invalidate Submission (Admin Only) 📋 **NEW 2026-05-06 (REQ-350)**
+
+```javascript
+// Admin-only mutation: requires admin authentication (checked via context.isAdmin)
+async function invalidateSubmission(submissionId, isInvalid, context) {
+  // Admin auth check (same pattern as clearDatabase)
+  if (!context.isAdmin) {
+    throw new Error('Admin authentication required');
+  }
+
+  const submission = await Submission.findById(submissionId);
+  if (!submission) {
+    throw new Error('Submission not found');
+  }
+
+  // ** Idempotency guard: no-op if already in the requested state **
+  if (submission.isInvalid === isInvalid) {
+    return submission;  // Nothing to do
+  }
+
+  const previousIsInvalid = submission.isInvalid ?? false;
+  submission.isInvalid = isInvalid;
+  await submission.save();
+
+  // ** REQ-352: Adjust Session.submissionCount **
+  // Only completed submissions contribute to submissionCount, so only adjust
+  // when the submission was completed.
+  if (submission.isCompleted) {
+    const countDelta = isInvalid ? -1 : 1;
+    await Session.findByIdAndUpdate(
+      submission.sessionId,
+      { $inc: { submissionCount: countDelta } }
+    );
+  }
+
+  // ** REQ-354: Adjust Scenario.responseCount for each answered scenario **
+  // The Submission.results array contains one entry per answered scenario.
+  // Use $inc with min(0) floor to avoid negative counts.
+  if (submission.results && submission.results.length > 0) {
+    const countDelta = isInvalid ? -1 : 1;
+
+    for (const result of submission.results) {
+      await Scenario.findByIdAndUpdate(
+        result.scenarioId,
+        [
+          {
+            $set: {
+              responseCount: {
+                $max: [0, { $add: ['$responseCount', countDelta] }]
+              }
+            }
+          }
+        ]
+      );
+    }
+
+    // ** REQ-354: If re-validating (isInvalid: false) and group was completed,
+    //    check if it should revert to 'active' **
+    if (!isInvalid) {
+      const session = await Session.findById(submission.sessionId);
+      if (session?.groupId) {
+        const group = await SessionGroup.findById(session.groupId);
+        if (group?.status === 'completed' && group.config?.targetSizePerScenario) {
+          const nowIncomplete = await Scenario.countDocuments({
+            groupId: session.groupId,
+            responseCount: { $lt: group.config.targetSizePerScenario }
+          });
+          if (nowIncomplete > 0) {
+            group.status = 'active';
+            await group.save();
+          }
+        }
+      }
+    }
+  }
+
+  return submission;
+}
+```
+
+**Key design decisions**:
+
+1. **Idempotency**: The resolver checks `submission.isInvalid === isInvalid` before making any changes. If they match, it returns early. This prevents double-decrement if an admin invalidates an already-invalid submission.
+
+2. **`submissionCount` adjustment**: Only `isCompleted: true` submissions were counted in the first place (see `completeSurvey` resolver). Incomplete submissions never incremented `submissionCount`, so they must not decrement it either. The guard `if (submission.isCompleted)` preserves this invariant.
+
+3. **`responseCount` adjustment**: Uses a MongoDB aggregation pipeline update (`$max: [0, ...]`) to atomically decrement with a floor of 0, preventing negative counts due to data anomalies.
+
+4. **Group status reversion (re-validation path)**: When an invalid submission is restored, if the group was already marked `completed`, we re-check whether all scenarios still meet `targetSize`. If not, the group reverts to `active` so new participants can be recruited.
+
+5. **Backward compatibility**: `isInvalid` defaults to `false`. All existing submissions without the field behave identically to before.
+
+**Maps to**: REQ-351, REQ-352, REQ-354
+
+---
+
+## Submission Invalidation — Enhanced Admin UI (REQ-353, REQ-356, REQ-357, REQ-358)
+
+**Status**: 📋 Designed 2026-05-06 | **Priority**: High | **Component**: [`GroupDetailView.tsx`](../components/GroupDetailView.tsx)
+
+### Overview
+
+The enhanced invalidation UI replaces text-based controls with icon buttons, adds confirmation modals, and implements tab-based view switching for cleaner visual hierarchy.
+
+### Tab-Based View Switching (REQ-358)
+
+Replace the inline "Invalid (N)" toggle button with a two-tab selector above the submission table.
+
+**Current Implementation** (lines 589-600):
+```tsx
+{submissions.some(s => s.isInvalid) && (
+  <button
+    onClick={() => setShowInvalid(v => !v)}
+    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+      showInvalid
+        ? 'bg-red-50 border-red-300 text-red-700'
+        : 'bg-gray-50 border-gray-300 text-gray-500 hover:border-gray-400'
+    }`}
+  >
+    Invalid ({submissions.filter(s => s.isInvalid).length})
+  </button>
+)}
+```
+
+**Enhanced Design**:
+
+```tsx
+{/* Tab-based view selector - placed below header, above table */}
+<div className="border-b border-gray-200 px-6 py-3">
+  <div className="flex gap-6">
+    <button
+      onClick={() => setShowInvalid(false)}
+      className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
+        !showInvalid
+          ? 'border-purple-600 text-purple-700'
+          : 'border-transparent text-gray-500 hover:text-gray-700'
+      }`}
+    >
+      Valid ({submissions.filter(s => !s.isInvalid).length})
+    </button>
+    <button
+      onClick={() => setShowInvalid(true)}
+      className={`pb-2 px-1 text-sm font-medium transition-colors border-b-2 ${
+        showInvalid
+          ? 'border-purple-600 text-purple-700'
+          : 'border-transparent text-gray-500 hover:text-gray-700'
+      }`}
+    >
+      Invalid ({submissions.filter(s => s.isInvalid).length})
+    </button>
+  </div>
+</div>
+```
+
+**State Management**:
+```typescript
+// Single boolean state (simpler than per-session map for GroupDetailView)
+const [showInvalid, setShowInvalid] = useState<boolean>(false);
+
+// Filter logic (unchanged)
+const filteredSessions = sessions.filter(session => {
+  const submission = submissions.find(sub => sub.sessionId === session._id);
+  return showInvalid ? submission?.isInvalid : !submission?.isInvalid;
+});
+```
+
+**Empty State** (when "Invalid" tab is selected but no invalid submissions exist):
+```tsx
+{showInvalid && submissions.filter(s => s.isInvalid).length === 0 && (
+  <div className="px-6 py-12 text-center">
+    <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+    <p className="text-gray-500 text-sm">No invalid submissions</p>
+  </div>
+)}
+```
+
+### Icon-Based Action Buttons (REQ-356)
+
+Replace text buttons with icon-only buttons in the action column.
+
+**Current Implementation** (lines 728-738):
+```tsx
+<button
+  onClick={() => handleInvalidate(submission._id, !submission.isInvalid)}
+  disabled={invalidatingId === submission._id}
+  className={`text-[10px] px-2 py-1 rounded border transition-colors disabled:opacity-50 ${
+    submission.isInvalid
+      ? 'border-green-300 text-green-700 hover:bg-green-50'
+      : 'border-red-300 text-red-600 hover:bg-red-50'
+  }`}
+>
+  {invalidatingId === submission._id ? '...' : submission.isInvalid ? 'Restore' : 'Invalidate'}
+</button>
+```
+
+**Enhanced Design**:
+
+```tsx
+{/* Icon button for Invalidate action (valid → invalid) */}
+{submission && !submission.isInvalid && (
+  <button
+    onClick={() => openConfirmModal(submission._id, 'invalidate')}
+    disabled={invalidatingId === submission._id}
+    title="Mark as invalid"
+    className="w-8 h-8 flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1 transition-colors disabled:opacity-50"
+  >
+    {invalidatingId === submission._id ? (
+      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+      </svg>
+    ) : (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    )}
+  </button>
+)}
+
+{/* Icon button for Restore action (invalid → valid) */}
+{submission && submission.isInvalid && (
+  <button
+    onClick={() => openConfirmModal(submission._id, 'restore')}
+    disabled={invalidatingId === submission._id}
+    title="Restore to valid"
+    className="w-8 h-8 flex items-center justify-center rounded-lg text-green-600 hover:bg-green-50 hover:text-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-1 transition-colors disabled:opacity-50"
+  >
+    {invalidatingId === submission._id ? (
+      <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+      </svg>
+    ) : (
+      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+    )}
+  </button>
+)}
+```
+
+**Icon Sources** (Heroicons):
+- **Invalidate**: `XCircleIcon` (outline) — `<path d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />`
+- **Restore**: `ArrowPathIcon` (outline) — `<path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />`
+- **Loading**: Spinner animation (same as other loading states in the app)
+
+### Confirmation Modal (REQ-357)
+
+Add confirmation step before executing invalidation/restoration action.
+
+**Modal State Management**:
+
+```typescript
+interface ConfirmModalState {
+  isOpen: boolean;
+  submissionId: string | null;
+  action: 'invalidate' | 'restore';
+}
+
+const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
+  isOpen: false,
+  submissionId: null,
+  action: 'invalidate'
+});
+
+function openConfirmModal(submissionId: string, action: 'invalidate' | 'restore') {
+  setConfirmModal({ isOpen: true, submissionId, action });
+}
+
+function closeConfirmModal() {
+  setConfirmModal({ isOpen: false, submissionId: null, action: 'invalidate' });
+}
+
+async function handleConfirm() {
+  if (!confirmModal.submissionId) return;
+  
+  const newIsInvalid = confirmModal.action === 'invalidate';
+  await handleInvalidate(confirmModal.submissionId, newIsInvalid);
+  closeConfirmModal();
+}
+```
+
+**Modal Rendering**:
+
+```tsx
+<ConfirmationModal
+  isOpen={confirmModal.isOpen}
+  onClose={closeConfirmModal}
+  onConfirm={handleConfirm}
+  title={confirmModal.action === 'invalidate' ? 'Mark Submission as Invalid?' : 'Restore Submission?'}
+  message={
+    confirmModal.action === 'invalidate'
+      ? 'This will exclude this submission from all counts and free the participant slot. This action is reversible.'
+      : 'This will include this submission in counts again. Make sure this is a legitimate response.'
+  }
+  confirmText={confirmModal.action === 'invalidate' ? 'Mark Invalid' : 'Restore'}
+  cancelText="Cancel"
+  confirmColor={confirmModal.action === 'invalidate' ? 'red' : 'green'}
+/>
+```
+
+**Mutation Handler** (unchanged, already exists):
+
+```typescript
+const handleInvalidate = async (submissionId: string, nextInvalid: boolean) => {
+  setInvalidatingId(submissionId);
+  try {
+    const updated = await invalidateSubmission(submissionId, nextInvalid);
+    setSubmissions(prev =>
+      prev.map(s => s._id === submissionId ? { ...s, isInvalid: updated.isInvalid } : s)
+    );
+    // Reload sessions so the submissionCount on the session row stays accurate
+    const sessionsData = await fetchSessionsByGroup(groupId!);
+    setSessions(sessionsData);
+    toast.success(nextInvalid ? 'Marked as invalid' : 'Restored');
+  } catch (e) {
+    toast.error('Action failed');
+  } finally {
+    setInvalidatingId(null);
+  }
+};
+```
+
+### Visual Hierarchy Improvements
+
+**Before** (current design):
+```
+┌─────────────────────────────────────────────────────────────┐
+│ All Submission (N)              [Invalid (1)] [Export CSV]  │ ← Mixed visually
+├─────────────────────────────────────────────────────────────┤
+│ # │ Participant ID │ Status │ Progress │ [Invalidate]      │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**After** (enhanced design):
+```
+┌─────────────────────────────────────────────────────────────┐
+│ All Submission (N)                          [Export CSV]    │ ← Clear hierarchy
+├─────────────────────────────────────────────────────────────┤
+│ [Valid (45)] [Invalid (3)]                                  │ ← Tab selector
+├─────────────────────────────────────────────────────────────┤
+│ # │ Participant ID │ Status │ Progress │ [🚫]              │ ← Icon button
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Implementation Checklist
+
+**Files to modify**:
+- [`components/GroupDetailView.tsx`](../components/GroupDetailView.tsx) — Primary implementation
+  - Lines 78-79: Add `confirmModal` state
+  - Lines 189-205: Update `handleInvalidate` (already exists, no changes)
+  - Lines 584-612: Replace inline filter button with tab selector
+  - Lines 726-740: Replace text button with icon button + modal trigger
+  - Add `ConfirmationModal` import and rendering at component bottom
+
+**No backend changes required** — all changes are frontend-only UI enhancements.
+
+**Maps to**: REQ-356 (icon buttons), REQ-357 (confirmation modal), REQ-358 (tab-based view)
+
+### GraphQL Mutation (Frontend)
+
+```typescript
+// utils/graphqlClient.ts
+const INVALIDATE_SUBMISSION = `
+  mutation InvalidateSubmission($submissionId: ID!, $isInvalid: Boolean!) {
+    invalidateSubmission(submissionId: $submissionId, isInvalid: $isInvalid) {
+      _id
+      isInvalid
+      isCompleted
+    }
+  }
+`;
+```
+
+**Maps to**: REQ-353
 
 ---
 
@@ -1049,7 +1476,7 @@ const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds)
 
 #### BUG-003: Admin history read-only view shows zero active edges
 
-**Problem**: When clicking a session ID from [`/admin/history`](../components/HistoryTable.tsx) to view configuration in read-only mode ([`/admin/setup`](../components/SetupPanel.tsx)), the "Active Edges" section displays as empty (k=0, no edge list) and the Network Graph shows no highlighted edges, despite the history table correctly showing the edge count and edge names.
+**Problem**: When clicking a session ID from [`/admin/view/manual`](../components/HistoryTable.tsx) to view configuration in read-only mode ([`/admin/setup`](../components/SetupPanel.tsx)), the "Active Edges" section displays as empty (k=0, no edge list) and the Network Graph shows no highlighted edges, despite the history table correctly showing the edge count and edge names.
 
 **Root Cause**:
 In the scenario-centric data model (REQ-320), `Session` documents do not store `activeEdgeIds` directly — this field only exists in `Scenario` documents. The [`AdminView.tsx`](../components/AdminView.tsx) history loader (lines 40-53) derives `activeEdgeIds` from `session.scenarios?.[0]?.activeEdgeIds || []` when mapping fetched sessions to local state. However, if the scenarios array is empty or not properly populated by the backend, this fallback results in `activeEdgeIds: []`, which gets passed to [`SetupPanel`](../components/SetupPanel.tsx), causing the UI to display zero edges.
@@ -1165,6 +1592,8 @@ This complete solution ensures data flows correctly: Database → Resolver → G
 | REQ-401..405 | Survey flow: routing, response capture, completion | ✅ Complete |
 | REQ-308 | `saveSurveyAnswer` atomically increments `Scenario.responseCount` | ✅ Complete |
 | REQ-309 | `completeSurvey` checks scenario-level completion | ✅ Complete |
+| REQ-340..342 | Submission progress tracking in admin history table | 📋 Planned (Phase 27) |
+| REQ-351..354 | `Submission.isInvalid` field, `invalidateSubmission` mutation, cascading `submissionCount` / `responseCount` corrections, admin UI filter | 📋 Planned (Phase 30) |
 | REQ-405.1 | Complete network history display in survey introduction | 📋 Planned |
 
 ---
@@ -1388,6 +1817,237 @@ Add optional tracking in Admin UI:
 
 ---
 
+## Submission Progress Tracking (REQ-340)
+
+### Overview
+
+The admin history table displays detailed progress information for each submission to help administrators understand participant completion patterns and identify drop-off points.
+
+### Current Data Model Support
+
+All required data is already available without schema changes:
+
+```typescript
+interface Submission {
+  _id: string;
+  sessionId: string;
+  results: SurveyResult[];           // ← Count of answered questions
+  demographics: {...} | null;         // ← Indicates demographics stage reached
+  isCompleted: boolean;               // ← Final completion status
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface Session {
+  _id: string;
+  scenarioIds: string[];              // ← Total question count
+  scenarios?: Scenario[];             // ← Populated for detailed access
+  // ...
+}
+```
+
+### Progress Calculation
+
+**Progress Formula**:
+```
+answeredCount = submission.results.length
+totalCount = session.scenarioIds.length (or session.scenarios.length if populated)
+progressPercent = (answeredCount / totalCount) × 100
+```
+
+**Stage Detection Logic**:
+```typescript
+function getSubmissionStage(submission: Submission, totalScenarios: number): StageInfo {
+  if (submission.isCompleted) {
+    return { stage: 'completed', label: '已完成 ✓', color: 'green' };
+  }
+  
+  const answeredCount = submission.results.length;
+  const hasAllAnswers = answeredCount >= totalScenarios;
+  const hasDemographics = submission.demographics !== null;
+  
+  if (hasDemographics || hasAllAnswers) {
+    // User finished questions but didn't submit final completion
+    return {
+      stage: 'demographics',
+      label: '填寫人口統計',
+      color: 'amber',
+      progress: answeredCount / totalScenarios
+    };
+  }
+  
+  return {
+    stage: 'answering',
+    label: `答題中 (${answeredCount}/${totalScenarios})`,
+    color: answeredCount / totalScenarios >= 0.5 ? 'amber' : 'red',
+    progress: answeredCount / totalScenarios
+  };
+}
+```
+
+### UI Implementation in HistoryTable.tsx
+
+**Current Structure** (lines 136-209):
+```tsx
+<tr className="bg-emerald-50/20">
+  <td colSpan={10} className="px-4 py-4">
+    <table className="w-full">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>          {/* Currently: Completed / Incomplete */}
+          <th>Start Time</th>
+          <th>End Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {submissions.map(sub => (
+          <tr>
+            <td>{sub._id}</td>
+            <td>{sub.isCompleted ? 'Completed' : 'Incomplete'}</td>
+            <td>{new Date(sub.createdAt).toLocaleString()}</td>
+            <td>{sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : '-'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </td>
+</tr>
+```
+
+**Enhanced Structure** (proposed):
+```tsx
+<tr className="bg-emerald-50/20">
+  <td colSpan={10} className="px-4 py-4">
+    <table className="w-full">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Status</th>
+          <th>Progress</th>          {/* NEW: Progress bar + stage */}
+          <th>Start Time</th>
+          <th>End Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {submissions.map(sub => {
+          const totalScenarios = s.scenarios?.length || s.scenarioIds?.length || 0;
+          const answeredCount = sub.results?.length || 0;
+          const stageInfo = getSubmissionStage(sub, totalScenarios);
+          
+          return (
+            <tr>
+              <td>{sub._id}</td>
+              
+              {/* Status Badge */}
+              <td>
+                {sub.isCompleted ? (
+                  <span className="bg-green-100 text-green-800">Completed</span>
+                ) : (
+                  <span className="bg-amber-100 text-amber-800">Incomplete</span>
+                )}
+              </td>
+              
+              {/* NEW: Progress Column */}
+              <td>
+                <div className="flex flex-col gap-1">
+                  {/* Stage Label */}
+                  <span className="text-xs font-medium text-gray-700">
+                    {stageInfo.label}
+                  </span>
+                  
+                  {/* Progress Bar (only for incomplete) */}
+                  {!sub.isCompleted && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500 whitespace-nowrap">
+                        {answeredCount}/{totalScenarios}
+                      </span>
+                      <div className="flex-1 min-w-[80px] bg-gray-200 rounded-full h-1.5">
+                        <div
+                          className={`h-1.5 rounded-full ${
+                            stageInfo.color === 'amber' ? 'bg-amber-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${(stageInfo.progress * 100).toFixed(0)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        {(stageInfo.progress * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </td>
+              
+              <td>{new Date(sub.createdAt).toLocaleString()}</td>
+              <td>{sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : '-'}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  </td>
+</tr>
+```
+
+### Visual Design Mockup
+
+**Before** (current):
+```
+┌─────────────────────────────────────────────────────────┐
+│ ID          │ Status      │ Start Time   │ End Time     │
+├─────────────────────────────────────────────────────────┤
+│ 507f1f77... │ Completed   │ 2026-05-06   │ 2026-05-06   │
+│ 507f1f88... │ Incomplete  │ 2026-05-05   │ -            │
+└─────────────────────────────────────────────────────────┘
+```
+
+**After** (enhanced):
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ ID          │ Status      │ Progress                │ Start    │ End      │
+├──────────────────────────────────────────────────────────────────────────┤
+│ 507f1f77... │ ✓ Completed │ 已完成 ✓                │ 2026...  │ 2026...  │
+│ 507f1f88... │ ⧗ Incomplete│ 答題中 (7/15)           │ 2026...  │ -        │
+│             │             │ 7/15 ████████░░░░░░ 47% │          │          │
+│ 507f1f99... │ ⧗ Incomplete│ 填寫人口統計            │ 2026...  │ -        │
+│             │             │ 15/15 ███████████ 100%  │          │          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+### Color Coding Strategy
+
+| Progress % | Color | Tailwind Classes | Interpretation |
+|-----------|-------|------------------|----------------|
+| 100% (completed) | Green | `bg-green-500` | Submission complete |
+| 50-99% | Amber | `bg-amber-500` | Good progress, likely to complete |
+| 0-49% | Red | `bg-red-500` | Low progress, may be abandoned |
+
+### Performance Considerations
+
+- **No additional queries**: All data is already loaded in `HistoryTable` component's `submissions` state
+- **Computation cost**: O(n) where n = number of submissions (already iterating in `.map()`)
+- **Rendering cost**: Minimal — adds one extra cell per row with simple CSS progress bar
+
+### Implementation Impact
+
+| Aspect | Details |
+|--------|---------|
+| **Files changed** | 1 file ([`components/HistoryTable.tsx`](../components/HistoryTable.tsx)) |
+| **Lines modified** | ~40 lines (add progress column and calculation logic) |
+| **Data model changes** | None |
+| **API changes** | None |
+| **Breaking changes** | None (purely additive UI enhancement) |
+
+### Traceability
+
+| REQ | Design Section | Implementation |
+|-----|----------------|----------------|
+| REQ-341 | Progress calculation logic, Stage detection | `HistoryTable.tsx` enhanced submission table |
+| REQ-342 | Color coding strategy, Visual design mockup | Progress bar rendering with conditional colors |
+| REQ-343 | N/A — deferred | Not implemented in Phase 27 |
+
+---
+
 ## Next Steps
 
 ### Completed ✅
@@ -1407,7 +2067,314 @@ Add optional tracking in Admin UI:
 - Performance optimization if needed at scale
 
 ### Future Enhancements 💡
-- CSV export of submissions
 - Real-time admin dashboards
 - Multi-language support (i18n expansion)
 - Email verification as additional layer (post-fingerprinting)
+
+---
+
+## Phase 31 — Complete Submission Data CSV Export (REQ-360..REQ-363)
+
+**Status**: 📋 Designed | **Priority**: High | **Requirement**: REQ-361, REQ-362, REQ-363
+
+### Objective
+
+Replace the current session-level CSV export (which only includes session metadata) with a comprehensive submission data export that includes all participant responses, complete scenario configurations, demographics, and validity flags in a format optimized for statistical analysis.
+
+### Background
+
+The current `handleExportCSV` function in [`GroupDetailView.tsx`](../components/GroupDetailView.tsx:187-215) exports only session-level metadata (session ID, focal/opponent nodes, progress, survey URL). Researchers need the actual participant response data including:
+- Individual cooperation probability answers for each scenario
+- Complete scenario configuration (active edges, edge states)
+- Participant demographics
+- Timestamps and validity flags
+- All fields needed to reconstruct the experimental condition
+
+### Design Decision: Row-Per-Answer Format
+
+**Choice**: CSV uses "long format" where each row represents one participant's response to one scenario.
+
+**Rationale**:
+- **Analysis-friendly**: Standard format for R (`tidyverse`), Python (`pandas`), and SQL databases
+- **Flexible filtering**: Easy to filter by scenario, participant, or time range
+- **Scenario details included**: Each row contains complete scenario configuration (no need for joins)
+- **Handles variable-length data**: Participants may answer different numbers of scenarios (especially in Mixed Mode)
+
+**Alternative considered**: "Wide format" (one row per submission, cooperation probabilities in separate columns) — rejected because it requires fixed column count and doesn't scale to variable scenario counts.
+
+### Data Schema
+
+#### CSV Column Specification (22 columns)
+
+| Column | Data Source | Type | Example | Notes |
+|---|---|---|---|---|
+| `Group Name` | `SessionGroup.name` or "Standalone Session" | string | "政治網絡實驗 2026-05" | Empty if `groupId` is null |
+| `Group ID` | `SessionGroup._id` | string (UUID) | "abc123..." | Empty if standalone |
+| `Session ID` | `Session._id` | string (UUID) | "def456..." | Always present |
+| `Submission ID` | `Submission._id` | string (UUID) | "ghi789..." | Always present |
+| `Participant ID` | `Submission.participantId` | string or empty | "fp_a1b2c3..." | May be null for Manual Mode |
+| `Scenario ID` | `Scenario._id` | string (UUID) | "jkl012..." | Always present |
+| `Scenario Index` | `Scenario.scenarioIndex` | integer | `0`, `42` | Position in design matrix |
+| `Focal Node` | `Scenario.focalNode` | string | "KMT1" | Agent ID format |
+| `Opponent Node` | `Scenario.opponentNode` | string | "DPP3" | Agent ID format |
+| `Active Edges` | `Scenario.activeEdgeIds.join('; ')` | string | "KMT1→DPP3; KMT2→DPP4" | Semicolon-separated edge names |
+| `Edge Count (k)` | `Scenario.activeEdgeIds.length` | integer | `2`, `5` | Number of active edges |
+| `Edge States (JSON)` | `JSON.stringify(Scenario.edgeStates)` | JSON string | `{"KMT1→DPP3":"give",...}` | Full edge state mapping |
+| `Cooperation Probability` | `SurveyResult.cooperationProbability` | float | `0.65`, `0.0`, `1.0` | Range [0.0, 1.0] |
+| `Response Time (ms)` | `SurveyResult.responseTime` | integer or empty | `3542` | May be null if not recorded |
+| `Answered At` | `SurveyResult.answeredAt` | ISO timestamp | "2026-05-06T12:34:56.789Z" | UTC timezone |
+| `Age` | `Submission.demographics.age` | integer or empty | `25`, `42` | Repeated for all rows of one submission |
+| `Gender` | `Submission.demographics.gender` | string or empty | "male", "female", "other" | Repeated for all rows |
+| `Education` | `Submission.demographics.education` | string or empty | "bachelor", "master" | Repeated for all rows |
+| `Submission Completed` | `Submission.isCompleted` | boolean | `true`, `false` | Repeated for all rows |
+| `Submission Invalid` | `Submission.isInvalid` | boolean | `true`, `false` | Repeated for all rows, defaults to `false` |
+| `Submission Created At` | `Submission.createdAt` | ISO timestamp | "2026-05-06T12:30:00.000Z" | Repeated for all rows |
+| `Submission Completed At` | `Submission.completedAt` | ISO timestamp or empty | "2026-05-06T12:45:00.000Z" | May be null if not completed |
+
+#### Row Generation Rules
+
+1. **One row per answer**: A submission with N scenarios generates N rows
+2. **Empty submissions**: If `submission.results.length === 0`, generate a single row with scenario fields empty (to preserve submission metadata)
+3. **Missing scenarios**: If a scenario referenced in `results[]` is deleted from the database, generate row with scenario ID but detail fields marked "DELETED"
+4. **Demographics repeat**: Age, gender, education values are repeated in every row for that submission (standard long format practice)
+
+### Implementation Design
+
+#### Location
+
+Modify [`GroupDetailView.tsx`](../components/GroupDetailView.tsx:187-215) `handleExportCSV` function.
+
+#### Required Data
+
+The export needs to join across four collections:
+1. **SessionGroup** — for group name (or null)
+2. **Session** — already loaded in component state
+3. **Submission** — already loaded in component state via GraphQL query
+4. **Scenario** — need to load referenced scenarios from `submission.results[].scenarioId`
+
+#### Data Loading Strategy
+
+**Option A: Frontend join** (recommended for Phase 31)
+- Use existing `submissions` state (already loaded for display)
+- Each submission already has `results` array with `scenarioId` references
+- Load all referenced scenarios in a single GraphQL query: `scenarios(ids: [...])`
+- Perform join in client JavaScript
+
+**Pro**: No backend changes, reuses existing GraphQL queries
+**Con**: Additional network round-trip for scenario data
+
+**Option B: Backend resolver**
+- Add new GraphQL query `exportSubmissionData(groupId: ID!)`
+- Resolver performs MongoDB aggregation pipeline with `$lookup` joins
+- Returns pre-joined flat data structure
+
+**Pro**: Single network call, optimized database join
+**Con**: Requires new backend resolver, query definition, more testing
+
+**Decision**: Start with Option A (frontend join) for fastest implementation. Consider Option B if performance becomes an issue (>1000 submissions).
+
+#### Edge Name Derivation
+
+Active edges are stored as IDs (e.g., `["KMT1→DPP3", "KMT2→DPP4"]`). The CSV should display human-readable edge names.
+
+**Approach**: Reuse existing helper functions from `GroupDetailView.tsx`:
+- Import `EDGES` from [`constants.ts`](../constants.ts)
+- Edge ID format is already `"{source}→{target}"`, so it's human-readable as-is
+- No additional transformation needed
+
+#### CSV Encoding & Format
+
+```typescript
+// Pseudo-code structure
+const rows = [];
+
+for (const submission of submissions) {
+  const groupName = group?.name || "Standalone Session";
+  const groupId = group?._id || "";
+  
+  // Handle empty submissions (no answers yet)
+  if (submission.results.length === 0) {
+    rows.push({
+      "Group Name": groupName,
+      "Group ID": groupId,
+      "Session ID": submission.sessionId,
+      "Submission ID": submission._id,
+      "Participant ID": submission.participantId || "",
+      // ... all scenario fields empty
+      "Submission Completed": submission.isCompleted,
+      "Submission Invalid": submission.isInvalid || false,
+      // ... timestamps
+    });
+    continue;
+  }
+  
+  // For each answer in this submission
+  for (const result of submission.results) {
+    const scenario = scenariosMap.get(result.scenarioId); // Pre-loaded scenario lookup
+    
+    if (!scenario) {
+      // Handle deleted scenario case
+      rows.push({
+        /* ... */
+        "Scenario ID": result.scenarioId,
+        "Scenario Index": "",
+        "Focal Node": "DELETED",
+        "Opponent Node": "DELETED",
+        /* ... */
+      });
+      continue;
+    }
+    
+    rows.push({
+      "Group Name": groupName,
+      "Group ID": groupId,
+      "Session ID": submission.sessionId,
+      "Submission ID": submission._id,
+      "Participant ID": submission.participantId || "",
+      "Scenario ID": scenario._id,
+      "Scenario Index": scenario.scenarioIndex,
+      "Focal Node": scenario.focalNode,
+      "Opponent Node": scenario.opponentNode,
+      "Active Edges": scenario.activeEdgeIds.join('; '),
+      "Edge Count (k)": scenario.activeEdgeIds.length,
+      "Edge States (JSON)": JSON.stringify(scenario.edgeStates),
+      "Cooperation Probability": result.cooperationProbability,
+      "Response Time (ms)": result.responseTime || "",
+      "Answered At": result.answeredAt || "",
+      "Age": submission.demographics?.age || "",
+      "Gender": submission.demographics?.gender || "",
+      "Education": submission.demographics?.education || "",
+      "Submission Completed": submission.isCompleted,
+      "Submission Invalid": submission.isInvalid || false,
+      "Submission Created At": submission.createdAt,
+      "Submission Completed At": submission.completedAt || ""
+    });
+  }
+}
+
+// Convert to CSV
+const headers = Object.keys(rows[0]);
+const csvContent = [
+  headers.join(','),
+  ...rows.map(row =>
+    headers.map(h => {
+      const value = row[h];
+      // Escape values containing commas, quotes, or newlines
+      if (typeof value === 'string' && /[",\n]/.test(value)) {
+        return `"${value.replace(/"/g, '""')}"`;
+      }
+      return value;
+    }).join(',')
+  )
+].join('\n');
+
+// Add BOM for UTF-8 Excel compatibility
+const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+```
+
+#### Filename Format
+
+```
+{group_name}_submissions_{YYYYMMDD}_{HHmmss}.csv
+```
+
+Example: `政治網絡實驗_2026_05_submissions_20260506_133045.csv`
+
+- Replace non-alphanumeric characters (except underscores/hyphens) with underscores for filesystem safety
+- Include date and time to make exports uniquely identifiable
+- Use "submissions" (not "sessions") to clarify data type
+
+#### UI Changes
+
+1. **Button label**: Change "Export CSV" tooltip/label to clarify it exports submission data (not just session metadata)
+2. **Disabled state**: Keep existing `disabled={sessions.length === 0}` check, but also disable if `submissions.length === 0`
+3. **Toast message**: Update to "CSV 已匯出: {filename}" to show actual filename
+
+### GraphQL Query Requirement
+
+Need to fetch scenarios for all `scenarioId` values referenced in `submissions[].results[]`:
+
+```graphql
+query GetScenariosForExport($ids: [ID!]!) {
+  scenarios(ids: $ids) {
+    _id
+    scenarioIndex
+    focalNode
+    opponentNode
+    activeEdgeIds
+    edgeStates
+  }
+}
+```
+
+**Check**: Does this query already exist? If not, add to [`backend/graphql/typeDefs.js`](../backend/graphql/typeDefs.js) and implement resolver in [`backend/graphql/resolvers.js`](../backend/graphql/resolvers.js).
+
+### Testing Strategy
+
+1. **Unit tests**:
+   - CSV escaping logic (commas, quotes, newlines)
+   - Empty submission handling
+   - Missing/deleted scenario handling
+   - Filename sanitization
+
+2. **Integration tests**:
+   - Export from Manual Mode session (single session, multiple submissions)
+   - Export from Batch Mode group (multiple sessions)
+   - Export from Mixed Mode group (dynamic sessions, 1:1 session-submission)
+   - Verify row count: sum of all `submission.results.length` across group
+   - Verify UTF-8 BOM presence (open in Excel, check Chinese characters render correctly)
+
+3. **Data validation**:
+   - Import CSV into R/Python and verify:
+     - All cooperation probabilities are in [0, 1]
+     - All timestamps are valid ISO format
+     - No missing required fields (Submission ID, Scenario ID, Cooperation Probability)
+     - Group-by submission ID count matches original `results.length`
+
+### Edge Cases
+
+1. **Submission with no answers** (user created entry but answered nothing)
+   - Generate 1 row with empty scenario fields
+   - Preserve submission metadata (ID, created timestamp, demographics if filled)
+
+2. **Deleted scenario** (scenario referenced in `results[]` but removed from database)
+   - Generate row with `Scenario ID` but mark detail fields as "DELETED"
+   - Log warning to console: "Scenario {id} referenced in submission but not found"
+
+3. **Invalid submission**
+   - Include in export (don't filter out)
+   - `Submission Invalid` column explicitly marks it for researcher's filtering decision
+
+4. **Mixed Mode with partial completion**
+   - Only scenarios in `results[]` are exported (not all scenarios assigned to session)
+   - Matches actual data collected, not theoretical assignment
+
+5. **Very large exports** (>10,000 rows)
+   - May cause browser memory pressure
+   - Consider showing progress indicator during CSV generation
+   - Future: stream to file or backend-generated download
+
+### Success Criteria
+
+- [ ] Export button generates CSV with 22 columns matching spec
+- [ ] Each row represents one answer (cooperation probability + scenario)
+- [ ] Demographics are correctly repeated for all rows of one submission
+- [ ] Invalid submissions are included and marked
+- [ ] Edge names are human-readable (not just IDs)
+- [ ] Edge states are preserved as JSON for programmatic parsing
+- [ ] CSV opens correctly in Excel with Chinese characters rendering properly (BOM present)
+- [ ] Filename includes group name and timestamp
+- [ ] Toast notification shows successful export
+- [ ] Export works for all three modes (Manual, Batch, Mixed)
+
+### Dependencies
+
+- **GraphQL**: May need to add `scenarios(ids: [ID!]!): [Scenario]` query if not already present
+- **Frontend utilities**: Reuse existing edge/node label helpers from `GroupDetailView.tsx`
+- **No backend changes**: All logic runs client-side (frontend join)
+
+### Migration Notes
+
+None. This is a new feature, not a schema change. Existing data is read-only for export.
+
+---

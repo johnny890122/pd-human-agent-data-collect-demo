@@ -10,6 +10,8 @@ import { createManualSession, createMixedGroup } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import MixedModeConfig from './MixedModeConfig';
 import { combinationCount } from '../utils/combinations';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 
 import AgentAvatar from './AgentAvatar';
 
@@ -153,7 +155,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
       );
       
       // Navigate to group details page
-      navigate(`/admin/groups/${result.groupId}`);
+      navigate(`/admin/view/batch/${result.groupId}`);
       
       // Reset parameters
       setGroupName('');
@@ -228,10 +230,10 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
           <div className={`p-4 bg-gradient-to-r rounded-xl border ${
             launchMode === 'manual'
               ? 'from-green-50 to-emerald-50 border-green-200'
-              : 'from-teal-50 to-cyan-50 border-teal-200'
+              : 'from-purple-50 to-indigo-50 border-purple-200'
           }`}>
             <label className={`block text-sm font-semibold mb-3 uppercase ${
-              launchMode === 'manual' ? 'text-green-900' : 'text-teal-900'
+              launchMode === 'manual' ? 'text-green-900' : 'text-purple-900'
             }`}>
               Launch Mode
             </label>
@@ -261,7 +263,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                 onClick={() => navigate('/admin/setup/mixed')}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   launchMode === 'mixed'
-                    ? 'border-teal-500 bg-teal-50 shadow-md'
+                    ? 'border-purple-500 bg-purple-50 shadow-md'
                     : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
@@ -269,7 +271,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
                   </svg>
-                  <span className="font-bold text-sm">Mixed</span>
+                  <span className="font-bold text-sm">Batch</span>
                 </div>
                 <p className="text-xs text-gray-600">
                   Cross-k balanced sampling
@@ -369,10 +371,6 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
             setScenariosPerSession={setScenariosPerSession}
             targetSizePerScenario={targetSizePerScenario}
             setTargetSizePerScenario={setTargetSizePerScenario}
-            groupName={groupName}
-            setGroupName={setGroupName}
-            groupDescription={groupDescription}
-            setGroupDescription={setGroupDescription}
           />
         )}
 
@@ -405,62 +403,112 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
 
         {/* Display Setting Preview in Mixed Mode */}
         {launchMode === 'mixed' && (
-          <div className="p-5 bg-gradient-to-br from-teal-50 to-cyan-100 rounded-xl border border-teal-100 shadow-inner">
-            <h3 className="text-sm font-semibold text-teal-800 uppercase tracking-wider mb-4">
+          <div className="p-5 bg-gradient-to-br from-purple-50 to-indigo-100 rounded-xl border border-purple-100 shadow-inner">
+            <h3 className="text-sm font-semibold text-purple-800 uppercase tracking-wider mb-4">
               Setting Preview
             </h3>
             <div className="w-full">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-2">
-                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm justify-center">
-                  <span className="text-xs text-teal-800 font-semibold tracking-wider mb-1">Total Scenarios</span>
-                  <span className="text-4xl font-black text-teal-600">{mixedStats.totalScenarios}</span>
+                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
+                  <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Total Scenarios</span>
+                  <span className="text-4xl font-black text-purple-600">{mixedStats.totalScenarios}</span>
+                  <span
+                    className="text-purple-600 mt-1"
+                    dangerouslySetInnerHTML={{
+                      __html: katex.renderToString(`= \\sum_{k=1}^{${maxK}} \\binom{12}{k} \\cdot 2^k`, {
+                        throwOnError: false,
+                        displayMode: false,
+                        output: 'html'
+                      })
+                    }}
+                  />
                 </div>
-                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm justify-center">
-                  <span className="text-xs text-teal-800 font-semibold tracking-wider mb-1">Est. Participants</span>
-                  <span className="text-4xl font-black text-teal-600">~{mixedStats.estimatedParticipants}</span>
+                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
+                  <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Est. Participants</span>
+                  <span className="text-4xl font-black text-purple-600">~{mixedStats.estimatedParticipants}</span>
+                  <span
+                    className="text-purple-600 mt-1"
+                    dangerouslySetInnerHTML={{
+                      __html: katex.renderToString(`= \\left\\lceil \\frac{\\text{Total} \\times ${targetSizePerScenario}}{${scenariosPerSession}} \\right\\rceil`, {
+                        throwOnError: false,
+                        displayMode: false,
+                        output: 'html'
+                      })
+                    }}
+                  />
                 </div>
               </div>
 
-              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm mt-3">
-                <span className="text-xs text-teal-800 font-semibold tracking-wider mb-2">Configuration</span>
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm mt-3">
+                <span className="text-xs text-purple-800 font-semibold tracking-wider mb-2">Configuration</span>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-teal-700">Max K:</span>
-                    <span className="text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                    <span className="text-sm font-medium text-purple-700">Maximum # of Edge</span>
+                    <span className="text-sm font-bold text-purple-900 bg-white px-2 py-0.5 rounded shadow-sm">
                       {maxK}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-teal-700">Scenarios/Session:</span>
-                    <span className="text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                    <span className="text-sm font-medium text-purple-700">Scenarios/Participant:</span>
+                    <span className="text-sm font-bold text-purple-900 bg-white px-2 py-0.5 rounded shadow-sm">
                       {scenariosPerSession}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-teal-700">Target Size/Scenario:</span>
-                    <span className="text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                    <span className="text-sm font-medium text-purple-700">Target Response/Scenario:</span>
+                    <span className="text-sm font-bold text-purple-900 bg-white px-2 py-0.5 rounded shadow-sm">
                       {targetSizePerScenario}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-teal-200/80 shadow-sm mt-3">
-                <span className="text-xs text-teal-800 font-semibold tracking-wider mb-1.5">Role Assignment</span>
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm mt-3">
+                <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1.5">Role Assignment</span>
                 <div className="flex flex-col gap-2 mt-auto">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-teal-700">Focal Node:</span>
-                    <span className="flex items-center gap-1.5 text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                    <span className="text-sm font-medium text-purple-700">Focal Node:</span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-purple-900 bg-white px-2 py-0.5 rounded shadow-sm">
                       <AgentAvatar agent={AGENTS[setup.focalNode as AgentId]} size={16} />
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-teal-700">Partner Node:</span>
-                    <span className="flex items-center gap-1.5 text-sm font-bold text-teal-900 bg-white px-2 py-0.5 rounded shadow-sm">
+                    <span className="text-sm font-medium text-purple-700">Partner Node:</span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-purple-900 bg-white px-2 py-0.5 rounded shadow-sm">
                       <AgentAvatar agent={AGENTS[setup.opponentNode as AgentId]} size={16} />
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Group Name */}
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm mt-3">
+                <label className="text-xs text-purple-800 font-semibold tracking-wider mb-2">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  placeholder={`k≤${maxK}, Focal: ${getFocalGroupLabel(setup.focalNode)}, Target: ${getPartnerGroupLabel(setup.opponentNode)} (${new Date().toLocaleDateString('zh-TW')})`}
+                  className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm bg-white"
+                  disabled={readOnly}
+                />
+              </div>
+
+              {/* Description */}
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm mt-3">
+                <label className="text-xs text-purple-800 font-semibold tracking-wider mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={groupDescription}
+                  onChange={(e) => setGroupDescription(e.target.value)}
+                  placeholder={`${scenariosPerSession} scenarios/participant, ${targetSizePerScenario} responses/scenario, Est. ${mixedStats.estimatedParticipants} participants`}
+                  rows={2}
+                  className="w-full px-3 py-2 border border-purple-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm resize-none bg-white"
+                  disabled={readOnly}
+                />
               </div>
             </div>
           </div>
@@ -501,7 +549,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               <button
                 onClick={() => {
                   if (launchMode === 'mixed') {
-                    handleMixedLaunch();
+                    setShowBatchConfirmModal(true);
                   } else {
                     setShowConfirmModal(true);
                   }
@@ -516,13 +564,13 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                   ((launchMode === 'manual' && k === 0) || isSaving || isMixedCreating)
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     : launchMode === 'mixed'
-                    ? 'bg-teal-600 text-white hover:bg-teal-700 shadow-teal-200'
+                    ? 'bg-purple-600 text-white hover:bg-purple-700 shadow-purple-200'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
                 }`}
               >
                 {isMixedCreating ? 'Creating Mixed Group...' :
                  isSaving ? 'Generating...' :
-                 launchMode === 'mixed' ? 'Create Mixed Mode Group' :
+                 launchMode === 'mixed' ? 'Launch Batch Sessions' :
                  'Launch Session'}
               </button>
 
@@ -548,6 +596,39 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                         className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors shadow-sm shadow-indigo-200"
                       >
                         Yes, Generate
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showBatchConfirmModal && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4 transition-all opacity-100 visible">
+                  <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 relative p-6 border border-gray-200">
+                    <h3 className="text-xl font-extrabold text-gray-900 mb-3">Confirm Batch Sessions</h3>
+                    <p className="text-sm text-gray-600 mb-4 leading-relaxed">
+                      You are about to launch batch sessions with:
+                    </p>
+                    <ul className="text-sm text-gray-700 mb-6 space-y-1.5 bg-purple-50 rounded-xl p-4 border border-purple-100">
+                      <li>Max k: <strong className="text-purple-700">{maxK}</strong></li>
+                      <li>Scenarios per participant: <strong className="text-purple-700">{scenariosPerSession}</strong></li>
+                      <li>Estimated participants: <strong className="text-purple-700">{mixedStats.estimatedParticipants}</strong></li>
+                    </ul>
+                    <div className="flex gap-3 justify-end">
+                      <button
+                        onClick={() => setShowBatchConfirmModal(false)}
+                        className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowBatchConfirmModal(false);
+                          handleMixedLaunch();
+                        }}
+                        className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl transition-colors shadow-sm shadow-purple-200"
+                      >
+                        Yes, Launch
                       </button>
                     </div>
                   </div>

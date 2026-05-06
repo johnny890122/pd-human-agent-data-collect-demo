@@ -18,6 +18,7 @@ interface SurveyViewProps {
   initialEntryId?: string;
   isTurnstileVerified: boolean;
   onTurnstileVerified: () => void;
+  mixedModeScenariosPerSession?: number | null;
 }
 
 
@@ -31,19 +32,29 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   initialEntryId,
   isTurnstileVerified,
   onTurnstileVerified,
+  mixedModeScenariosPerSession,
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('sessionId');
+  const groupId = searchParams.get('groupId');
+  const mode = searchParams.get('mode');
   const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const turnstileSiteKey = isLocalHost
     ? '1x00000000000000000000AA'
     : (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '0x4AAAAAAC2vj0xOA6Fpx2cd');
 
   const navigateWithSession = (path: string) => {
-    navigate(sessionId ? `${path}?sessionId=${sessionId}` : path);
+    // Mixed Mode during intro (before session creation): preserve groupId + mode
+    if (groupId && mode === 'mixed' && !sessionId) {
+      navigate(`${path}?groupId=${groupId}&mode=mixed`);
+    } else if (sessionId) {
+      navigate(`${path}?sessionId=${sessionId}`);
+    } else {
+      navigate(path);
+    }
   };
 
   // Keep users in the survey flow by ignoring browser Back navigation.
@@ -313,10 +324,11 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   if (isIntroStep) {
     return (
       <>
-        <SurveyIntro 
-          setup={setup} 
+        <SurveyIntro
+          setup={setup}
           currentStep={introStep}
           onNavigateIntro={(step) => navigateWithSession(`/survey/intro/${step}`)}
+          mixedModeScenariosPerSession={mixedModeScenariosPerSession}
           onFinish={() => {
             setTurnstileError(null);
             setShowTurnstileGate(true);

@@ -19,8 +19,8 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const activeTab: 'setup' | 'history' | 'groups' =
-    location.pathname === '/admin/history' ? 'history' :
-    location.pathname.startsWith('/admin/groups') ? 'groups' :
+    location.pathname.startsWith('/admin/view/manual') ? 'history' :
+    location.pathname.startsWith('/admin/view/batch') ? 'groups' :
     location.pathname.startsWith('/admin/setup') ? 'setup' :
     'setup';
   const isReadOnly = location.state?.readOnly === true;
@@ -105,7 +105,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
   };
 
   const handleBackFromReadOnly = () => {
-    navigate('/admin/history');
+    navigate('/admin/view/manual');
   };
 
   const handleClearDatabase = async () => {
@@ -143,17 +143,17 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/admin/history')}
+                onClick={() => navigate('/admin/view/manual')}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
               >
                 View Single Session
               </button>
               <button
                 type="button"
-                onClick={() => navigate('/admin/groups')}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'groups' ? 'bg-purple-50 text-purple-700 border border-purple-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
+                onClick={() => navigate('/admin/view/batch')}
+                className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-colors ${activeTab === 'groups' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'text-gray-600 hover:bg-gray-50 border border-transparent'}`}
               >
-                View Session Batchs 
+                View Batch Sessions
               </button>
               {import.meta.env.DEV && (
                 <button
@@ -185,7 +185,7 @@ const AdminView: React.FC<AdminViewProps> = ({ setup, setSetup, onSave }) => {
                 onLoadSetup={handleLoadHistorySetup}
               />
             ) : activeTab === 'groups' ? (
-              location.pathname.includes('/admin/groups/') ? (
+              location.pathname.includes('/admin/view/batch/') ? (
                 <GroupDetailView />
               ) : (
                 <GroupsTable />

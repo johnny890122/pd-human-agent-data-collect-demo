@@ -12,6 +12,64 @@ interface HistoryTableProps {
   onLoadSetup: (setup: Session) => void;
 }
 
+// Helper function to determine submission stage and progress
+interface StageInfo {
+  stage: 'completed' | 'demographics' | 'answering';
+  label: string;
+  color: 'green' | 'amber' | 'red';
+  progress?: number;  // 0-1
+}
+
+function getSubmissionStage(
+  submission: Submission,
+  totalScenarios: number,
+  actualAnsweredCount?: number
+): StageInfo {
+  // Handle edge case: no scenarios
+  if (totalScenarios === 0) {
+    return {
+      stage: 'answering',
+      label: 'N/A',
+      color: 'red',
+      progress: 0
+    };
+  }
+
+  // Completed submission
+  if (submission.isCompleted) {
+    return {
+      stage: 'completed',
+      label: 'Completed',
+      color: 'green'
+    };
+  }
+
+  // Use provided actualAnsweredCount if available, otherwise fall back to results length
+  const answeredCount = actualAnsweredCount !== undefined ? actualAnsweredCount : (submission.results?.length || 0);
+  // Cap at 100% in case of data inconsistency
+  const progress = Math.min(answeredCount / totalScenarios, 1);
+  const hasAllAnswers = answeredCount >= totalScenarios;
+  const hasDemographics = submission.demographics !== null && submission.demographics !== undefined;
+
+  // Demographics stage: finished all questions but not submitted final completion
+  if (hasDemographics || hasAllAnswers) {
+    return {
+      stage: 'demographics',
+      label: 'Demographics',
+      color: 'amber',
+      progress
+    };
+  }
+
+  // Answering stage: still working on questions
+  return {
+    stage: 'answering',
+    label: `Scenarios (${answeredCount}/${totalScenarios})`,
+    color: progress >= 0.5 ? 'amber' : 'red',
+    progress
+  };
+}
+
 const HistoryTable: React.FC<HistoryTableProps> = ({
   history,
   historyPage,
@@ -41,19 +99,43 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
   const [loadingSubmissions, setLoadingSubmissions] = useState<boolean>(false);
 
   useEffect(() => {
-    async function load() {
+    let isInitialLoad = true;
+    
+    async function load(showLoading = false) {
       if (expandedRows.size === 0) return; // Only fetch if something is expanded
       try {
-        setLoadingSubmissions(true);
+        // Only show loading indicator on initial load, not on auto-refresh
+        if (showLoading) {
+          setLoadingSubmissions(true);
+        }
         const data = await fetchRecentSubmissions();
         setSubmissions(data);
       } catch (e) {
         console.error('Failed to load submissions:', e);
       } finally {
-        setLoadingSubmissions(false);
+        if (showLoading) {
+          setLoadingSubmissions(false);
+        }
       }
     }
-    load();
+    
+    // Initial load with loading indicator
+    if (expandedRows.size > 0) {
+      load(true);
+    }
+    
+    // Auto-refresh every 5 seconds when rows are expanded (silent refresh, no loading indicator)
+    let intervalId: NodeJS.Timeout | null = null;
+    if (expandedRows.size > 0) {
+      intervalId = setInterval(() => load(false), 5000);
+    }
+    
+    // Cleanup interval on unmount or when expandedRows changes
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
   }, [expandedRows]);
 
   return (
@@ -178,6 +260,7 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                                 <tr>
                                   <th className="px-3 py-2 font-medium text-gray-600">ID</th>
                                   <th className="px-3 py-2 font-medium text-gray-600">Status</th>
+                                  <th className="px-3 py-2 font-medium text-gray-600">Progress</th>
                                   <th className="px-3 py-2 font-medium text-gray-600">Start Time</th>
                                   <th className="px-3 py-2 font-medium text-gray-600">End Time</th>
                                 </tr>
@@ -185,28 +268,73 @@ const HistoryTable: React.FC<HistoryTableProps> = ({
                               <tbody>
                                 {submissions
                                   .filter((sub) => sub.sessionId === s._id || sub.sessionId === s._id)
-                                  .map((sub) => (
-                                    <tr key={sub._id} className="border-t border-emerald-50 hover:bg-slate-50">
-                                      <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub._id}</td>
-                                      <td className="px-3 py-2">
-                                        {sub.isCompleted ? (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800">
-                                            Completed
-                                          </span>
-                                        ) : (
-                                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
-                                            Incomplete
-                                          </span>
-                                        )}
-                                      </td>
-                                      <td className="px-3 py-2 text-gray-500">
-                                        {new Date(sub.createdAt).toLocaleString()}
-                                      </td>
-                                      <td className="px-3 py-2 text-gray-500">
-                                        {sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : '-'}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  .map((sub) => {
+                                    // Calculate progress for this submission
+                                    const totalScenarios = s.scenarios?.length || s.scenarioIds?.length || 0;
+                                    
+                                    // Calculate actual answered count by matching with session scenarios
+                                    const answeredCount = sub.results ?
+                                      s.scenarios?.filter(scenario =>
+                                        sub.results.some(r => r.scenarioId === scenario._id)
+                                      ).length || 0
+                                      : 0;
+                                    
+                                    const stageInfo = getSubmissionStage(sub, totalScenarios, answeredCount);
+
+                                    return (
+                                      <tr key={sub._id} className="border-t border-emerald-50 hover:bg-slate-50">
+                                        <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub._id}</td>
+                                        <td className="px-3 py-2">
+                                          {sub.isCompleted ? (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-800">
+                                              Completed
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-800">
+                                              Incomplete
+                                            </span>
+                                          )}
+                                        </td>
+                                        
+                                        {/* NEW: Progress Column */}
+                                        <td className="px-3 py-2">
+                                          <div className="flex flex-col gap-1">
+                                            {/* Stage label */}
+                                            <span className="text-[10px] font-medium text-gray-700">
+                                              {stageInfo.label}
+                                            </span>
+                                            
+                                            {/* Progress bar (only for incomplete submissions) */}
+                                            {!sub.isCompleted && stageInfo.progress !== undefined && (
+                                              <div className="flex items-center gap-2">
+                                                <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                                                  {answeredCount}/{totalScenarios}
+                                                </span>
+                                                <div className="flex-1 min-w-[60px] bg-gray-200 rounded-full h-1">
+                                                  <div
+                                                    className={`h-1 rounded-full transition-all duration-500 ease-out ${
+                                                      stageInfo.color === 'amber' ? 'bg-amber-500' : 'bg-red-500'
+                                                    }`}
+                                                    style={{ width: `${(stageInfo.progress * 100).toFixed(0)}%` }}
+                                                  />
+                                                </div>
+                                                <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                                                  {(stageInfo.progress * 100).toFixed(0)}%
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </td>
+
+                                        <td className="px-3 py-2 text-gray-500">
+                                          {new Date(sub.createdAt).toLocaleString()}
+                                        </td>
+                                        <td className="px-3 py-2 text-gray-500">
+                                          {sub.updatedAt ? new Date(sub.updatedAt).toLocaleString() : '-'}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                               </tbody>
                             </table>
                           ) : (

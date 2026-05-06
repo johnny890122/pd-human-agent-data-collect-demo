@@ -71,6 +71,7 @@ export interface Submission {
   } | null;
   isCompleted: boolean;
   completedAt?: string | null;
+  isInvalid?: boolean;
   createdAt: string;
   updatedAt: string;
 }

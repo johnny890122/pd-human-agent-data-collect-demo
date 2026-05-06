@@ -29,16 +29,19 @@ const submissionSchema = new mongoose.Schema(
     
     isCompleted: { type: Boolean, required: true, default: false },
     completedAt: { type: Date, required: false, default: null },
+    isInvalid: { type: Boolean, required: true, default: false },
   },
   { timestamps: true }
 );
 
 // 索引：基本查詢
 submissionSchema.index({ sessionId: 1 });
-// 索引：Mixed Mode 防重複提交
-submissionSchema.index({ sessionId: 1, participantId: 1 });
+// 索引：Mixed Mode 防重複提交 — unique + sparse 允許 null（Manual/Batch 無 fingerprint）
+submissionSchema.index({ sessionId: 1, participantId: 1 }, { unique: true, sparse: true });
 // 索引：完成狀態查詢
 submissionSchema.index({ isCompleted: 1, createdAt: -1 });
+// 索引：無效提交過濾
+submissionSchema.index({ isInvalid: 1 });
 
 export const SubmissionModel =
   mongoose.models.Submission ||

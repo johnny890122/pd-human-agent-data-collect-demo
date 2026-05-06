@@ -5,9 +5,14 @@ const SurveyWelcome: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('sessionId');
+  const groupId = searchParams.get('groupId');
+  const mode = searchParams.get('mode');
 
   const handleStart = () => {
-    if (sessionId) {
+    // Mixed Mode: Preserve groupId + mode through intro
+    if (groupId && mode === 'mixed') {
+      navigate(`/survey/intro/0?groupId=${groupId}&mode=mixed`);
+    } else if (sessionId) {
       navigate(`/survey/intro/0?sessionId=${sessionId}`);
     } else {
       navigate('/survey/intro/0');

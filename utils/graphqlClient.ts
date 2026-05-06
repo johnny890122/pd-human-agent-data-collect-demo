@@ -1,4 +1,4 @@
-import { Session, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
+ahimport { Session, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -110,6 +110,42 @@ export async function fetchAllSessions(excludeGroupSessions = false): Promise<Se
 
   const data = await runGraphQL<{ allSessions: Session[] }>(query, { excludeGroupSessions });
   return data.allSessions || [];
+}
+
+export async function findUserSession(groupId: string, participantId: string): Promise<Session | null> {
+  const query = `
+    query FindUserSession($groupId: ID!, $participantId: String!) {
+      findUserSession(groupId: $groupId, participantId: $participantId) {
+        _id
+        scenarioIds
+        scenarios {
+          _id
+          focalNode
+          opponentNode
+          activeEdgeIds
+          edgeStates
+          scenarioIndex
+          status
+          responseCount
+          targetSize
+        }
+        focalNode
+        opponentNode
+        sampleSize
+        groupId
+        submissionCount
+        metadata {
+          participantId
+          createdFor
+        }
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ findUserSession: Session | null }>(query, { groupId, participantId });
+  return data.findUserSession;
 }
 
 export async function fetchSessionsByGroup(groupId: string): Promise<Session[]> {
@@ -408,10 +444,10 @@ export async function deleteSessionGroup(groupId: string): Promise<boolean> {
 // NEW API: Unified Survey Flow
 // ============================================================================
 
-export async function startSurvey(sessionId: string): Promise<SubmissionType> {
+export async function startSurvey(sessionId: string, participantId?: string): Promise<SubmissionType> {
   const mutation = `
-    mutation StartSurvey($sessionId: ID!) {
-      startSurvey(sessionId: $sessionId) {
+    mutation StartSurvey($sessionId: ID!, $participantId: String) {
+      startSurvey(sessionId: $sessionId, participantId: $participantId) {
         _id
         sessionId
         participantId
@@ -427,7 +463,10 @@ export async function startSurvey(sessionId: string): Promise<SubmissionType> {
     }
   `;
 
-  const data = await runGraphQL<{ startSurvey: SubmissionType }>(mutation, { sessionId });
+  const data = await runGraphQL<{ startSurvey: SubmissionType }>(mutation, {
+    sessionId,
+    participantId: participantId || null,
+  });
   return data.startSurvey;
 }
 
@@ -500,8 +539,20 @@ export async function fetchRecentSubmissions(): Promise<SubmissionType[]> {
         _id
         sessionId
         participantId
+        results {
+          scenarioId
+          cooperationProbability
+          responseTime
+          answeredAt
+        }
+        demographics {
+          age
+          gender
+          education
+        }
         isCompleted
         completedAt
+        isInvalid
         createdAt
         updatedAt
       }
@@ -510,6 +561,56 @@ export async function fetchRecentSubmissions(): Promise<SubmissionType[]> {
 
   const data = await runGraphQL<{ recentSubmissions: SubmissionType[] }>(query);
   return data.recentSubmissions || [];
+}
+
+export async function invalidateSubmission(
+  submissionId: string,
+  isInvalid: boolean
+): Promise<SubmissionType> {
+  const mutation = `
+    mutation InvalidateSubmission($submissionId: ID!, $isInvalid: Boolean!) {
+      invalidateSubmission(submissionId: $submissionId, isInvalid: $isInvalid) {
+        _id
+        sessionId
+        isCompleted
+        isInvalid
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ invalidateSubmission: SubmissionType }>(mutation, {
+    submissionId,
+    isInvalid,
+  });
+
+  return data.invalidateSubmission;
+}
+
+// ============================================================================
+// Scenario Queries
+// ============================================================================
+
+export async function fetchScenariosByIds(ids: string[]): Promise<Scenario[]> {
+  const query = `
+    query GetScenariosByIds($ids: [ID!]!) {
+      scenarios(ids: $ids) {
+        _id
+        scenarioIndex
+        focalNode
+        opponentNode
+        activeEdgeIds
+        edgeStates
+      }
+    }
+  `;
+
+  try {
+    const data = await runGraphQL<{ scenarios: Scenario[] }>(query, { ids });
+    return data.scenarios || [];
+  } catch (error) {
+    console.error("Failed to fetch scenarios by IDs:", error);
+    return [];
+  }
 }
 
 // ============================================================================

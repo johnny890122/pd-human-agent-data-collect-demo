@@ -1,4 +1,4 @@
-ahimport { Session, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
+import { Session, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 

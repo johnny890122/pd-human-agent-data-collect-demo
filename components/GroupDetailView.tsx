@@ -15,6 +15,7 @@ interface StageInfo {
   progress?: number;  // 0-1
 }
 
+
 function getSubmissionStage(
   submission: Submission,
   totalScenarios: number,

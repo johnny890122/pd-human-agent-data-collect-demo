@@ -245,10 +245,10 @@ const GroupDetailView: React.FC = () => {
    * Scenario ID, Scenario Index, Focal Node, Opponent Node, Active Edges,
    * Edge Count (k), Edge States (JSON), Cooperation Probability,
    * Response Time (ms), Answered At, Age, Gender, Education,
-   * Submission Completed, Submission Invalid, Submission Created At, Submission Completed At
+   * Submission Completed, Valid, Submission Created At, Submission Completed At
    */
   const handleExportCSV = async () => {
-    if (!group || sessions.length === 0 || submissions.length === 0) {
+    if (!group || sessions.length === 0 || groupSubmissions.length === 0) {
       toast.error('No submission data to export');
       return;
     }
@@ -256,9 +256,14 @@ const GroupDetailView: React.FC = () => {
     try {
       toast.loading('Generating CSV...', { id: 'csv-export' });
 
+      // Debug logging
+      console.log('Total sessions:', sessions.length);
+      console.log('Total submissions:', groupSubmissions.length);
+      console.log('Participant IDs:', groupSubmissions.map(s => s.participantId));
+
       // Step 1: Collect all unique scenario IDs from submissions
       const scenarioIds = new Set<string>();
-      submissions.forEach(sub => {
+      groupSubmissions.forEach(sub => {
         sub.results?.forEach(result => {
           scenarioIds.add(result.scenarioId);
         });
@@ -286,7 +291,7 @@ const GroupDetailView: React.FC = () => {
       const rows: string[][] = [];
 
       // Step 4: For each submission, generate rows
-      for (const submission of submissions) {
+      for (const submission of groupSubmissions) {
         // Handle empty submissions (no answers yet)
         if (!submission.results || submission.results.length === 0) {
           rows.push([
@@ -309,7 +314,7 @@ const GroupDetailView: React.FC = () => {
             submission.demographics?.gender || '',
             submission.demographics?.education || '',
             submission.isCompleted ? 'true' : 'false',
-            submission.isInvalid ? 'true' : 'false',
+            !submission.isInvalid ? 'true' : 'false',
             submission.createdAt || '',
             submission.completedAt || ''
           ]);
@@ -343,7 +348,7 @@ const GroupDetailView: React.FC = () => {
               submission.demographics?.gender || '',
               submission.demographics?.education || '',
               submission.isCompleted ? 'true' : 'false',
-              submission.isInvalid ? 'true' : 'false',
+              !submission.isInvalid ? 'true' : 'false',
               submission.createdAt || '',
               submission.completedAt || ''
             ]);
@@ -371,7 +376,7 @@ const GroupDetailView: React.FC = () => {
             submission.demographics?.gender || '',
             submission.demographics?.education || '',
             submission.isCompleted ? 'true' : 'false',
-            submission.isInvalid ? 'true' : 'false',
+            !submission.isInvalid ? 'true' : 'false',
             submission.createdAt || '',
             submission.completedAt || ''
           ]);
@@ -399,7 +404,7 @@ const GroupDetailView: React.FC = () => {
         'Gender',
         'Education',
         'Submission Completed',
-        'Submission Invalid',
+        'Valid',
         'Submission Created At',
         'Submission Completed At'
       ];
@@ -467,6 +472,10 @@ const GroupDetailView: React.FC = () => {
   const isMixedMode = group.mode === 'mixed';
   const masterUrl = isMixedMode ? `${window.location.origin}/survey/welcome?groupId=${groupId}&mode=mixed` : null;
 
+  // Filter submissions to only those belonging to this group's sessions
+  const sessionIds = new Set(sessions.map(s => s._id));
+  const groupSubmissions = submissions.filter(s => sessionIds.has(s.sessionId));
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 py-6">
@@ -493,17 +502,19 @@ const GroupDetailView: React.FC = () => {
           </div>
           
           {/* Statistics Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-3">
             {isMixedMode && (
               <>
-                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
-                  <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Total Scenarios</span>
-                  <span className="text-4xl font-black text-purple-600">{group.totalScenarios}</span>
-                </div>
                 <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
                   <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Est. Participants</span>
                   <span className="text-4xl font-black text-purple-600">
                     ~{Math.ceil((group.totalScenarios * (group.config.targetSizePerScenario || 1)) / (group.config.scenariosPerSession || 1))}
+                  </span>
+                </div>
+                <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
+                  <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Completed Participants</span>
+                  <span className="text-4xl font-black text-purple-600">
+                    {groupSubmissions.filter(s => !s.isInvalid && s.isCompleted).length}
                   </span>
                 </div>
               </>
@@ -611,11 +622,11 @@ const GroupDetailView: React.FC = () => {
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm">
           <div className="border-b border-gray-200 px-6 py-4 flex justify-between items-center">
             <h2 className="text-lg font-bold text-gray-900">
-              All Submission ({sessions.length})
+              All Submission
             </h2>
             <button
               onClick={handleExportCSV}
-              disabled={sessions.length === 0 || submissions.length === 0}
+              disabled={sessions.length === 0 || groupSubmissions.length === 0}
               className={`px-4 py-2 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${'bg-purple-600 hover:bg-purple-700'}`}
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -636,7 +647,7 @@ const GroupDetailView: React.FC = () => {
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Valid ({submissions.filter(s => !s.isInvalid).length})
+                Valid ({groupSubmissions.filter(s => !s.isInvalid).length})
               </button>
               <button
                 onClick={() => setShowInvalid(true)}
@@ -646,7 +657,7 @@ const GroupDetailView: React.FC = () => {
                     : 'border-transparent text-gray-500 hover:text-gray-700'
                 }`}
               >
-                Invalid ({submissions.filter(s => s.isInvalid).length})
+                Invalid ({groupSubmissions.filter(s => s.isInvalid).length})
               </button>
             </div>
           </div>
@@ -663,8 +674,15 @@ const GroupDetailView: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Empty state for Invalid tab with no invalid submissions */}
-              {showInvalid && submissions.filter(s => s.isInvalid).length === 0 ? (
+              {/* Empty state for Valid tab with no valid submissions */}
+              {!showInvalid && groupSubmissions.filter(s => !s.isInvalid).length === 0 ? (
+                <div className="px-6 py-12 text-center">
+                  <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                  </svg>
+                  <p className="text-gray-500 text-sm">No valid submissions</p>
+                </div>
+              ) : showInvalid && groupSubmissions.filter(s => s.isInvalid).length === 0 ? (
                 <div className="px-6 py-12 text-center">
                   <svg className="w-12 h-12 mx-auto text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -707,7 +725,7 @@ const GroupDetailView: React.FC = () => {
 
                       return (
                         <React.Fragment key={session._id}>
-                          <tr className={`hover:bg-gray-50 transition-colors ${submission?.isInvalid ? 'opacity-40' : ''}`}>
+                          <tr className={`hover:bg-gray-50 transition-colors ${submission?.isInvalid && !showInvalid ? 'opacity-40' : ''}`}>
                             <td className="py-3 text-gray-500">{index + 1}</td>
                             <td className="py-3 font-mono text-xs text-purple-700">
                               <div className="truncate max-w-[150px]" title={submission?.participantId || session._id}>
@@ -817,7 +835,7 @@ const GroupDetailView: React.FC = () => {
                           
                           {/* Expanded Row: Show Scenarios Details */}
                           {isExpanded && (
-                            <tr className={`bg-purple-50/20 ${submission?.isInvalid ? 'opacity-40' : ''}`}>
+                            <tr className={`bg-purple-50/20 ${submission?.isInvalid && !showInvalid ? 'opacity-40' : ''}`}>
                               <td colSpan={6} className="px-4 py-3 border-b border-gray-100">
                                 {session.scenarios && session.scenarios.length > 0 ? (
                                   <table className="w-full text-left text-xs bg-white rounded-md border border-purple-100 overflow-hidden">
@@ -872,7 +890,7 @@ const GroupDetailView: React.FC = () => {
                                                     Answered
                                                   </span>
                                                   <span className="text-[10px] text-gray-500">
-                                                    ({scenarioResult.cooperationProbability * 100}%)
+                                                    ({(scenarioResult.cooperationProbability * 100).toFixed(2)}%)
                                                   </span>
                                                 </div>
                                               ) : (
@@ -1011,7 +1029,7 @@ const GroupDetailView: React.FC = () => {
                                               const stageInfo = getSubmissionStage(sub, totalScenarios, answeredCount);
 
                                               return (
-                                                <tr key={sub._id} className={`border-t border-purple-50 hover:bg-slate-50 ${sub.isInvalid ? 'opacity-40' : ''}`}>
+                                                <tr key={sub._id} className={`border-t border-purple-50 hover:bg-slate-50 ${sub.isInvalid && !showInvalid ? 'opacity-40' : ''}`}>
                                                   <td className="px-3 py-2 font-mono text-[10px] text-gray-500">{sub.participantId || sub._id}</td>
                                                   <td className="px-3 py-2">
                                                     {sub.isInvalid ? (

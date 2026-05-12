@@ -88,11 +88,11 @@ const GroupsTable: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="text-gray-400 border-b border-purple-100">
-                <th className="pb-3 font-bold uppercase">Group Name</th>
-                <th className="pb-3 font-bold uppercase">Focal Group</th>
-                <th className="pb-3 font-bold uppercase">Partner Group</th>
-                <th className="pb-3 font-bold uppercase">k</th>
-                <th className="pb-3 font-bold uppercase">Sessions</th>
+                <th className="pb-3 font-bold uppercase">Name</th>
+                <th className="pb-3 font-bold uppercase">Focal</th>
+                <th className="pb-3 font-bold uppercase">Partner</th>
+                <th className="pb-3 font-bold uppercase">Est. N</th>
+                <th className="pb-3 font-bold uppercase">Max k</th>
                 <th className="pb-3 font-bold uppercase">Progress</th>
                 <th className="pb-3 font-bold uppercase">Created</th>
                 <th className="pb-3 font-bold uppercase">Actions</th>
@@ -102,6 +102,12 @@ const GroupsTable: React.FC = () => {
               {groups.map(group => {
                 // Calculate completion based on completionPercentage if available
                 const progress = group.completionPercentage ?? 0;
+                
+                // Calculate estimated participants for mixed mode
+                const isMixedMode = group.mode === 'mixed';
+                const estParticipants = isMixedMode
+                  ? Math.ceil((group.totalScenarios * (group.config.targetSizePerScenario || 1)) / (group.config.scenariosPerSession || 1))
+                  : null;
                 
                 return (
                   <tr key={group._id} className="hover:bg-purple-50/40 transition-colors">
@@ -125,13 +131,13 @@ const GroupsTable: React.FC = () => {
                         {getPartnerGroupLabel(group.config.opponentNode)}
                       </span>
                     </td>
-                    <td className="py-3 font-mono text-purple-700 font-bold text-base">
-                      {'-'}
-                    </td>
                     <td className="py-3">
                       <span className="font-bold text-gray-700 text-sm">
-                        {group.totalSessions}
+                        {estParticipants !== null ? `~${estParticipants}` : '-'}
                       </span>
+                    </td>
+                    <td className="py-3 font-mono text-purple-700 font-bold text-base">
+                      {group.config.maxK || '-'}
                     </td>
                     <td className="py-3">
                       <div className="flex items-center gap-2 min-w-[120px]">

@@ -38,6 +38,32 @@ export const getBezierPoint = (t: number, p0: Point, p1: Point, p2: Point): Poin
   y: (1 - t) * (1 - t) * p0.y + 2 * (1 - t) * t * p1.y + t * t * p2.y,
 });
 
+/** Binary-search the bezier for the smallest t where bezier(t) is targetDist from p0 (start). */
+export const findBezierTFromStart = (
+  p0: Point, p1: Point, p2: Point, targetDist: number
+): number => {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (distance(getBezierPoint(mid, p0, p1, p2), p0) < targetDist) lo = mid;
+    else hi = mid;
+  }
+  return (lo + hi) / 2;
+};
+
+/** Binary-search the bezier for the largest t where bezier(t) is targetDist from p2 (end). */
+export const findBezierTFromEnd = (
+  p0: Point, p1: Point, p2: Point, targetDist: number
+): number => {
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 20; i++) {
+    const mid = (lo + hi) / 2;
+    if (distance(getBezierPoint(mid, p0, p1, p2), p2) < targetDist) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+};
+
 /**
  * Generates a Full Factorial Design Matrix (2^k) for frontend preview
  * @param activeEdgeIds List of edge IDs that are active factors

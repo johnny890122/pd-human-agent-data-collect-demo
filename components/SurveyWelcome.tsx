@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const SurveyWelcome: React.FC = () => {
@@ -7,6 +7,12 @@ const SurveyWelcome: React.FC = () => {
   const sessionId = searchParams.get('sessionId');
   const groupId = searchParams.get('groupId');
   const mode = searchParams.get('mode');
+  const [isChrome, setIsChrome] = useState<boolean>(true);
+
+  useEffect(() => {
+    const ua = navigator.userAgent;
+    setIsChrome(/Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua));
+  }, []);
 
   const handleStart = () => {
     // Mixed Mode: Preserve groupId + mode through intro
@@ -21,6 +27,20 @@ const SurveyWelcome: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4">
+      {!isChrome && (
+        <div className="w-full max-w-3xl mb-4 bg-amber-50 border border-amber-300 rounded-xl px-6 py-4 flex items-start gap-3">
+          <svg className="w-6 h-6 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-2.194-.833-2.964 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+          <div>
+            <p className="font-semibold text-amber-800">請使用 Google Chrome 瀏覽器</p>
+            <p className="text-sm text-amber-700 mt-1">
+              本實驗僅支援 Chrome，使用其他瀏覽器可能導致實驗無法正常運行。請複製網址並在 Chrome 中開啟。
+            </p>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-3xl shadow-xl w-full max-w-3xl overflow-hidden text-gray-800">
         <div className="p-8 sm:p-12 space-y-8">
           <div className="text-center space-y-4">
@@ -47,7 +67,12 @@ const SurveyWelcome: React.FC = () => {
           <div className="pt-4 flex justify-center">
             <button
               onClick={handleStart}
-              className="px-10 py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200"
+              disabled={!isChrome}
+              className={`px-10 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg transition-all duration-200 ${
+                isChrome
+                  ? 'hover:bg-blue-700 hover:shadow-xl transform hover:-translate-y-1'
+                  : 'opacity-50 cursor-not-allowed'
+              }`}
             >
               開始實驗
             </button>

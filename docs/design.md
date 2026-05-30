@@ -1353,7 +1353,7 @@ In [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) at the "關係結構" step
   // Enhanced participant labeling
   const getName = (id: string, agent: any) => {
     if (id === setup.focalNode) return "您";
-    if (id === setup.opponentNode) return "對手";
+    if (id === setup.opponentNode) return "搭檔";
     // For other participants, show generic label
     return `參與者 ${agent.group}`;
   };
@@ -1386,7 +1386,7 @@ In [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) at the "關係結構" step
 
 - Blue-tinted background for visual distinction
 - Label: "您這對的互動"
-- Contains interactions between `focalNode` (您) and `opponentNode` (對手)
+- Contains interactions between `focalNode` (您) and `opponentNode` (搭檔)
 
 ##### Group 2: Other Pair (另一對參與者的互動)
 
@@ -1398,7 +1398,7 @@ In [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) at the "關係結構" step
 | Participant Role | Display Label | Logic |
 |-----------------|---------------|-------|
 | `focalNode` (You) | "您" | Always in Group 1 |
-| `opponentNode` (Opponent) | "對手" | Always in Group 1 |
+| `opponentNode` (Opponent) | "搭檔" | Always in Group 1 |
 | Other participant (same group as focal) | "組內成員 (KMT)" or "組內成員 (DPP)" | In-group member |
 | Other participant (different group from focal) | "組外成員 (KMT)" or "組外成員 (DPP)" | Out-group member |
 
@@ -1411,15 +1411,15 @@ In [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) at the "關係結構" step
 
 **Before (2 records, ungrouped)**:
 
-- 您 → 對手: 給予
-- 對手 → 您: 不給予
+- 您 → 搭檔: 給予
+- 搭檔 → 您: 不給予
 
 **After (4 records, grouped)**:
 
 **您這對的互動** (blue background)
 
-- 您 → 對手: 不給予
-- 對手 → 您: 給予
+- 您 → 搭檔: 不給予
+- 搭檔 → 您: 給予
 
 **另一對參與者的互動** (white background)
 
@@ -2045,6 +2045,95 @@ function getSubmissionStage(submission: Submission, totalScenarios: number): Sta
 | REQ-341 | Progress calculation logic, Stage detection | `HistoryTable.tsx` enhanced submission table |
 | REQ-342 | Color coding strategy, Visual design mockup | Progress bar rendering with conditional colors |
 | REQ-343 | N/A — deferred | Not implemented in Phase 27 |
+
+---
+
+## Phase 33 — Chrome-Only Browser Enforcement (REQ-415)
+
+**Status**: 📋 Designed 2026-05-30 | **Priority**: High | **Component**: [`components/SurveyWelcome.tsx`](../components/SurveyWelcome.tsx)
+
+### Overview
+
+Add client-side browser detection to `SurveyWelcome.tsx`. If the participant is not using Chrome, display a blocking warning and disable the "開始實驗" button.
+
+### Detection Logic
+
+```typescript
+function isChromeBrowser(): boolean {
+  const ua = navigator.userAgent;
+  return /Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua);
+}
+```
+
+**Why this rule:**
+- `Chrome/` — present in Chrome, Brave, and all Chromium-based browsers
+- `Edg/` — present in Microsoft Edge; excluded
+- `OPR/` — present in Opera; excluded
+- Brave omits its own identifier from `userAgent`, so it passes as Chrome (acceptable)
+
+### State Management
+
+```typescript
+const [isChrome, setIsChrome] = useState<boolean>(true);
+
+useEffect(() => {
+  const ua = navigator.userAgent;
+  setIsChrome(/Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua));
+}, []);
+```
+
+Using `useState(true)` as the default avoids a flash of the warning during hydration on actual Chrome browsers.
+
+### UI Design
+
+**Warning banner** (rendered when `!isChrome`):
+
+```tsx
+{!isChrome && (
+  <div className="w-full max-w-3xl mb-4 bg-amber-50 border border-amber-300 rounded-xl px-6 py-4 flex items-start gap-3">
+    {/* Warning icon */}
+    <svg className="w-6 h-6 text-amber-500 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+        d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-2.194-.833-2.964 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+    </svg>
+    <div>
+      <p className="font-semibold text-amber-800">請使用 Google Chrome 瀏覽器</p>
+      <p className="text-sm text-amber-700 mt-1">
+        本實驗僅支援 Chrome，使用其他瀏覽器可能導致實驗無法正常運行。
+        請複製網址並在 Chrome 中開啟。
+      </p>
+    </div>
+  </div>
+)}
+```
+
+**Disabled button** (when `!isChrome`):
+
+```tsx
+<button
+  onClick={handleStart}
+  disabled={!isChrome}
+  className={`px-10 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg transition-all duration-200 ${
+    isChrome
+      ? 'hover:bg-blue-700 hover:shadow-xl transform hover:-translate-y-1'
+      : 'opacity-50 cursor-not-allowed'
+  }`}
+>
+  開始實驗
+</button>
+```
+
+### Implementation Impact
+
+| Aspect | Details |
+|--------|---------|
+| **Files changed** | 1 file: [`components/SurveyWelcome.tsx`](../components/SurveyWelcome.tsx) |
+| **Lines added** | ~25 lines |
+| **Backend changes** | None |
+| **Breaking changes** | None |
+| **Test impact** | All Chrome-based testing environments unaffected |
+
+**Maps to**: REQ-415
 
 ---
 

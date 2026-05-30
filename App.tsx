@@ -419,9 +419,9 @@ const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8 text-center">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
-          <h2 className="text-2xl font-bold text-gray-900">人數已滿</h2>
+          <h2 className="text-2xl font-bold text-gray-900">無法參與實驗</h2>
           <p className="text-gray-600">
-            抱歉，此實驗人數已經額滿。非常感謝您的參與！
+            抱歉，此實驗人數可能已經額滿，或者是您先前已經參與過本次實驗。
           </p>
         </div>
       </div>

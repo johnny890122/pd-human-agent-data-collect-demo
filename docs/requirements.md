@@ -402,6 +402,20 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **REQ-405 — "Session full" gate.** When the live `submissionCount` for a session reaches `sampleSize` and the participant has no resumable entry, the system MUST display 「人數已滿」 instead of the survey UI. For Mixed Mode groups, the gate closes when all scenarios reach `targetSize`.
   - *Acceptance:* Already-started entries (those holding a `restoredSubmissionId`) MAY continue to completion even after the gate closes.
 
+### REQ-415 — Chrome-Only Browser Enforcement
+
+- **REQ-415 — Chrome browser required for participants.** The survey welcome page (`SurveyWelcome.tsx`) MUST detect the participant's browser on page load. If the browser is not Google Chrome (or a Chromium-based browser that identifies as Chrome, such as Brave), the page MUST display a prominent blocking warning and prevent the participant from proceeding.
+  - *Rationale:* The experiment relies on browser-specific APIs (canvas fingerprinting, WebGL, specific rendering behavior) that behave inconsistently across browsers. Requiring Chrome ensures reproducible experimental conditions and consistent device fingerprint quality (REQ-311).
+  - *Acceptance:*
+    - On page load, `SurveyWelcome.tsx` detects the browser using `navigator.userAgent`.
+    - Chrome detection rule: `userAgent` contains `"Chrome/"` AND does NOT contain `"Edg/"` (Microsoft Edge) AND does NOT contain `"OPR/"` (Opera).
+    - If a non-Chrome browser is detected, a full-width warning banner MUST appear above the main card with a clear message in Traditional Chinese instructing the user to switch to Chrome.
+    - The "開始實驗" button MUST be visually disabled (`disabled` attribute set, `opacity-50 cursor-not-allowed` styling) and non-clickable when a non-Chrome browser is detected.
+    - If Chrome is detected, the page renders and behaves exactly as before (no visible change).
+    - The check runs entirely client-side with no backend involvement.
+  - *Warning message (zh-TW):* 「請使用 Google Chrome 瀏覽器開啟本頁面。本實驗僅支援 Chrome，使用其他瀏覽器可能導致實驗無法正常運行。」
+  - *Note:* Brave browser identifies as Chrome in its `userAgent` and will pass this check, which is acceptable behavior.
+
 ### REQ-500 — Internationalization
 
 - **REQ-501 — Multi-language UI.** The survey and admin UIs MUST support multiple display languages. The default participant experience is Traditional Chinese (zh-TW) as evidenced by hardcoded strings such as 「人數已滿」 and 「正在儲存您的結果...」, with i18n infrastructure recently merged (commit `89a1e5d feat: i18n`).

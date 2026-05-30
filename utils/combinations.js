@@ -87,11 +87,11 @@ export function validateBatchParams(k, maxCombinations = 1000) {
     return { valid: false, count: 0, message: 'k must be at least 1' };
   }
   
-  if (k > 12) {
-    return { valid: false, count: 0, message: 'k cannot exceed 12 (total edges)' };
+  if (k > 9) {
+    return { valid: false, count: 0, message: 'k cannot exceed 9 (total valid edges)' };
   }
   
-  const count = combinationCount(12, k);
+  const count = combinationCount(9, k);
   
   if (count > maxCombinations) {
     return {

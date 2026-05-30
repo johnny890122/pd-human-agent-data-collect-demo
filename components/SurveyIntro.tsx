@@ -27,6 +27,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
   const [introGraphRevealed, setIntroGraphRevealed] = useState<Set<string>>(new Set());
   const [comprehensionAnswers, setComprehensionAnswers] = useState({ q1: '', q2: '', q3: '', q4: '' });
+  const [showRulesHint, setShowRulesHint] = useState(false);
+  const [quizCorrect, setQuizCorrect] = useState(false);
 
   // Sync introStep with URL param
   useEffect(() => {
@@ -86,10 +88,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     if (introStep === 4) return introGraphRevealed.size < networkDemoSetup.activeEdgeIds.length;
     // Step 5 (Part 3): Must interact with the slider
     if (introStep === 5) return !introSliderInteracted;
-    // Step 6 (Comprehension Check): Must pick the correct answer
-    if (introStep === 6) return !(comprehensionAnswers.q1.trim() === '1' && comprehensionAnswers.q2.trim() === '3' && comprehensionAnswers.q3.trim() === '3' && comprehensionAnswers.q4.trim() === '2');
+    // Step 6 (Comprehension Check): Must submit correct answers
+    if (introStep === 6) return !quizCorrect;
     return false;
-  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, comprehensionAnswers, networkDemoSetup]);
+  }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, quizCorrect, networkDemoSetup]);
 
 
 
@@ -159,7 +161,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 <rect x={-45} y="-14" width={90} height="16" rx="8" fill="white" stroke={strokeColor} strokeWidth="2" opacity="0.95" />
                 <text y="-2" textAnchor="middle" fontSize="10" className="font-black pointer-events-none">
                   <tspan fill={role === 'me' ? COLORS.highlight : COLORS.rolePartner} className="uppercase">
-                    {role === 'me' ? '您' : '對手'}
+                    {role === 'me' ? '您' : '搭檔'}
                   </tspan>
                 </text>
               </g>
@@ -260,47 +262,44 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
     const introSteps = [
       {
-        title: "關於參與者的背景與角色",
+        title: "參與者的背景與角色",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
             <p className="text-center text-sm text-gray-500">
               <span className="font-bold text-gray-800">總共有四位參與者（包含您），來自於兩個團體</span>
             </p>
 
-            <div className="bg-white p-4 md:p-6 rounded-3xl border border-gray-200 shadow-sm">
+            <div className="bg-white p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm">
               <p className="text-center text-sm font-bold text-gray-700 mb-6 uppercase tracking-wide">兩個團體</p>
-              <div className="flex flex-col sm:flex-row justify-center items-center sm:items-stretch gap-4 md:gap-8">
+              <div className="flex flex-row justify-center items-stretch gap-4 md:gap-8">
                 {/* Model Group A */}
-                <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-200 min-w-[140px] max-w-[200px]">
-                  <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['KMT1'], label: 'KMT' }} role="none" /></div>
-                    <span className="text-xl font-black text-blue-500">× 2</span>
+                <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-200 min-w-0">
+                  <div className="flex flex-col items-center mb-2" style={{ transform: 'scale(0.72)', transformOrigin: 'top center', marginBottom: '-22px' }}>
+                    <InlineNode agent={{ ...AGENTS['KMT1'], label: 'KMT' }} role="none" />
                   </div>
+                  <span className="text-lg font-black text-blue-500">× 2</span>
                   <span className="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded mt-auto">國民黨</span>
                 </div>
 
-                <div className="hidden sm:block w-px bg-gray-200 self-stretch mx-2"></div>
+                <div className="block w-px bg-gray-200 self-stretch mx-2"></div>
 
                 {/* Model Group B */}
-                <div className="flex-1 flex flex-col items-center p-2 bg-green-50/30 rounded-xl border border-green-100 min-w-[140px] max-w-[200px]">
-                  <div className="flex justify-center items-center gap-2 mb-2 transform scale-90">
-                    <div className="transform scale-90"><InlineNode agent={{ ...AGENTS['DPP3'], label: 'DPP' }} role="none" /></div>
-                    <span className="text-xl font-black text-green-400">× 2</span>
+                <div className="flex-1 flex flex-col items-center p-2 bg-green-50/30 rounded-xl border border-green-100 min-w-0">
+                  <div className="flex flex-col items-center mb-2" style={{ transform: 'scale(0.72)', transformOrigin: 'top center', marginBottom: '-22px' }}>
+                    <InlineNode agent={{ ...AGENTS['DPP3'], label: 'DPP' }} role="none" />
                   </div>
+                  <span className="text-lg font-black text-green-400">× 2</span>
                   <span className="text-xs font-bold text-green-900 bg-green-50 px-2 py-1 rounded mt-auto">民進黨</span>
                 </div>
               </div>
             </div>
 
-            <p className="text-center text-sm text-gray-500">
+            <p className="text-center text-sm text-gray-500 mb-2">
               <span className="font-bold text-gray-900">四位參與者將會兩兩成對進行遊戲。在接下來的實驗中，您會和其他三位參與者分別進行兩人之間的遊戲。這些參與者都是真人。</span>
             </p>
 
-            <div className="bg-white p-4 md:p-6 rounded-3xl border border-gray-200 shadow-sm">
-              <p className="text-center text-sm font-bold text-gray-700 mb-3 uppercase tracking-wide">您的配對</p>
-
-
-              <div className="flex flex-col sm:flex-row justify-center items-center sm:items-stretch gap-4 md:gap-8 mb-6">
+            <div className="bg-white p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm">
+              <div className="flex flex-row justify-center items-stretch gap-4 md:gap-8 mb-6">
                 {/* You Card */}
                 <div className={`flex-1 flex flex-col items-center justify-center gap-4 p-4 rounded-2xl border shadow-sm relative overflow-hidden min-w-[140px]`}>
                   <div className={`absolute top-0 left-0 w-full h-1.5`}></div>
@@ -316,7 +315,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 {/* Partner Card */}
                 <div className={`flex-1 flex flex-col items-center justify-center gap-4 p-4 rounded-2xl border ${opponentBorderClass} shadow-sm relative overflow-hidden min-w-[140px]`}>
                    <div className={`absolute top-0 left-0 w-full h-1.5`}></div>
-                   <p className={`text-center text-sm font-bold ${opponentTitleClass}`}>對手</p>
+                   <p className={`text-center text-sm font-bold ${opponentTitleClass}`}>搭檔</p>
                    <div className="flex flex-col items-center transform scale-100">
                      <InlineNode agent={agentOpponent} role="opponent" />
                      <span className={`font-black ${opponentGroupClass} text-lg mt-2 tracking-tight`}>
@@ -333,8 +332,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         title: "遊戲點數",
         content: (
           <div className="space-y-4 text-gray-600 leading-relaxed text-sm animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
-            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col items-center">
-              <h3 className="text-xl font-bold text-gray-800 text-center mb-6">點數計算方法</h3>
+            <div className="bg-white p-2 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm flex flex-col items-center">
+              <h3 className="text-lg md:text-xl font-bold text-gray-800 text-center mb-4 md:mb-6">點數計算方法</h3>
               <div className="w-full max-w-2xl transform scale-100 flex justify-center mb-2">
                 <PayoffMatrix compact={false} />
               </div>
@@ -343,15 +342,15 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         )
       },
       {
-        title: "關係結構",
+        title: "互動紀錄",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
-            <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm text-center">
-              <p className="text-gray-600 mb-8 max-w-lg mx-auto">
-                下面這張圖展示的是四位參與者彼此之間的<span className="font-bold text-gray-800">互動記錄</span>。
+            <div className="bg-white p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm text-center">
+              <p className="text-gray-600 mb-4 md:mb-8 max-w-lg mx-auto">
+                這張圖展示的是四位參與者之間的<span className="font-bold text-gray-800">互動記錄</span>。
               </p>
 
-              <div className="bg-gray-50/50 rounded-2xl p-4 md:p-8 border border-gray-100 flex flex-col md:flex-row items-center md:items-start gap-6 md:gap-12">
+              <div className="bg-gray-50/50 rounded-xl md:rounded-2xl p-2 sm:p-4 md:p-8 border-none md:border border-gray-100 flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-12">
                 <div className="h-[350px] md:h-[400px] w-full max-w-lg flex-1">
                   <NetworkGraph
                     mode="survey"
@@ -365,7 +364,6 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 </div>
 
                 <div className="w-full max-w-lg md:max-w-sm flex-1">
-                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 text-center md:text-left">歷史紀錄說明</p>
                   <div className="grid grid-cols-1 gap-4 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {/* Group 1: Your pair (You and Opponent) */}
                     <div className="space-y-2">
@@ -383,7 +381,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                           
                           const getName = (id: string) => {
                             if (id === setup.focalNode) return "您";
-                            if (id === setup.opponentNode) return "對手";
+                            if (id === setup.opponentNode) return "搭檔";
                             return "";
                           };
                           
@@ -481,8 +479,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         title: "實驗介面提示",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-sm w-full max-w-4xl h-full flex flex-col justify-center">
-            <div className="bg-blue-50 border border-blue-200 p-4 md:p-8 rounded-3xl shadow-sm text-center relative overflow-hidden flex flex-col items-center min-h-[520px]">
-              <h3 className="font-bold text-blue-900 text-2xl mb-4">提示1：點閱參與者的互動記錄</h3>
+            <div className="bg-blue-50/50 md:bg-blue-50 border-none md:border border-blue-200 p-2 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-none md:shadow-sm text-center relative overflow-hidden flex flex-col items-center min-h-[520px]">
+              <h3 className="font-bold text-blue-900 text-xl md:text-2xl mb-4">提示1</h3>
               <p className="text-blue-800 text-base mb-6">
                 若要瞭解其他參與者之前的互動記錄，請點擊虛弧線上的「問號」。
               </p>
@@ -494,12 +492,6 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   onReveal={() => setIntroEdgeRevealed(true)}
                 />
               </div>
-
-              {!introEdgeRevealed && (
-                <div className="mt-auto pt-4 p-2 bg-yellow-50 border border-yellow-200 rounded-lg text-xs text-yellow-700 font-bold animate-pulse w-full max-w-md">
-                  👆 請點擊問號以繼續
-                </div>
-              )}
             </div>
           </div>
         )
@@ -508,13 +500,13 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         title: "實驗介面提示",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-sm w-full max-w-4xl h-full flex flex-col justify-center">
-            <div className="bg-blue-50 border border-blue-200 p-4 md:p-8 rounded-3xl shadow-sm text-center relative overflow-hidden flex flex-col items-center min-h-[520px]">
-              <h3 className="font-bold text-blue-900 text-2xl mb-4">提示2：瞭解其他參與者彼此之間的互動</h3>
+            <div className="bg-blue-50/50 md:bg-blue-50 border-none md:border border-blue-200 p-2 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-none md:shadow-sm text-center relative overflow-hidden flex flex-col items-center min-h-[520px]">
+              <h3 className="font-bold text-blue-900 text-xl md:text-2xl mb-4">提示2</h3>
               <p className="text-blue-800 text-base mb-6">
-                每一條虛弧線上的「問號」都可以點閱
+                請點擊問號以閱讀歷史紀錄
               </p>
 
-              <div className="bg-white/80 backdrop-blur rounded-2xl p-4 md:p-6 mb-2 shadow-inner border border-blue-100 w-full h-full flex-1">
+              <div className="bg-white/80 backdrop-blur rounded-xl md:rounded-2xl p-1 sm:p-2 md:p-6 mb-2 shadow-sm md:shadow-inner border-none md:border border-blue-100 w-full h-full flex-1">
                 <div className="h-[350px] md:h-[400px] w-full">
                   <NetworkGraph
                     mode="survey"
@@ -529,9 +521,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 </div>
               </div>
 
-              <div className="mt-4 p-2 bg-blue-100/50 rounded-lg text-xs text-blue-700 font-bold">
-                請點擊問號以閱讀歷史紀錄
-              </div>
+
             </div>
           </div>
         )
@@ -540,41 +530,22 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         title: "實驗介面提示",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-sm animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
-            <div className="bg-blue-50 border border-blue-200 p-4 md:p-8 rounded-3xl shadow-sm text-center relative overflow-hidden min-h-[520px] flex flex-col items-center">
-              <h3 className="font-bold text-blue-900 text-2xl mb-4">提示3：您要做的決定</h3>
-              
-              <div className="w-full max-w-3xl mb-8 space-y-4 px-4 flex flex-col items-center">
-                <p className="text-blue-900 text-lg md:text-xl font-bold text-center">
-                  根據我們給您參考的所有參與者的互動記錄，請您告訴我們：
-                </p>
-                
-                <div className="bg-white p-5 md:p-6 rounded-2xl border border-blue-100 shadow-sm text-left relative overflow-hidden w-full max-w-2xl">
-                  <div className="absolute top-0 left-0 w-1.5 h-full bg-blue-500"></div>
-                  <div className="pl-3 space-y-3">
-                    <p className="text-gray-800 text-lg md:text-xl font-bold">
-                      從 0 到 100，您有多少意願把點數給對方？
-                    </p>
-                    <p className="text-gray-500 text-sm">
-                      （0 代表絕對不會給予對方，100 代表絕對會給對方）
-                    </p>
-                    <div className="h-px bg-gray-100 my-2 w-full"></div>
-                    <p className="text-gray-700 text-base leading-relaxed">
-                      我們將會根據您輸入的數字，透過<span className="font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-md mx-1 border border-blue-100 shadow-inner inline-flex items-center gap-1">電腦骰子</span>幫您做決定。
-                    </p>
-                  </div>
-                </div>
+            <div className="bg-blue-50/50 md:bg-blue-50 border-none md:border border-blue-200 p-2 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-none md:shadow-sm text-center relative overflow-hidden min-h-[520px] flex flex-col items-center">
+              <h3 className="font-bold text-blue-900 text-xl md:text-2xl mb-4">提示3</h3>
+              <p className="text-blue-800 text-base mb-6">
+                從 0 到 100，您有多少意願把點數給對方？
+              </p>
 
-                <div className="bg-blue-100/50 p-4 md:p-5 rounded-xl text-left text-sm md:text-base text-blue-800 border border-blue-200 shadow-sm w-full max-w-2xl">
-                  <div className="font-bold flex items-center gap-2 mb-2 text-blue-900">
-                    舉例來說：
-                  </div>
-                  <p className="leading-relaxed pl-7 text-blue-800/90">
-                    當您輸入 50 時，您給或不給對方點數，將各有一半的機率；當您輸入 90 時，將有 90% 的機率電腦會幫您將點數給對方。其他的數字以此類推。
-                  </p>
-                </div>
+              <div className="w-full max-w-2xl mb-6 space-y-3 px-0 md:px-4 text-left">
+                <p className="text-gray-600 text-sm">
+                  0 代表絕對不會給予，100 代表絕對會給。我們將根據您輸入的數字，透過電腦骰子幫您做決定。
+                </p>
+                <p className="text-gray-600 text-sm">
+                  舉例：輸入 50 時，給或不給各有一半機率；輸入 90 時，有 90% 機率電腦幫您給對方點數。
+                </p>
               </div>
 
-              <div className="bg-white/80 backdrop-blur rounded-2xl p-4 md:p-6 mb-2 shadow-inner border border-indigo-100 w-full flex-1 flex flex-col md:flex-row items-center gap-8 justify-center">
+              <div className="bg-white/80 md:bg-white/80 backdrop-blur rounded-xl md:rounded-2xl p-1 sm:p-4 md:p-6 mb-2 shadow-sm md:shadow-inner border-none md:border border-indigo-100 w-full flex-1 flex flex-col md:flex-row items-center gap-8 justify-center">
                 <div className="h-[350px] md:h-[400px] w-full max-w-lg relative flex-1">
                   <NetworkGraph
                     mode="survey"
@@ -592,6 +563,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   <DecisionSlider
                     value={introSliderValue}
                     onChange={(val) => { setIntroSliderValue(val); setIntroSliderInteracted(true); }}
+                    hasInteracted={introSliderInteracted}
                   />
                 </div>
               </div>
@@ -603,78 +575,75 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         title: "理解測試",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
-            <div className="bg-amber-50 border border-amber-200 p-6 md:p-8 rounded-3xl shadow-sm">
-              <h3 className="text-2xl font-bold text-amber-900 text-center mb-3">理解測驗</h3>
+            <div className="bg-amber-50/50 md:bg-amber-50 border-none md:border border-amber-200 p-2 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-none md:shadow-sm">
               <p className="text-center text-amber-800 mb-8">
                 請填答下面的問題，確保您充分瞭解這個遊戲的規則。
               </p>
 
-              <div className="bg-white rounded-2xl p-5 border border-amber-100 shadow-sm space-y-6">
+              <div className="bg-white rounded-xl md:rounded-2xl p-4 md:p-5 border-none md:border border-amber-100 shadow-none md:shadow-sm space-y-6">
                 
                 <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <span className="text-sm font-bold text-gray-800">1. 若是您不給對方點數，對方也不給您，那麼您會拿到</span>
-                    <div className="flex items-center gap-2">
+                  {[
+                    { key: 'q1' as const, text: '1. 若是您不給對方點數，對方也不給您，那麼您會拿到' },
+                    { key: 'q2' as const, text: '2. 若是您給對方點數，對方不給您，那麼對方會拿到' },
+                    { key: 'q3' as const, text: '3. 若是您不給對方點數，對方給您，那麼您最後會拿到' },
+                    { key: 'q4' as const, text: '4. 若是您給對方點數，對方也給您，那麼對方最後會拿到' },
+                  ].map(({ key, text }) => (
+                    <p key={key} className="text-sm font-bold text-gray-800 leading-loose">
+                      {text}{' '}
                       <input
                         type="text"
-                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        value={comprehensionAnswers.q1}
-                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q1: e.target.value }))}
-                      />
-                      <span className="text-sm text-gray-800">點</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <span className="text-sm font-bold text-gray-800">2. 若是您給對方點數，對方不給您，那麼對方會拿到</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        value={comprehensionAnswers.q2}
-                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q2: e.target.value }))}
-                      />
-                      <span className="text-sm text-gray-800">點</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <span className="text-sm font-bold text-gray-800">3. 若是您不給對方點數，對方給您，那麼您最後會拿到</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        value={comprehensionAnswers.q3}
-                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q3: e.target.value }))}
-                      />
-                      <span className="text-sm text-gray-800">點</span>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                    <span className="text-sm font-bold text-gray-800">4. 若是您給對方點數，對方也給您，那麼對方最後會拿到</span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        className="w-16 p-2 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                        value={comprehensionAnswers.q4}
-                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, q4: e.target.value }))}
-                      />
-                      <span className="text-sm text-gray-800">點</span>
-                    </div>
-                  </div>
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        className="inline-block align-middle w-14 px-1 py-1 text-center border border-gray-300 rounded bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        value={comprehensionAnswers[key]}
+                        disabled={showRulesHint || quizCorrect}
+                        onChange={(e) => setComprehensionAnswers(prev => ({ ...prev, [key]: e.target.value.replace(/[^0-9]/g, '') }))}
+                      />{' '}點
+                    </p>
+                  ))}
                 </div>
 
-                {comprehensionAnswers.q1 && comprehensionAnswers.q2 && comprehensionAnswers.q3 && comprehensionAnswers.q4 && (
-                  comprehensionAnswers.q1.trim() === '1' && comprehensionAnswers.q2.trim() === '3' && comprehensionAnswers.q3.trim() === '3' && comprehensionAnswers.q4.trim() === '2' ? (
-                    <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mt-4">
-                      正確。您已經準備好可以繼續了。
+                {!showRulesHint && !quizCorrect && (
+                  <button
+                    onClick={() => {
+                      const { q1, q2, q3, q4 } = comprehensionAnswers;
+                      const isCorrect = q1.trim() === '1' && q2.trim() === '3' && q3.trim() === '3' && q4.trim() === '2';
+                      if (isCorrect) {
+                        setQuizCorrect(true);
+                      } else {
+                        setShowRulesHint(true);
+                      }
+                    }}
+                    disabled={!comprehensionAnswers.q1 || !comprehensionAnswers.q2 || !comprehensionAnswers.q3 || !comprehensionAnswers.q4}
+                    className="mt-4 w-full py-2 px-4 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
+                  >
+                    提交
+                  </button>
+                )}
+
+                {quizCorrect && (
+                  <p className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 mt-4">
+                    正確。您已經準備好可以繼續了。
+                  </p>
+                )}
+
+                {showRulesHint && (
+                  <div className="mt-4 space-y-3">
+                    <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                      有部分答案不正確，請參考以下規則後重新作答。
                     </p>
-                  ) : (
-                    <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-4">
-                      有部分答案不正確，請回顧遊戲點數規則並重新作答。
-                    </p>
-                  )
+                    <PayoffMatrix compact={true} />
+                    <button
+                      onClick={() => {
+                        setShowRulesHint(false);
+                        setComprehensionAnswers({ q1: '', q2: '', q3: '', q4: '' });
+                      }}
+                      className="w-full py-2 px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg transition-colors"
+                    >
+                      重新作答
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -685,7 +654,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
         title: "點數兌換報酬說明",
         content: (
           <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
-            <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm text-center">
+            <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm text-center">
               <p className="text-lg text-gray-600 mb-4">
                 在實驗中，您將會參與數次的兩人遊戲。在所有遊戲結束後，電腦將隨機抽出其中的一次遊戲，根據您和對方在該遊戲中所做的決定所得到的點數，換算成現金報酬給您。
               </p>
@@ -725,8 +694,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     const currentIntro = introSteps[introStep];
 
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="max-w-2xl md:max-w-5xl w-full bg-white rounded-[2rem] shadow-2xl p-8 md:p-12 flex flex-col min-h-[600px] border border-gray-100">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0 md:p-4">
+        <div className="max-w-2xl md:max-w-5xl w-full bg-white md:rounded-[2rem] shadow-none md:shadow-2xl p-4 sm:p-6 md:p-12 flex flex-col min-h-screen md:min-h-[600px] border-none md:border border-gray-100">
 
           {/* Header */}
           <div className="text-center space-y-3 mb-10">
@@ -783,7 +752,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                     : 'bg-indigo-600 text-white hover:bg-indigo-700'
                     }`}
                 >
-                   {isNextDisabled ? '請互動以繼續' : '下一步 \u2192'}
+                   {isNextDisabled ? '繼續' : '下一步 \u2192'}
                 </button>
               ) : (
                 <button

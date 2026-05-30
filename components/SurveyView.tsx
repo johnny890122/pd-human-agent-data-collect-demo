@@ -535,36 +535,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
           {/* ── Block 2: Network History (always Graph; location can be randomized) ── */}
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col">
-            <div className="bg-gray-50 border-b border-gray-100 p-3 md:p-4 flex items-center justify-between">
-              <h3 className="text-xs md:text-sm font-bold text-gray-500 uppercase tracking-wider">互動記錄</h3>
-            </div>
             <div className="p-4 md:p-6 flex-1 flex flex-col bg-white overflow-hidden">
-              {/* ── Gradual reveal prompt — shown while edges remain hidden ── */}
-              {!allRevealed && (
-                <div className="mx-4 mt-4 flex items-center justify-center gap-2 bg-blue-50 border border-blue-200 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-top-4 duration-700">
-                  <p className="text-xs text-blue-800 font-medium text-center">
-                    請點擊以下虛弧線上的「問號」，來閱覽互動記錄
-                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600">
-                      剩下 {activeEdgeIds.length - revealedEdgeIds.size} 個
-                    </span>
-                  </p>
-                </div>
-              )}
-
-              {/* ── Gradual reveal debrief — shown once all edges revealed, but BEFORE decision phase ── */}
-              {allRevealed && !isDecisionPhase && (
-                <div className="mx-4 mt-4 flex flex-col sm:flex-row items-center justify-center bg-amber-50 border-2 border-amber-200 rounded-xl p-4 animate-in fade-in slide-in-from-top-2 duration-500 animate-glow-amber">
-                  <button
-                    onClick={() => {
-                      setIsDecisionPhase(true);
-                      setHasInteracted(false);
-                    }}
-                    className="w-full sm:w-auto bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold py-2 px-6 rounded-lg shadow-sm transition-colors whitespace-nowrap"
-                  >
-                    閱覽完互動記錄之後，請按此鍵解鎖右方的決定鍵
-                  </button>
-                </div>
-              )}
 
               <div className="flex-1 flex items-center justify-center min-h-[350px] md:min-h-[400px]">
                 <NetworkGraph
@@ -579,6 +550,18 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                   hideDecisionEdge={!allRevealed || !isDecisionPhase}
                 />
               </div>
+
+              {/* ── Gradual reveal prompt — shown while edges remain hidden ── */}
+              {!allRevealed && (
+                <div className="mx-4 mt-4 flex items-center justify-center gap-2 bg-blue-50 border border-blue-200 rounded-xl p-3 shadow-sm animate-in fade-in slide-in-from-top-4 duration-700">
+                  <p className="text-xs text-blue-800 font-medium text-center">
+                    請點擊以下虛弧線上的「問號」，來閱覽互動記錄
+                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-600">
+                      剩下 {activeEdgeIds.length - revealedEdgeIds.size} 個
+                    </span>
+                  </p>
+                </div>
+              )}
             </div>
 
           </div>
@@ -595,9 +578,9 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                   <h3 className="text-xl font-medium text-gray-800">
                     給或不給？
                   </h3>
-                  <p className="text-sm text-gray-500">從0到100，請輸入一個（機率）值代表您的決定<br/>（0代表絕對不會給予對方，100代表絕對會給對方）</p>
+                  <p className="text-sm text-gray-500">從0到100，請輸入一個值代表您的決定<br/>（0代表絕對不會給予對方，100代表絕對會給對方）</p>
                   <div className="pt-2">
-                    <DecisionSlider value={sliderValue} onChange={(v) => { setSliderValue(v); setHasInteracted(true); }} />
+                    <DecisionSlider value={sliderValue} onChange={(v) => { setSliderValue(v); setHasInteracted(true); }} hasInteracted={hasInteracted} />
                   </div>
                 </div>
 
@@ -613,28 +596,20 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                   {showPayoffTable && <PayoffMatrix userProb={sliderValue} compact={false} />}
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-12 px-4 border-2 border-dashed border-gray-100 rounded-2xl bg-gray-50/50 animate-in fade-in duration-700">
-                <span className="text-4xl">🔒</span>
-                <h3 className="mt-4 text-sm font-bold text-gray-400 uppercase tracking-widest">目前無法做決定</h3>
-                <p className="mt-2 text-xs text-gray-500 leading-relaxed">
-                  尚未閱覽左邊的互動記錄之前，<br/>您暫時無法在此做決定
-                </p>
-              </div>
-            )}
+            ) : null}
 
             <button
-              onClick={handleNext}
-              disabled={(!allRevealed || !isDecisionPhase) || !hasInteracted}
-              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${(!allRevealed || !isDecisionPhase) || !hasInteracted
+              onClick={!isDecisionPhase && allRevealed ? () => { setIsDecisionPhase(true); setHasInteracted(false); } : handleNext}
+              disabled={!allRevealed || (isDecisionPhase && !hasInteracted)}
+              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed || (isDecisionPhase && !hasInteracted)
                 ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
                 : 'bg-gray-900 text-white hover:bg-black hover:-translate-y-1 active:translate-y-0 animate-glow-indigo'
                 }`}
             >
               {!allRevealed
-                ? `請先點擊並閱覽所有的互動記錄 (${revealedEdgeIds.size}/${activeEdgeIds.length})`
+                ? '繼續'
                 : !isDecisionPhase
-                  ? '請先按解鎖決定鍵'
+                  ? '開始決策'
                   : !hasInteracted
                     ? '請拉動上方滑桿做出決定'
                     : scenarioIdx === scenarios.length - 1 ? '確認並送出' : '確認並前往下一題'

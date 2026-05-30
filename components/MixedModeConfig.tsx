@@ -24,9 +24,8 @@ const MixedModeConfig: React.FC<MixedModeConfigProps> = ({
   const { totalScenarios, estimatedParticipants } = useMemo(() => {
     let total = 0;
     for (let k = 1; k <= maxK; k++) {
-      const combinations = combinationCount(12, k);
-      const scenariosPerCombo = Math.pow(2, k); // 2^k design matrix size
-      total += combinations * scenariosPerCombo;
+      const combinations = combinationCount(9, k); // 扣除3條 focal node 向外的邊
+      total += combinations * Math.pow(2, k);
     }
 
     const estimated = Math.ceil((total * targetSizePerScenario) / scenariosPerSession);

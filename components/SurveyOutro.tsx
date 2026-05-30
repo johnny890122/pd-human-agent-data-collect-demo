@@ -26,7 +26,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack, onComplete, 
       // 構建 demographics 物件，包含報名代碼和 email
       const demographics = {
         age: parseInt(codeValue) || 0,
-        gender: 'unknown',
+        gender: codeValue || 'unknown', // 將代碼也存入 gender，避免因代碼包含英文而使 parseInt(codeValue) 變成 NaN 導致資料遺失
         education: trimmedEmail
       };
       
@@ -51,16 +51,14 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack, onComplete, 
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 md:p-8 text-center space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <h2 className="text-2xl font-bold text-gray-900">報名代碼確認</h2>
           <p className="text-gray-600">
-            請將我們給您的報名代碼，乘以二之後，將數字輸入到以下空格中：
+            請將我們給您的報名代碼，輸入到以下空格中：
           </p>
           <input
             type="text"
-            inputMode="numeric"
-            pattern="[0-9]*"
             className="w-full p-4 border border-gray-200 rounded-xl text-center text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 focus:bg-white transition-colors"
-            placeholder="請輸入數字"
+            placeholder="請輸入代碼"
             value={codeValue}
-            onChange={(e) => setCodeValue(e.target.value.replace(/\D/g, ''))}
+            onChange={(e) => setCodeValue(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
           />
           <button
             onClick={() => setStep(2)}

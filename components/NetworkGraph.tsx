@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import * as d3 from 'd3';
 import { AGENTS, ALL_EDGES, COLORS, RADIUS } from '../constants';
 import { AgentId, Session, Scenario } from '../types';
-import { clamp, distance, getBezierPoint, projectPointToSegmentT } from '../utils/math';
+import { clamp, distance, getBezierPoint, projectPointToSegmentT, findBezierTFromStart, findBezierTFromEnd } from '../utils/math';
 
 interface NetworkGraphProps {
   mode: 'admin' | 'survey';
@@ -145,8 +145,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
       const dist = distance(start, end) || 1;
 
       // Starting "Label center" position (midpoint of a default arc)
-      // If control point offset is 45, curve midpoint offset is 22.5
-      const offset = 22.5;
+      // offset is the label-center displacement; control point = 2*label - midpoint
+      const offset = 40;
       const initLx = mx - (dy / dist) * offset;
       const initLy = my + (dx / dist) * offset;
 
@@ -198,16 +198,18 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     const allNodes = [...simNodes, ...fixedNodes] as any[];
 
     // 2. Setup simulation
-    // - Force labels to stay relatively close to their default (initLx, initLy)
-    // - Force them to repel each other heavily to avoid overlap
+    // - Weak restoration lets control points spread freely to avoid overlap
+    // - Global charge repulsion pushes all control points apart
+    // - Collision prevents close-range overlap with other control points and nodes
     const simulation = d3.forceSimulation(allNodes)
-      .force("x", d3.forceX((d: any) => d.initLx).strength((d: any) => d.isControl ? 0.3 : 1))
-      .force("y", d3.forceY((d: any) => d.initLy).strength((d: any) => d.isControl ? 0.3 : 1))
-      .force("collide", d3.forceCollide((d: any) => d.isControl ? 35 : RADIUS + 25).iterations(3))
+      .force("x", d3.forceX((d: any) => d.initLx).strength((d: any) => d.isControl ? 0.1 : 1))
+      .force("y", d3.forceY((d: any) => d.initLy).strength((d: any) => d.isControl ? 0.1 : 1))
+      .force("collide", d3.forceCollide((d: any) => d.isControl ? 52 : RADIUS + 20).iterations(6))
+      .force("charge", d3.forceManyBody().strength((d: any) => d.isControl ? -200 : 0))
       .stop();
 
     // 3. Fast-forward the simulation to final steady state
-    simulation.tick(300);
+    simulation.tick(500);
 
     // 4. Extract results
     const results: Record<string, { x: number, y: number }> = {};
@@ -259,15 +261,15 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           <marker
             key={`marker-${color.replace('#', '')}`}
             id={`arrow-${color.replace('#', '')}`}
-            viewBox="0 -5 10 10"
-            refX="0"
+            viewBox="0 -8 22 16"
+            refX="20"
             refY="0"
             markerUnits="userSpaceOnUse"
-            markerWidth="10"
-            markerHeight="10"
+            markerWidth="22"
+            markerHeight="16"
             orient="auto"
           >
-            <path d="M0,-5L10,0L0,5" fill={color} />
+            <path d="M0,-8 L22,0 L0,8" fill={color} />
           </marker>
         ))}
       </defs>
@@ -285,14 +287,13 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const cp = edgeControlPoints[edge.id];
         const cx = cp.x;
         const cy = cp.y;
+        const cpPt = { x: cx, y: cy };
 
-        const dist = distance(start, end) || 1;
+        const tStart = findBezierTFromStart(start, cpPt, end, RADIUS);
+        const tEnd = findBezierTFromEnd(start, cpPt, end, RADIUS + 2);
 
-        const tStart = RADIUS / (dist * 1.15);
-        const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
-
-        const pStart = getBezierPoint(clamp(tStart, 0, 1), start, { x: cx, y: cy }, end);
-        const pEnd = getBezierPoint(clamp(tEnd, 0, 1), start, { x: cx, y: cy }, end);
+        const pStart = getBezierPoint(clamp(tStart, 0, 1), start, cpPt, end);
+        const pEnd = getBezierPoint(clamp(tEnd, 0, 1), start, cpPt, end);
 
         const pathData = `M ${pStart.x} ${pStart.y} Q ${cx} ${cy} ${pEnd.x} ${pEnd.y}`;
 
@@ -301,7 +302,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
 
         const edgeStroke = isUnrevealedActive ? COLORS.neutral : color;
-        const arrowFill = isUnrevealedActive ? COLORS.neutral : color;
 
         return (
           <g
@@ -329,7 +329,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               strokeWidth={isActive ? 3 : 2}
               strokeDasharray={isUnrevealedActive ? '6 3' : undefined}
               fill="none"
-              markerEnd={opacity > 0 && arrowFill !== 'transparent' ? `url(#arrow-${arrowFill.replace('#', '')})` : undefined}
             />
           </g>
         );
@@ -370,10 +369,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const ctrlX = cp ? cp.x : mx;
         const ctrlY = cp ? cp.y : my;
 
-        const tStartDecision = RADIUS / (dist * 1.15);
-        const tEndDecision = 1 - (RADIUS + 13) / (dist * 1.15);
-        const pStartDecision = getBezierPoint(clamp(tStartDecision, 0, 1), start, { x: ctrlX, y: ctrlY }, end);
-        const pEndDecision = getBezierPoint(clamp(tEndDecision, 0, 1), start, { x: ctrlX, y: ctrlY }, end);
+        const ctrlPt = { x: ctrlX, y: ctrlY };
+        const tStartDecision = findBezierTFromStart(start, ctrlPt, end, RADIUS);
+        const tEndDecision = findBezierTFromEnd(start, ctrlPt, end, RADIUS + 2);
+        const pStartDecision = getBezierPoint(clamp(tStartDecision, 0, 1), start, ctrlPt, end);
+        const pEndDecision = getBezierPoint(clamp(tEndDecision, 0, 1), start, ctrlPt, end);
 
         const path = `M ${pStartDecision.x} ${pStartDecision.y} Q ${ctrlX} ${ctrlY} ${pEndDecision.x} ${pEndDecision.y}`;
 
@@ -389,7 +389,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               strokeDasharray="8 4"
               strokeOpacity={edgeOpacity}
               className="animate-[dash_var(--dash-speed)_linear_infinite]"
-              markerEnd={`url(#arrow-${decisionColor.replace('#', '')})`}
               style={{
                 transition: 'stroke 0.3s ease, stroke-opacity 0.3s ease',
                 // @ts-ignore
@@ -418,10 +417,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const cx = cp.x;
         const cy = cp.y;
 
-        const dist = distance(start, end) || 1;
-
-        const tStart = RADIUS / (dist * 1.15);
-        const tEnd = 1 - (RADIUS + 12) / (dist * 1.15);
+        const tStart = findBezierTFromStart(start, { x: cx, y: cy }, end, RADIUS);
+        const tEnd = findBezierTFromEnd(start, { x: cx, y: cy }, end, RADIUS + 2);
 
         const tMid = (tStart + tEnd) / 2;
         const midPoint = getBezierPoint(tMid, start, { x: cx, y: cy }, end);
@@ -465,11 +462,12 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {/* Revealed: COOP/DEFECT bubble */}
             {showBubble && (
               <g transform={`translate(${midX}, ${midY})`}>
-                <rect x="-30" y="-12" width="60" height="24" rx="12" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
-                <text 
-                  textAnchor="middle" 
-                  y="5" 
-                  className="text-[12px] md:text-[10px] font-black uppercase tracking-tighter"
+                <rect x="-34" y="-15" width="68" height="30" rx="15" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
+                <text
+                  textAnchor="middle"
+                  y="8"
+                  fontSize="18"
+                  fontWeight="800"
                   fill={bubbleLabel === '給予' ? 'white' : '#374151'}
                 >
                   {bubbleLabel}
@@ -481,11 +479,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {isUnrevealedActive && (
               <g transform={`translate(${midX}, ${midY})`}>
                 {/* Outer Glow */}
-                <circle r="16" fill={COLORS.blue} fillOpacity="0.2">
-                  <animate attributeName="r" values="14;18;14" dur="2s" repeatCount="indefinite" />
+                <circle r="12" fill={COLORS.blue} fillOpacity="0.2">
+                  <animate attributeName="r" values="10;14;10" dur="2s" repeatCount="indefinite" />
                   <animate attributeName="fill-opacity" values="0.2;0.4;0.2" dur="2s" repeatCount="indefinite" />
                 </circle>
-                <circle r="12" fill="white" stroke={COLORS.blue} strokeWidth="2" className="shadow-lg">
+                <circle r="9" fill="white" stroke={COLORS.blue} strokeWidth="2" className="shadow-lg">
                   <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
                 </circle>
                 <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})` }}>?</text>
@@ -529,8 +527,8 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const ctrlX = cp ? cp.x : mx;
         const ctrlY = cp ? cp.y : my;
 
-        const tStartDecision = RADIUS / (dist * 1.15);
-        const tEndDecision = 1 - (RADIUS + 13) / (dist * 1.15);
+        const tStartDecision = findBezierTFromStart(start, { x: ctrlX, y: ctrlY }, end, RADIUS);
+        const tEndDecision = findBezierTFromEnd(start, { x: ctrlX, y: ctrlY }, end, RADIUS + 2);
         const tMidDecision = (tStartDecision + tEndDecision) / 2;
         const midPoint = getBezierPoint(tMidDecision, start, { x: ctrlX, y: ctrlY }, end);
         const bx = midPoint.x;
@@ -560,7 +558,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                           <animate attributeName="transform" values="translate(0,0); translate(-4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
                         </>
                       )}
-                      <path d="M -30 0 L -24 -4 L -24 4 Z" fill={decisionColor} />
+                      <path d="M -46 0 L -40 -5 L -40 5 Z" fill={decisionColor} />
                     </g>
                   )}
                   {/* To Cooperate (+) */}
@@ -572,7 +570,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                           <animate attributeName="transform" values="translate(0,0); translate(4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
                         </>
                       )}
-                      <path d="M 30 0 L 24 -4 L 24 4 Z" fill={decisionColor} />
+                      <path d="M 46 0 L 40 -5 L 40 5 Z" fill={decisionColor} />
                     </g>
                   )}
                 </g>
@@ -598,11 +596,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
               {/* Main Bubble - Matches standard edge style */}
               <rect
-                x="-35"
-                y="-12"
-                width="70"
-                height="24"
-                rx="12"
+                x="-40"
+                y="-15"
+                width="80"
+                height="30"
+                rx="15"
                 fill={decisionColor} // Use solid color
                 fillOpacity={edgeOpacity}
                 stroke="white"
@@ -614,8 +612,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
               <text
                 textAnchor="middle"
-                y="5"
-                className="text-[12px] md:text-[10px] font-black pointer-events-none uppercase tracking-tighter"
+                y="8"
+                fontSize="18"
+                fontWeight="800"
+                className="pointer-events-none"
                 fill={visualDecision > 50 ? 'white' : (visualDecision < 50 ? '#374151' : 'white')}
                 style={{ transition: 'all 0.2s ease' }}
               >
@@ -760,16 +760,16 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
               let roleTag = null;
               let roleFill = '';
-              let badgeWidth = 44; // base width for just the group name
+              let badgeWidth = 72; // base width for just the group name
 
               if (isDecisionMaker) {
                 roleTag = 'YOU';
                 roleFill = COLORS.highlight; // yellow/amber
-                badgeWidth = 75; // wider to accommodate 'YOU - GROUPNAME'
+                badgeWidth = 118; // wider to accommodate 'YOU - GROUPNAME'
               } else if (isOpponent) {
                 roleTag = 'Partner';
                 roleFill = COLORS.rolePartner; // gray-500
-                badgeWidth = 90; // wider to accommodate 'Partner - GROUPNAME'
+                badgeWidth = 138; // wider to accommodate 'Partner - GROUPNAME'
               }
 
               // Use white pill with colored text
@@ -778,11 +778,11 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
               return (
                 <g transform={`translate(0, ${r - 2})`}>
-                  <rect x={-badgeWidth / 2} y="-14" width={badgeWidth} height="16" rx="8" fill={badgeFill} stroke={strokeColor} strokeWidth="1.5" opacity="0.95" />
-                  <text y="-2" textAnchor="middle" fontSize="10" className="font-[800] md:text-[8px] pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
+                  <rect x={-badgeWidth / 2} y="-22" width={badgeWidth} height="26" rx="13" fill={badgeFill} stroke={strokeColor} strokeWidth="1.5" opacity="0.95" />
+                  <text y="1" textAnchor="middle" fontSize="16" className="font-[800] pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
                     {roleTag ? (
                       <>
-                        <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag === 'YOU' ? '您' : '對手'}</tspan>
+                        <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag === 'YOU' ? '您' : '搭檔'}</tspan>
                         <tspan className="opacity-50 font-normal mx-1" fill={COLORS.neutral}> · </tspan>
                         <tspan className="uppercase tracking-widest" fill={groupColor}>{baseName}</tspan>
                       </>
@@ -811,6 +811,85 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           </g>
         );
       })}
+
+      {/* ── Arrow Tips (last layer: always on top of nodes) ── */}
+      {ALL_EDGES.map(edge => {
+        const start = positions[edge.source];
+        const end = positions[edge.target];
+        const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds) || setup?.activeEdgeIds || [];
+        const isActive = activeEdges.includes(edge.id);
+        const color = getEdgeColor(edge.id);
+        const opacity = getEdgeOpacity(edge.id);
+        if (opacity === 0 || color === 'transparent') return null;
+
+        const isGradualMode = revealedEdgeIds !== undefined;
+        const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
+        const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
+        const arrowColor = isUnrevealedActive ? COLORS.neutral : color;
+        if (arrowColor === 'transparent') return null;
+
+        const cp = edgeControlPoints[edge.id];
+        const cpPt = { x: cp.x, y: cp.y };
+        const tEnd = findBezierTFromEnd(start, cpPt, end, RADIUS + 2);
+        const tNearEnd = clamp(tEnd - 0.02, 0, 1);
+        const pEnd = getBezierPoint(tEnd, start, cpPt, end);
+        const pNearEnd = getBezierPoint(tNearEnd, start, cpPt, end);
+
+        return (
+          <path
+            key={`arrow-tip-${edge.id}`}
+            d={`M ${pNearEnd.x} ${pNearEnd.y} L ${pEnd.x} ${pEnd.y}`}
+            stroke={arrowColor}
+            strokeWidth={isActive ? 3 : 2}
+            fill="none"
+            opacity={opacity}
+            markerEnd={`url(#arrow-${arrowColor.replace('#', '')})`}
+          />
+        );
+      })}
+
+      {/* Decision edge arrow tip */}
+      {!hideDecisionEdge && mode === 'survey' && setup.focalNode && setup.opponentNode && (() => {
+        const start = positions[setup.focalNode as AgentId];
+        const end = positions[setup.opponentNode as AgentId];
+        if (!start || !end) return null;
+        const dist = distance(start, end);
+        if (!Number.isFinite(dist) || dist <= 1e-6) return null;
+
+        const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
+        let decisionColor: string;
+        let edgeOpacity = 1;
+        if (visualDecision > 50) {
+          decisionColor = COLORS.coop;
+          edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
+        } else if (visualDecision < 50) {
+          decisionColor = COLORS.defect;
+          edgeOpacity = 0.4 + (0.6 * (50 - visualDecision) / 50);
+        } else {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        }
+
+        const cp = edgeControlPoints['decision-edge'];
+        const ctrlX = cp ? cp.x : (start.x + end.x) / 2;
+        const ctrlY = cp ? cp.y : (start.y + end.y) / 2;
+        const tEnd = findBezierTFromEnd(start, { x: ctrlX, y: ctrlY }, end, RADIUS + 2);
+        const tNearEnd = clamp(tEnd - 0.02, 0, 1);
+        const pEnd = getBezierPoint(tEnd, start, { x: ctrlX, y: ctrlY }, end);
+        const pNearEnd = getBezierPoint(tNearEnd, start, { x: ctrlX, y: ctrlY }, end);
+
+        return (
+          <path
+            d={`M ${pNearEnd.x} ${pNearEnd.y} L ${pEnd.x} ${pEnd.y}`}
+            stroke={decisionColor}
+            strokeWidth="4"
+            fill="none"
+            strokeOpacity={edgeOpacity}
+            markerEnd={`url(#arrow-${decisionColor.replace('#', '')})`}
+            style={{ transition: 'stroke 0.3s ease, stroke-opacity 0.3s ease' }}
+          />
+        );
+      })()}
     </svg>
   );
 };

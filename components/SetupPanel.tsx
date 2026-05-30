@@ -72,7 +72,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
   const calculateMixedStats = () => {
     let total = 0;
     for (let k = 1; k <= maxK; k++) {
-      const combinations = combinationCount(12, k);
+      const combinations = combinationCount(9, k); // 扣除3條 focal node 向外的邊
       const scenariosPerCombo = Math.pow(2, k);
       total += combinations * scenariosPerCombo;
     }
@@ -415,7 +415,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                   <span
                     className="text-purple-600 mt-1"
                     dangerouslySetInnerHTML={{
-                      __html: katex.renderToString(`= \\sum_{k=1}^{${maxK}} \\binom{12}{k} \\cdot 2^k`, {
+                      __html: katex.renderToString(`= \\sum_{k=1}^{${maxK}} \\binom{9}{k} \\cdot 2^k`, {
                         throwOnError: false,
                         displayMode: false,
                         output: 'html'

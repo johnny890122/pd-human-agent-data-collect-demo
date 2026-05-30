@@ -61,19 +61,19 @@ export const PayoffMatrix = ({ compact = false, userProb }: { compact?: boolean;
       <p className="font-bold text-gray-800 mb-2 border-b border-gray-200 pb-1">以下是所有可能發生的情況：</p>
       
       <ul className="space-y-2">
-        <li className={`transition-all duration-300 p-2 rounded-lg ${defectOpacity} ${isDefect ? 'bg-red-50 border border-red-100' : ''}`}>
+        <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
           若是您<strong>不給</strong>，對方也<strong>不給</strong>，那麼您和對方都是拿到 <strong className="text-gray-900">1 點</strong>
         </li>
-        <li className={`transition-all duration-300 p-2 rounded-lg ${coopOpacity} ${isCoop ? 'bg-green-50 border border-green-100' : ''}`}>
+        <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
           若是您<strong>給</strong>對方，對方<strong>不給</strong>您，那麼您拿到 <strong className="text-red-700">0點</strong>，對方拿到 2 + 1 總共 <strong className="text-gray-900">3 點</strong>
         </li>
-        <li className={`transition-all duration-300 p-2 rounded-lg ${defectOpacity} ${isDefect ? 'bg-red-50 border border-red-100' : ''}`}>
+        <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
           若是您<strong>不給</strong>對方，對方<strong>給</strong>您，那麼您拿到 2 + 1 總共 <strong className="text-green-700">3點</strong>，對方拿 <strong className="text-gray-900">0 點</strong>
         </li>
-        <li className={`transition-all duration-300 p-2 rounded-lg ${coopOpacity} ${isCoop ? 'bg-green-50 border border-green-100' : ''}`}>
+        <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
           若是您和對方<strong>都給</strong>彼此，那麼您和對方都是拿到 <strong className="text-gray-900">2 點</strong>
         </li>
@@ -86,16 +86,19 @@ export const DecisionSlider: React.FC<{
   value: number;
   onChange: (val: number) => void;
   onInteraction?: () => void;
-}> = ({ value, onChange, onInteraction }) => {
+  hasInteracted?: boolean;
+}> = ({ value, onChange, onInteraction, hasInteracted = true }) => {
   return (
     <div className="w-full max-w-md mx-auto">
       <div className="relative pt-6 pb-2 px-4">
-        <div
-          className="absolute -top-1 transform -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded transition-all shadow-md"
-          style={{ left: `${value}%` }}
-        >
-          {value}%
-        </div>
+        {hasInteracted && (
+          <div
+            className="absolute -top-1 transform -translate-x-1/2 bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded transition-all shadow-md"
+            style={{ left: `${value}%` }}
+          >
+            {value}%
+          </div>
+        )}
         <input
           type="range" min="0" max="100" value={value}
           onChange={(e) => {
@@ -113,12 +116,10 @@ export const DecisionSlider: React.FC<{
       <div className="mt-4 pt-4 border-t border-gray-100">
         <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-2 border border-gray-100">
           <p className="font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">決策分析：</p>
-          {value > 50 ? (
-            <p>您偏向 <span className="bg-neutral-700 text-white px-2 py-0.5 rounded font-bold">給予</span>對方點數。</p>
-          ) : value < 50 ? (
-            <p>您偏向 <span className="bg-gray-300 text-gray-700 px-2 py-0.5 rounded font-bold">不給予</span>對方點數。</p>
+          {hasInteracted ? (
+            <p>您有 <span>{value}%</span> 機率會給予，<span >{100 - value}%</span> 機率不會給予對方。</p>
           ) : (
-            <p>您目前 <span className="text-gray-500 font-bold">尚未決定</span>。請來回調整滑桿以了解預期的決策。</p>
+            <p>請拉動滑桿做出決定。</p>
           )}
         </div>
       </div>

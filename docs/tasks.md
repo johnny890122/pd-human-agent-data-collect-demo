@@ -2100,7 +2100,7 @@ Replace text-based "Invalidate"/"Restore" buttons with intuitive icon buttons, a
   - **Location**: Lines 344-351 (`getName` function)
   - **Verify**: Current logic already handles all four participants correctly:
     - `focalNode` → "您"
-    - `opponentNode` → "對手"
+    - `opponentNode` → "搭檔"
     - Others → "參與者 [group]" (e.g., "參與者 KMT", "參與者 DPP")
   - **Action**: Confirm no changes needed, existing logic is correct
   - **Testing**: Verify labels are displayed correctly for all 4 edges
@@ -2162,7 +2162,7 @@ Replace text-based "Invalidate"/"Restore" buttons with intuitive icon buttons, a
 
 ✅ **TASK-2502 Complete**: All 4 participants are labeled correctly:
 - "您" for focal participant
-- "對手" for opponent
+- "搭檔" for opponent
 - "參與者 KMT" / "參與者 DPP" for others
 
 ✅ **Visual Quality**: Layout remains clean and readable with 4 records
@@ -2188,7 +2188,7 @@ npm run dev
 
 # 4. Visual verification
 ☐ History legend shows 4 interaction records
-☐ Labels are correct: "您", "對手", "參與者 [group]", "參與者 [group]"
+☐ Labels are correct: "您", "搭檔", "參與者 [group]", "參與者 [group]"
 ☐ Each record shows source → target with decision badge
 ☐ Badges display "給予" or "不給予" correctly
 ☐ Layout is clean and scrollable if needed
@@ -2484,3 +2484,38 @@ saveSession(currentId, submission._id, path);
 **Completion Date**: 2026-05-06
 **Related Issues**: BUG-005
 **Related Requirements**: REQ-313 (one submission per participant), REQ-311 (device fingerprinting)
+
+---
+
+## Phase 33: Chrome-Only Browser Enforcement (REQ-415)
+
+**Status**: 📋 **Planned** (2026-05-30)
+
+**Objective**: Detect non-Chrome browsers on the survey welcome page and block participants from proceeding until they switch to Chrome.
+
+**Scope**: Frontend only — 1 file, no backend changes.
+
+---
+
+- [ ] **TASK-3301**: Add browser detection state and `useEffect` to `SurveyWelcome.tsx` — [`components/SurveyWelcome.tsx`](../components/SurveyWelcome.tsx) [REQ-415]
+  - Add `const [isChrome, setIsChrome] = useState<boolean>(true);`
+  - Add `useEffect` that sets `isChrome` based on `navigator.userAgent`:
+    - `true` if UA contains `"Chrome/"` AND does NOT contain `"Edg/"` AND does NOT contain `"OPR/"`
+    - `false` otherwise
+  - Default to `true` to avoid a warning flash on Chrome browsers during initial render.
+
+- [ ] **TASK-3302**: Render blocking warning banner when non-Chrome browser detected — [`components/SurveyWelcome.tsx`](../components/SurveyWelcome.tsx) [REQ-415]
+  - Above the main card, conditionally render an amber warning banner with a warning triangle icon.
+  - Banner text: **「請使用 Google Chrome 瀏覽器」** (bold) + 「本實驗僅支援 Chrome，使用其他瀏覽器可能導致實驗無法正常運行。請複製網址並在 Chrome 中開啟。」
+  - Banner only appears when `!isChrome`.
+
+- [ ] **TASK-3303**: Disable "開始實驗" button for non-Chrome browsers — [`components/SurveyWelcome.tsx`](../components/SurveyWelcome.tsx) [REQ-415]
+  - Add `disabled={!isChrome}` to the button element.
+  - Apply `opacity-50 cursor-not-allowed` classes when `!isChrome`, replacing hover/transform effects.
+  - Chrome users see no visual change to the button.
+
+**Acceptance Criteria for Phase 33**:
+- Opening the page in Firefox/Safari/Edge shows the amber warning banner and a grayed-out disabled button
+- Opening the page in Chrome (or Brave) shows no warning and a fully functional button
+- The `handleStart` function cannot be triggered from a non-Chrome browser (button is `disabled`)
+- No backend calls or data model changes required

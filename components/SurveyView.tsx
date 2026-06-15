@@ -600,8 +600,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
             <button
               onClick={!isDecisionPhase && allRevealed ? () => { setIsDecisionPhase(true); setHasInteracted(false); } : handleNext}
-              disabled={!allRevealed || (isDecisionPhase && !hasInteracted)}
-              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed || (isDecisionPhase && !hasInteracted)
+              disabled={!allRevealed}
+              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed
                 ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
                 : 'bg-gray-900 text-white hover:bg-black hover:-translate-y-1 active:translate-y-0 animate-glow-indigo'
                 }`}
@@ -610,9 +610,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                 ? '繼續'
                 : !isDecisionPhase
                   ? '開始決策'
-                  : !hasInteracted
-                    ? '請拉動上方滑桿做出決定'
-                    : scenarioIdx === scenarios.length - 1 ? '確認並送出' : '確認並前往下一題'
+                  : scenarioIdx === scenarios.length - 1 ? '確認並送出' : '確認並前往下一題'
               }
             </button>
           </div>

@@ -116,11 +116,7 @@ export const DecisionSlider: React.FC<{
       <div className="mt-4 pt-4 border-t border-gray-100">
         <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-2 border border-gray-100">
           <p className="font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">決策分析：</p>
-          {hasInteracted ? (
-            <p>您有 <span>{value}%</span> 機率會給予，<span >{100 - value}%</span> 機率不會給予對方。</p>
-          ) : (
-            <p>請拉動滑桿做出決定。</p>
-          )}
+          <p>您有 <span>{value}%</span> 機率會給予，<span>{100 - value}%</span> 機率不會給予對方。</p>
         </div>
       </div>
     </div>

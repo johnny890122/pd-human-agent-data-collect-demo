@@ -871,10 +871,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                 fontSize="18"
                 fontWeight="800"
                 className="pointer-events-none"
-                fill={visualDecision > 50 ? 'white' : (visualDecision < 50 ? '#374151' : 'white')}
+                fill="white"
                 style={{ transition: 'all 0.2s ease' }}
               >
-                {visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '?'}
+                {visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '中立'}
               </text>
             </g>
           </g>

@@ -90,8 +90,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     if (introStep === 3) return !introEdgeRevealed;
     // Step 4 (Part 2): Must reveal all edges in the graph
     if (introStep === 4) return introGraphRevealed.size < networkDemoSetup.activeEdgeIds.length;
-    // Step 5 (Part 3): Must interact with the slider
-    if (introStep === 5) return !introSliderInteracted;
+    // Step 5 (Part 3): slider interaction not required; 50% (neutral) is valid
     // Step 6 (Comprehension Check): Must submit correct answers
     if (introStep === 6) return !quizCorrect;
     return false;

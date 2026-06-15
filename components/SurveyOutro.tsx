@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { SurveyResult } from '../types';
 import { drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
 
@@ -17,6 +17,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
   const [selectedRoundIdx, setSelectedRoundIdx] = useState<number | null>(null);
   const [results, setResults] = useState<SurveyResult[]>(resultsProp);
   const [opponentProbs, setOpponentProbs] = useState<number[]>([]);
+  const randomDecisions = useMemo(() => Array.from({ length: results.length }, () => Math.random() > 0.5), [results.length]);
 
   useEffect(() => {
     if (step !== 2) return;
@@ -149,18 +150,16 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
                   const isSelected = i === selectedRoundIdx;
                   const myProb = r.cooperationProbability;
                   const myPct = Math.round(myProb * 100);
-                  const myLabel = myProb >= 0.5 ? '合作' : '不合作';
-                  const myLabelColor = myProb >= 0.5
-                    ? 'text-green-700 bg-green-100'
-                    : 'text-red-700 bg-red-100';
+                  const myAtFifty = myProb === 0.5;
+                  const myGive = myAtFifty ? randomDecisions[i] : myProb > 0.5;
+                  const myLabel = myGive ? '合作' : '不合作';
+                  const myLabelColor = myGive ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
                   const oppProb = opponentProbs[i];
                   const oppPct = Math.round(oppProb * 100);
-                  const oppLabel = oppProb >= 0.5 ? '合作' : '不合作';
-                  const oppLabelColor = oppProb >= 0.5
-                    ? 'text-green-700 bg-green-100'
-                    : 'text-red-700 bg-red-100';
-                  const myGive = myProb >= 0.5;
-                  const oppGive = oppProb >= 0.5;
+                  const oppAtFifty = oppProb === 0.5;
+                  const oppGive = oppAtFifty ? randomDecisions[i] : oppProb > 0.5;
+                  const oppLabel = oppGive ? '合作' : '不合作';
+                  const oppLabelColor = oppGive ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
                   const points = myGive && oppGive ? 2 : !myGive && oppGive ? 3 : myGive && !oppGive ? 0 : 1;
                   return (
                     <tr
@@ -175,17 +174,39 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
                       <td className="px-3 py-3 text-gray-800">
                         <div className="flex flex-col items-start gap-0.5">
                           <span className="font-semibold text-sm">{myPct}%</span>
-                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${myLabelColor}`}>
-                            {myLabel}
-                          </span>
+                          {myAtFifty ? (
+                            <span className="relative group inline-block">
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full cursor-help ${myLabelColor}`}>
+                                {myLabel} *
+                              </span>
+                              <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-20 shadow-lg">
+                                您選擇了 50%，由系統隨機決定為此結果
+                              </span>
+                            </span>
+                          ) : (
+                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${myLabelColor}`}>
+                              {myLabel}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-3 text-gray-800">
                         <div className="flex flex-col items-start gap-0.5">
                           <span className="font-semibold text-sm">{oppPct}%</span>
-                          <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${oppLabelColor}`}>
-                            {oppLabel}
-                          </span>
+                          {oppAtFifty ? (
+                            <span className="relative group inline-block">
+                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full cursor-help ${oppLabelColor}`}>
+                                {oppLabel} *
+                              </span>
+                              <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-20 shadow-lg">
+                                搭檔選擇了 50%，由系統隨機決定為此結果
+                              </span>
+                            </span>
+                          ) : (
+                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${oppLabelColor}`}>
+                              {oppLabel}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-gray-800">{points}</td>
@@ -199,8 +220,9 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
           {(() => {
             const selResult = results[selectedRoundIdx];
             const selOppProb = opponentProbs[selectedRoundIdx];
-            const selMyGive = selResult ? selResult.cooperationProbability >= 0.5 : false;
-            const selOppGive = selOppProb >= 0.5;
+            const selMyProb = selResult?.cooperationProbability ?? 0;
+            const selMyGive = selResult ? (selMyProb === 0.5 ? randomDecisions[selectedRoundIdx] : selMyProb > 0.5) : false;
+            const selOppGive = selOppProb === 0.5 ? randomDecisions[selectedRoundIdx] : selOppProb > 0.5;
             const selPoints = selResult
               ? (selMyGive && selOppGive ? 2 : !selMyGive && selOppGive ? 3 : selMyGive && !selOppGive ? 0 : 1)
               : null;

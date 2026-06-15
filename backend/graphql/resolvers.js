@@ -692,11 +692,14 @@ export const resolvers = {
       requireDb();
       await connectToDatabase();
 
-      const submission = await SubmissionModel.findById(submissionId);
+      console.log(`[drawRealisedRound] called with submissionId=${submissionId}`);
+
+      const submission = await SubmissionModel.findById(submissionId).lean();
       if (!submission) throw new Error('Submission not found');
 
       // Idempotent: if already drawn, return the persisted data
       if (submission.realisedRoundIndex !== null && submission.realisedRoundIndex !== undefined) {
+        console.log(`[drawRealisedRound] idempotent hit: realisedRoundIndex=${submission.realisedRoundIndex}, returning cached data`);
         let opponentProbs = submission.opponentProbs;
         // Migrate old submissions that have realisedRoundIndex but no opponentProbs yet
         if (!opponentProbs?.length) {
@@ -710,8 +713,87 @@ export const resolvers = {
       if (totalRounds === 0) throw new Error('No results to draw from');
 
       const drawnIndex = Math.floor(Math.random() * totalRounds);
-      // Generate one random opponent probability per round (placeholder until real data is wired)
-      const opponentProbs = submission.results.map(() => Math.random());
+
+      // Partner matching: find opponent's decisions from the same group
+      let opponentProbs;
+      const session = await SessionModel.findById(submission.sessionId).lean();
+      const groupId = session?.groupId;
+      const opponentNode = session?.opponentNode;
+
+      console.log(`[drawRealisedRound] submissionId=${submissionId} sessionId=${submission.sessionId} groupId=${groupId ?? 'none'} opponentNode=${opponentNode ?? 'none'} totalRounds=${totalRounds}`);
+
+      if (groupId && opponentNode) {
+        // Derive opponent group: 'KMT1'/'KMT2' → ['KMT1','KMT2'], 'DPP3'/'DPP4' → ['DPP3','DPP4']
+        const GROUP_NODES = { KMT: ['KMT1', 'KMT2'], DPP: ['DPP3', 'DPP4'] };
+        const opponentGroupKey = opponentNode.startsWith('KMT') ? 'KMT' : 'DPP';
+        const partnerFocalNodes = GROUP_NODES[opponentGroupKey];
+        console.log(`[drawRealisedRound] opponentNode=${opponentNode} → group=${opponentGroupKey} partnerFocalNodes=[${partnerFocalNodes.join(',')}]`);
+
+        // Step 1: get scenarioIndex for each of this submission's scenarios (batch)
+        const currentScenarioIds = submission.results.map(r => r.scenarioId);
+        const currentScenarios = await ScenarioModel.find({ _id: { $in: currentScenarioIds } }).lean();
+        const scenarioIdToIndex = Object.fromEntries(currentScenarios.map(s => [String(s._id), s.scenarioIndex]));
+        console.log(`[drawRealisedRound] current scenarios found=${currentScenarios.length} indices=[${currentScenarios.map(s => s.scenarioIndex).join(',')}]`);
+
+        // Step 2: find partner scenarios (same group, focalNode in opponent group, matching scenarioIndex)
+        const scenarioIndices = currentScenarios.map(s => s.scenarioIndex);
+        const partnerScenarios = await ScenarioModel.find({
+          groupId,
+          focalNode: { $in: partnerFocalNodes },
+          scenarioIndex: { $in: scenarioIndices },
+        }).lean();
+        // Multiple partner nodes may have the same scenarioIndex; group by index → pick one randomly later
+        const partnerIndexToIds = {};
+        for (const s of partnerScenarios) {
+          if (!partnerIndexToIds[s.scenarioIndex]) partnerIndexToIds[s.scenarioIndex] = [];
+          partnerIndexToIds[s.scenarioIndex].push(String(s._id));
+        }
+        const partnerScenarioIds = partnerScenarios.map(s => String(s._id));
+        console.log(`[drawRealisedRound] partner scenarios found=${partnerScenarios.length} ids=[${partnerScenarioIds.join(',')}]`);
+
+        // Step 3: find completed valid submissions that answered any partner scenario
+        const partnerSubmissions = partnerScenarioIds.length > 0
+          ? await SubmissionModel.find({
+              isCompleted: true,
+              isInvalid: { $ne: true },
+              'results.scenarioId': { $in: partnerScenarioIds },
+            }).lean()
+          : [];
+        console.log(`[drawRealisedRound] partner submissions found=${partnerSubmissions.length}`);
+
+        // Step 4: build lookup map partnerScenarioId → [cooperationProbability]
+        const probsByPartnerScenarioId = {};
+        for (const sub of partnerSubmissions) {
+          for (const result of sub.results) {
+            const sid = String(result.scenarioId);
+            if (partnerScenarioIds.includes(sid)) {
+              if (!probsByPartnerScenarioId[sid]) probsByPartnerScenarioId[sid] = [];
+              probsByPartnerScenarioId[sid].push(result.cooperationProbability);
+            }
+          }
+        }
+
+        // Step 5: for each round, collect all probs across all partner nodes in the group, then random pick
+        opponentProbs = submission.results.map(r => {
+          const si = scenarioIdToIndex[String(r.scenarioId)];
+          const pids = partnerIndexToIds[si] ?? [];
+          const allProbs = pids.flatMap(pid => probsByPartnerScenarioId[pid] ?? []);
+          if (allProbs.length > 0) {
+            return allProbs[Math.floor(Math.random() * allProbs.length)];
+          }
+          return Math.random();
+        });
+
+        const matchedCount = opponentProbs.filter((_, i) => {
+          const si = scenarioIdToIndex[String(submission.results[i].scenarioId)];
+          const pids = partnerIndexToIds[si] ?? [];
+          return pids.some(pid => probsByPartnerScenarioId[pid]?.length > 0);
+        }).length;
+        console.log(`[drawRealisedRound] opponentProbs matched=${matchedCount}/${totalRounds} fallback=${totalRounds - matchedCount}`);
+      } else {
+        console.log(`[drawRealisedRound] no groupId or opponentNode, using random for all rounds`);
+        opponentProbs = submission.results.map(() => Math.random());
+      }
 
       await SubmissionModel.findByIdAndUpdate(submissionId, {
         $set: { realisedRoundIndex: drawnIndex, opponentProbs }

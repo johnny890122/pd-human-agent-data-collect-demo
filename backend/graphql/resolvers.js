@@ -116,6 +116,8 @@ function toSubmissionGraph(doc) {
     isCompleted: doc.isCompleted === true,
     completedAt: doc.completedAt ? (doc.completedAt instanceof Date ? doc.completedAt.toISOString() : doc.completedAt) : null,
     isInvalid: doc.isInvalid === true,
+    realisedRoundIndex: doc.realisedRoundIndex ?? null,
+    opponentProbs: doc.opponentProbs ?? null,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
@@ -236,6 +238,13 @@ export const resolvers = {
     // Submission Queries
     // ========================================================================
     
+    submission: async (_, { id }) => {
+      requireDb();
+      await connectToDatabase();
+      const doc = await SubmissionModel.findById(id).lean();
+      return toSubmissionGraph(doc);
+    },
+
     recentSubmissions: async (_, { limit = 20 }) => {
       requireDb();
       await connectToDatabase();
@@ -676,9 +685,45 @@ export const resolvers = {
     },
     
     // ========================================================================
+    // Realised Round Draw
+    // ========================================================================
+
+    drawRealisedRound: async (_, { submissionId }) => {
+      requireDb();
+      await connectToDatabase();
+
+      const submission = await SubmissionModel.findById(submissionId);
+      if (!submission) throw new Error('Submission not found');
+
+      // Idempotent: if already drawn, return the persisted data
+      if (submission.realisedRoundIndex !== null && submission.realisedRoundIndex !== undefined) {
+        let opponentProbs = submission.opponentProbs;
+        // Migrate old submissions that have realisedRoundIndex but no opponentProbs yet
+        if (!opponentProbs?.length) {
+          opponentProbs = submission.results.map(() => Math.random());
+          await SubmissionModel.findByIdAndUpdate(submissionId, { $set: { opponentProbs } });
+        }
+        return { realisedRoundIndex: submission.realisedRoundIndex, opponentProbs };
+      }
+
+      const totalRounds = submission.results?.length ?? 0;
+      if (totalRounds === 0) throw new Error('No results to draw from');
+
+      const drawnIndex = Math.floor(Math.random() * totalRounds);
+      // Generate one random opponent probability per round (placeholder until real data is wired)
+      const opponentProbs = submission.results.map(() => Math.random());
+
+      await SubmissionModel.findByIdAndUpdate(submissionId, {
+        $set: { realisedRoundIndex: drawnIndex, opponentProbs }
+      });
+
+      return { realisedRoundIndex: drawnIndex, opponentProbs };
+    },
+
+    // ========================================================================
     // Admin Controls
     // ========================================================================
-    
+
     deleteSessionGroup: async (_, { groupId }) => {
       requireDb();
       await connectToDatabase();

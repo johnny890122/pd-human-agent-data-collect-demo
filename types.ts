@@ -72,6 +72,8 @@ export interface Submission {
   isCompleted: boolean;
   completedAt?: string | null;
   isInvalid?: boolean;
+  realisedRoundIndex?: number | null;
+  opponentProbs?: number[] | null;
   createdAt: string;
   updatedAt: string;
 }

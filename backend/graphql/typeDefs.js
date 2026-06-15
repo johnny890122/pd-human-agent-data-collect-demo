@@ -65,8 +65,15 @@ export const typeDefs = `#graphql
     isCompleted: Boolean!
     completedAt: String
     isInvalid: Boolean!
+    realisedRoundIndex: Int
+    opponentProbs: [Float!]
     createdAt: String!
     updatedAt: String!
+  }
+
+  type DebriefResult {
+    realisedRoundIndex: Int!
+    opponentProbs: [Float!]!
   }
 
   type SurveyResult {
@@ -174,6 +181,7 @@ export const typeDefs = `#graphql
     allSessionGroups: [SessionGroup!]!
     
     # Submission queries
+    submission(id: ID!): Submission
     recentSubmissions(limit: Int = 20): [Submission!]!
     
   }
@@ -195,6 +203,9 @@ export const typeDefs = `#graphql
     saveSurveyAnswer(submissionId: ID!, scenarioId: ID!, cooperationProbability: Float!): Submission!
     completeSurvey(submissionId: ID!, demographics: DemographicsInput!): Submission!
     
+    # Realised round draw (backend-authoritative random selection for payment)
+    drawRealisedRound(submissionId: ID!): DebriefResult!
+
     # Admin controls
     deleteSessionGroup(groupId: ID!): Boolean!
     clearDatabase: Boolean!

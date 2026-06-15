@@ -30,6 +30,8 @@ const submissionSchema = new mongoose.Schema(
     isCompleted: { type: Boolean, required: true, default: false },
     completedAt: { type: Date, required: false, default: null },
     isInvalid: { type: Boolean, required: true, default: false },
+    realisedRoundIndex: { type: Number, required: false, default: null },
+    opponentProbs: { type: [Number], required: false, default: null },
   },
   { timestamps: true }
 );

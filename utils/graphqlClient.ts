@@ -1,4 +1,4 @@
-import { Session, Scenario, SessionGroup as SessionGroupType, SurveyResult, Submission as SubmissionType } from '../types';
+import { Session, Scenario, SessionGroup as SessionGroupType, Submission as SubmissionType } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -526,6 +526,45 @@ export async function completeSurvey(
   });
 
   return data.completeSurvey;
+}
+
+export async function fetchSubmission(submissionId: string): Promise<SubmissionType | null> {
+  const query = `
+    query FetchSubmission($id: ID!) {
+      submission(id: $id) {
+        _id
+        results {
+          scenarioId
+          cooperationProbability
+          responseTime
+          answeredAt
+        }
+        realisedRoundIndex
+        opponentProbs
+        isCompleted
+      }
+    }
+  `;
+  const data = await runGraphQL<{ submission: SubmissionType | null }>(query, { id: submissionId });
+  return data.submission;
+}
+
+export interface DebriefResult {
+  realisedRoundIndex: number;
+  opponentProbs: number[];
+}
+
+export async function drawRealisedRound(submissionId: string): Promise<DebriefResult> {
+  const mutation = `
+    mutation DrawRealisedRound($submissionId: ID!) {
+      drawRealisedRound(submissionId: $submissionId) {
+        realisedRoundIndex
+        opponentProbs
+      }
+    }
+  `;
+  const data = await runGraphQL<{ drawRealisedRound: DebriefResult }>(mutation, { submissionId });
+  return data.drawRealisedRound;
 }
 
 // ============================================================================

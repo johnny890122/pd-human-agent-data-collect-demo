@@ -201,23 +201,39 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
     // - Weak restoration lets control points spread freely to avoid overlap
     // - Global charge repulsion pushes all control points apart
     // - Collision prevents close-range overlap with other control points and nodes
+    // - Boundary force constrains P1 = 2*L - M (bezier control point) within viewBox
+    //   Applied to L with 0.5× factor because dP1/dL = 2 (P1 moves twice as far as L)
+    const vbXMin = -10, vbXMax = 430, vbYMin = -10, vbYMax = 450;
+    const boundaryForce = (alpha: number) => {
+      for (const node of allNodes as any[]) {
+        if (!node.isControl) continue;
+        const p1x = 2 * node.x - node.mx;
+        const p1y = 2 * node.y - node.my;
+        if (p1x < vbXMin) node.vx += (vbXMin - p1x) * 0.5 * 0.8 * alpha;
+        if (p1x > vbXMax) node.vx -= (p1x - vbXMax) * 0.5 * 0.8 * alpha;
+        if (p1y < vbYMin) node.vy += (vbYMin - p1y) * 0.5 * 0.8 * alpha;
+        if (p1y > vbYMax) node.vy -= (p1y - vbYMax) * 0.5 * 0.8 * alpha;
+      }
+    };
+
     const simulation = d3.forceSimulation(allNodes)
       .force("x", d3.forceX((d: any) => d.initLx).strength((d: any) => d.isControl ? 0.1 : 1))
       .force("y", d3.forceY((d: any) => d.initLy).strength((d: any) => d.isControl ? 0.1 : 1))
       .force("collide", d3.forceCollide((d: any) => d.isControl ? 52 : RADIUS + 20).iterations(6))
       .force("charge", d3.forceManyBody().strength((d: any) => d.isControl ? -200 : 0))
+      .force("boundary", boundaryForce)
       .stop();
 
     // 3. Fast-forward the simulation to final steady state
     simulation.tick(500);
 
-    // 4. Extract results
+    // 4. Extract results (clamp P1 as final safety net)
     const results: Record<string, { x: number, y: number }> = {};
     simNodes.forEach((node: any) => {
       // P1 = 2*Label - Midpoint
       results[node.id] = {
-        x: 2 * node.x - node.mx,
-        y: 2 * node.y - node.my
+        x: clamp(2 * node.x - node.mx, vbXMin, vbXMax),
+        y: clamp(2 * node.y - node.my, vbYMin, vbYMax)
       };
     });
 
@@ -404,228 +420,6 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         );
       })()}
 
-      {/* ── Edges (Layer 3: Bubbles) ──────────────────────────────────── */}
-      {ALL_EDGES.map(edge => {
-        const start = positions[edge.source];
-        const end = positions[edge.target];
-        // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
-        const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds) || setup?.activeEdgeIds || [];
-        const isActive = activeEdges.includes(edge.id);
-        const opacity = getEdgeOpacity(edge.id);
-
-        const cp = edgeControlPoints[edge.id];
-        const cx = cp.x;
-        const cy = cp.y;
-
-        const tStart = findBezierTFromStart(start, { x: cx, y: cy }, end, RADIUS);
-        const tEnd = findBezierTFromEnd(start, { x: cx, y: cy }, end, RADIUS + 2);
-
-        const tMid = (tStart + tEnd) / 2;
-        const midPoint = getBezierPoint(tMid, start, { x: cx, y: cy }, end);
-        const midX = midPoint.x;
-        const midY = midPoint.y;
-
-        const isGradualMode = revealedEdgeIds !== undefined;
-        const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
-        const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
-
-        let showBubble = false;
-        let bubbleLabel = '';
-        let bubbleColor = 'transparent';
-        if (isActive && mode === 'survey' && scenario && isRevealed) {
-          const state = scenario.edgeStates[edge.id];
-          showBubble = true;
-          bubbleLabel = state === 'give' ? '給予' : '不給予';
-          bubbleColor = state === 'give' ? COLORS.coop : COLORS.defect;
-        }
-
-        if (!showBubble && !isUnrevealedActive) return null;
-
-        return (
-          <g
-            key={`bubble-${edge.id}`}
-            onClick={() => {
-              if (mode === 'admin') {
-                onEdgeClick?.(edge.id);
-              } else if (isUnrevealedActive && onEdgeReveal) {
-                onEdgeReveal(edge.id);
-              }
-            }}
-            className={`${mode === 'admin'
-              ? 'cursor-pointer hover:opacity-80'
-              : isUnrevealedActive
-                ? 'cursor-pointer'
-                : ''
-              } transition-all duration-300`}
-            style={{ opacity }}
-          >
-            {/* Revealed: COOP/DEFECT bubble */}
-            {showBubble && (
-              <g transform={`translate(${midX}, ${midY})`}>
-                <rect x="-34" y="-15" width="68" height="30" rx="15" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
-                <text
-                  textAnchor="middle"
-                  y="8"
-                  fontSize="18"
-                  fontWeight="800"
-                  fill={bubbleLabel === '給予' ? 'white' : '#374151'}
-                >
-                  {bubbleLabel}
-                </text>
-              </g>
-            )}
-
-            {/* Unrevealed active edge: pulsing '?' prompt */}
-            {isUnrevealedActive && (
-              <g transform={`translate(${midX}, ${midY})`}>
-                {/* Outer Glow */}
-                <circle r="12" fill={COLORS.blue} fillOpacity="0.2">
-                  <animate attributeName="r" values="10;14;10" dur="2s" repeatCount="indefinite" />
-                  <animate attributeName="fill-opacity" values="0.2;0.4;0.2" dur="2s" repeatCount="indefinite" />
-                </circle>
-                <circle r="9" fill="white" stroke={COLORS.blue} strokeWidth="2" className="shadow-lg">
-                  <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
-                </circle>
-                <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})` }}>?</text>
-              </g>
-            )}
-          </g>
-        );
-      })}
-
-      {/* ── Decision Edge (Layer 4: Bubble) ────────────────────────────── */}
-      {!hideDecisionEdge && mode === 'survey' && setup.focalNode && setup.opponentNode && (() => {
-        const startNode = setup.focalNode;
-        const endNode = setup.opponentNode;
-
-        const start = positions[startNode];
-        const end = positions[endNode];
-        if (!start || !end) return null;
-
-        const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
-        let decisionColor: string;
-        let edgeOpacity = 1;
-
-        if (visualDecision > 50) {
-          decisionColor = COLORS.coop;
-          edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
-        } else if (visualDecision < 50) {
-          decisionColor = COLORS.defect;
-          edgeOpacity = 0.4 + (0.6 * (50 - visualDecision) / 50);
-        } else {
-          decisionColor = COLORS.highlight;
-          edgeOpacity = 0.5;
-        }
-
-        const dist = distance(start, end);
-        if (!Number.isFinite(dist) || dist <= 1e-6) return null;
-
-        const mx = (start.x + end.x) / 2;
-        const my = (start.y + end.y) / 2;
-
-        const cp = edgeControlPoints['decision-edge'];
-        const ctrlX = cp ? cp.x : mx;
-        const ctrlY = cp ? cp.y : my;
-
-        const tStartDecision = findBezierTFromStart(start, { x: ctrlX, y: ctrlY }, end, RADIUS);
-        const tEndDecision = findBezierTFromEnd(start, { x: ctrlX, y: ctrlY }, end, RADIUS + 2);
-        const tMidDecision = (tStartDecision + tEndDecision) / 2;
-        const midPoint = getBezierPoint(tMidDecision, start, { x: ctrlX, y: ctrlY }, end);
-        const bx = midPoint.x;
-        const by = midPoint.y;
-
-        return (
-          <g style={{ transition: 'all 0.3s ease' }}>
-            <g
-              transform={`translate(${bx}, ${by})`}
-              style={{
-                transition: isDragging ? 'none' : 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                cursor: onDecisionChange ? (isDragging ? 'grabbing' : 'grab') : 'default'
-              }}
-              onPointerDown={handlePointerDown}
-              onMouseEnter={() => onDecisionChange && setIsHoveringDecision(true)}
-              onMouseLeave={() => setIsHoveringDecision(false)}
-            >
-              {/* Directional pulsing arrows */}
-              {onDecisionChange && (
-                <g>
-                  {/* To Defect (-) */}
-                  {(!isDragging || dragDirection === 'minus') && (
-                    <g>
-                      {!isDragging && (
-                        <>
-                          <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" />
-                          <animate attributeName="transform" values="translate(0,0); translate(-4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
-                        </>
-                      )}
-                      <path d="M -46 0 L -40 -5 L -40 5 Z" fill={decisionColor} />
-                    </g>
-                  )}
-                  {/* To Cooperate (+) */}
-                  {(!isDragging || dragDirection === 'plus') && (
-                    <g>
-                      {!isDragging && (
-                        <>
-                          <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" />
-                          <animate attributeName="transform" values="translate(0,0); translate(4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
-                        </>
-                      )}
-                      <path d="M 46 0 L 40 -5 L 40 5 Z" fill={decisionColor} />
-                    </g>
-                  )}
-                </g>
-              )}
-
-              {/* Pulsing Halo (when idle or hovering) */}
-              {onDecisionChange && !isDragging && (
-                <circle
-                  r={isHoveringDecision ? 28 : 24}
-                  fill="none"
-                  stroke={decisionColor}
-                  strokeWidth="2"
-                  strokeOpacity="0.4"
-                  style={{ transition: 'all 0.2s ease' }}
-                >
-                  <animate attributeName="r" values={isHoveringDecision ? '28;32;28' : '24;28;24'} dur="2s" repeatCount="indefinite" />
-                  <animate attributeName="stroke-opacity" values="0.4;0.1;0.4" dur="2s" repeatCount="indefinite" />
-                </circle>
-              )}
-
-              {/* Large transparent hit area for easier grabbing */}
-              <circle r="40" fill="transparent" className="cursor-pointer" />
-
-              {/* Main Bubble - Matches standard edge style */}
-              <rect
-                x="-40"
-                y="-15"
-                width="80"
-                height="30"
-                rx="15"
-                fill={decisionColor} // Use solid color
-                fillOpacity={edgeOpacity}
-                stroke="white"
-                strokeOpacity={edgeOpacity}
-                strokeWidth={isDragging ? 3 : 2}
-                className="shadow-md"
-                style={{ transition: 'fill 0.3s ease, stroke-width 0.2s ease, fill-opacity 0.3s ease, stroke-opacity 0.3s ease' }}
-              />
-
-              <text
-                textAnchor="middle"
-                y="8"
-                fontSize="18"
-                fontWeight="800"
-                className="pointer-events-none"
-                fill={visualDecision > 50 ? 'white' : (visualDecision < 50 ? '#374151' : 'white')}
-                style={{ transition: 'all 0.2s ease' }}
-              >
-                {visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '?'}
-              </text>
-            </g>
-          </g>
-        );
-      })()}
-
       {/* ── Nodes ─────────────────────────────────────────────────────── */}
       {Object.values(AGENTS).map(agent => {
         const pos = positions[agent.id];
@@ -643,7 +437,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           strokeColor = COLORS.highlight; strokeWidth = 4; 
         }
         else if (isOpponent) {
-          strokeColor = COLORS.roleOpponent; strokeWidth = 4; 
+          strokeColor = COLORS.rolePartnerHighlight; strokeWidth = 4;
         }
 
         // ── Avatar body ──────────────────────────
@@ -739,7 +533,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               <circle
                 r={r + 4}
                 fill="none"
-                stroke={COLORS.roleOpponent}
+                stroke={COLORS.rolePartnerHighlight}
                 strokeWidth="4"
                 strokeOpacity="0.6"
                 filter="url(#glow)"
@@ -768,7 +562,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                 badgeWidth = 118; // wider to accommodate 'YOU - GROUPNAME'
               } else if (isOpponent) {
                 roleTag = 'Partner';
-                roleFill = COLORS.rolePartner; // gray-500
+                roleFill = COLORS.rolePartnerHighlight;
                 badgeWidth = 138; // wider to accommodate 'Partner - GROUPNAME'
               }
 
@@ -779,7 +573,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
               return (
                 <g transform={`translate(0, ${r - 2})`}>
                   <rect x={-badgeWidth / 2} y="-22" width={badgeWidth} height="26" rx="13" fill={badgeFill} stroke={strokeColor} strokeWidth="1.5" opacity="0.95" />
-                  <text y="1" textAnchor="middle" fontSize="16" className="font-[800] pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
+                  <text y="-9" dominantBaseline="central" textAnchor="middle" fontSize="16" className="font-[800] pointer-events-none" style={{ textTransform: roleTag ? 'none' : 'uppercase' }}>
                     {roleTag ? (
                       <>
                         <tspan className="uppercase tracking-wider font-black" fill={roleFill}>{roleTag === 'YOU' ? '您' : '搭檔'}</tspan>
@@ -811,6 +605,281 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
           </g>
         );
       })}
+
+      {/* ── Edges (Layer 5: Bubbles — above nodes) ───────────────────────── */}
+      {ALL_EDGES.map(edge => {
+        const start = positions[edge.source];
+        const end = positions[edge.target];
+        // Survey mode: Use scenario.activeEdgeIds (for Mixed Mode support)
+        const activeEdges = (mode === 'survey' && scenario?.activeEdgeIds) || setup?.activeEdgeIds || [];
+        const isActive = activeEdges.includes(edge.id);
+        const opacity = getEdgeOpacity(edge.id);
+
+        const cp = edgeControlPoints[edge.id];
+        const cx = cp.x;
+        const cy = cp.y;
+
+        const tStart = findBezierTFromStart(start, { x: cx, y: cy }, end, RADIUS);
+        const tEnd = findBezierTFromEnd(start, { x: cx, y: cy }, end, RADIUS + 2);
+        const cpPt = { x: cx, y: cy };
+
+        const ARROW_CLEAR = 55;          // min px from arrowhead
+        const SRC_CLEAR = RADIUS + 38;   // min px from source node center
+
+        const pArrow = getBezierPoint(clamp(tEnd, 0, 1), start, cpPt, end);
+
+        // tMax: largest t still far enough from arrowhead (distance decreases as t→tEnd)
+        let tMax = tStart;
+        { let lo = tStart, hi = tEnd;
+          for (let i = 0; i < 10; i++) {
+            const tm = (lo + hi) / 2;
+            if (distance(getBezierPoint(tm, start, cpPt, end), pArrow) >= ARROW_CLEAR) lo = tm; else hi = tm;
+          }
+          tMax = lo; }
+
+        // tMin: smallest t far enough from source node center (distance increases as t→tEnd)
+        let tMin = tEnd;
+        { let lo = tStart, hi = tEnd;
+          for (let i = 0; i < 10; i++) {
+            const tm = (lo + hi) / 2;
+            if (distance(getBezierPoint(tm, start, cpPt, end), start) >= SRC_CLEAR) hi = tm; else lo = tm;
+          }
+          tMin = hi; }
+
+        // Valid range [tMin, tMax]. If constraints conflict, prioritise source clearance
+        // (covering the avatar is worse than clipping the arrowhead).
+        const tMid = tMin <= tMax
+          ? (tMin + tMax) / 2
+          : clamp(tMin, tStart, tEnd);
+        const midPoint = getBezierPoint(tMid, start, cpPt, end);
+        const midX = midPoint.x;
+        const midY = midPoint.y;
+
+        const isGradualMode = revealedEdgeIds !== undefined;
+        const isRevealed = isGradualMode ? revealedEdgeIds!.has(edge.id) : true;
+        const isUnrevealedActive = isActive && isGradualMode && !isRevealed;
+
+        let showBubble = false;
+        let bubbleLabel = '';
+        let bubbleColor = 'transparent';
+        if (isActive && mode === 'survey' && scenario && isRevealed) {
+          const state = scenario.edgeStates[edge.id];
+          showBubble = true;
+          bubbleLabel = state === 'give' ? '給予' : '不給予';
+          bubbleColor = state === 'give' ? COLORS.coop : COLORS.defect;
+        }
+
+        if (!showBubble && !isUnrevealedActive) return null;
+
+        return (
+          <g
+            key={`bubble-${edge.id}`}
+            onClick={() => {
+              if (mode === 'admin') {
+                onEdgeClick?.(edge.id);
+              } else if (isUnrevealedActive && onEdgeReveal) {
+                onEdgeReveal(edge.id);
+              }
+            }}
+            className={`${mode === 'admin'
+              ? 'cursor-pointer hover:opacity-80'
+              : isUnrevealedActive
+                ? 'cursor-pointer'
+                : ''
+              } transition-all duration-300`}
+            style={{ opacity }}
+          >
+            {/* Revealed: COOP/DEFECT bubble */}
+            {showBubble && (
+              <g transform={`translate(${midX}, ${midY})`}>
+                <rect x="-34" y="-15" width="68" height="30" rx="15" fill={bubbleColor} stroke="white" strokeWidth="1.5" />
+                <text
+                  textAnchor="middle"
+                  y="8"
+                  fontSize="18"
+                  fontWeight="800"
+                  fill={bubbleLabel === '給予' ? 'white' : '#374151'}
+                >
+                  {bubbleLabel}
+                </text>
+              </g>
+            )}
+
+            {/* Unrevealed active edge: pulsing '?' prompt */}
+            {isUnrevealedActive && (
+              <g transform={`translate(${midX}, ${midY})`}>
+                {/* Outer Glow */}
+                <circle r="12" fill={COLORS.blue} fillOpacity="0.2">
+                  <animate attributeName="r" values="10;14;10" dur="2s" repeatCount="indefinite" />
+                  <animate attributeName="fill-opacity" values="0.2;0.4;0.2" dur="2s" repeatCount="indefinite" />
+                </circle>
+                <circle r="9" fill="white" stroke={COLORS.blue} strokeWidth="2" className="shadow-lg">
+                  <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
+                </circle>
+                <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})` }}>?</text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+
+      {/* ── Decision Edge (Layer 6: Bubble — above nodes) ──────────────── */}
+      {!hideDecisionEdge && mode === 'survey' && setup.focalNode && setup.opponentNode && (() => {
+        const startNode = setup.focalNode as AgentId;
+        const endNode = setup.opponentNode as AgentId;
+
+        const start = positions[startNode];
+        const end = positions[endNode];
+        if (!start || !end) return null;
+
+        const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
+        let decisionColor: string;
+        let edgeOpacity = 1;
+
+        if (visualDecision > 50) {
+          decisionColor = COLORS.coop;
+          edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
+        } else if (visualDecision < 50) {
+          decisionColor = COLORS.defect;
+          edgeOpacity = 0.4 + (0.6 * (50 - visualDecision) / 50);
+        } else {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        }
+
+        const dist = distance(start, end);
+        if (!Number.isFinite(dist) || dist <= 1e-6) return null;
+
+        const mx = (start.x + end.x) / 2;
+        const my = (start.y + end.y) / 2;
+
+        const cp = edgeControlPoints['decision-edge'];
+        const ctrlX = cp ? cp.x : mx;
+        const ctrlY = cp ? cp.y : my;
+        const decCtrlPt = { x: ctrlX, y: ctrlY };
+
+        const tStartDecision = findBezierTFromStart(start, decCtrlPt, end, RADIUS);
+        const tEndDecision = findBezierTFromEnd(start, decCtrlPt, end, RADIUS + 2);
+
+        const ARROW_CLEAR = 55;
+        const SRC_CLEAR = RADIUS + 38;
+
+        const pArrowDec = getBezierPoint(clamp(tEndDecision, 0, 1), start, decCtrlPt, end);
+
+        let tMaxDec = tStartDecision;
+        { let lo = tStartDecision, hi = tEndDecision;
+          for (let i = 0; i < 10; i++) {
+            const tm = (lo + hi) / 2;
+            if (distance(getBezierPoint(tm, start, decCtrlPt, end), pArrowDec) >= ARROW_CLEAR) lo = tm; else hi = tm;
+          }
+          tMaxDec = lo; }
+
+        let tMinDec = tEndDecision;
+        { let lo = tStartDecision, hi = tEndDecision;
+          for (let i = 0; i < 10; i++) {
+            const tm = (lo + hi) / 2;
+            if (distance(getBezierPoint(tm, start, decCtrlPt, end), start) >= SRC_CLEAR) hi = tm; else lo = tm;
+          }
+          tMinDec = hi; }
+
+        const tMidDecision = tMinDec <= tMaxDec
+          ? (tMinDec + tMaxDec) / 2
+          : clamp(tMinDec, tStartDecision, tEndDecision);
+        const midPoint = getBezierPoint(tMidDecision, start, decCtrlPt, end);
+        const bx = midPoint.x;
+        const by = midPoint.y;
+
+        return (
+          <g style={{ transition: 'all 0.3s ease' }}>
+            <g
+              transform={`translate(${bx}, ${by})`}
+              style={{
+                transition: isDragging ? 'none' : 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+                cursor: onDecisionChange ? (isDragging ? 'grabbing' : 'grab') : 'default'
+              }}
+              onPointerDown={handlePointerDown}
+              onMouseEnter={() => onDecisionChange && setIsHoveringDecision(true)}
+              onMouseLeave={() => setIsHoveringDecision(false)}
+            >
+              {/* Directional pulsing arrows */}
+              {onDecisionChange && (
+                <g>
+                  {/* To Defect (-) */}
+                  {(!isDragging || dragDirection === 'minus') && (
+                    <g>
+                      {!isDragging && (
+                        <>
+                          <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" />
+                          <animate attributeName="transform" values="translate(0,0); translate(-4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
+                        </>
+                      )}
+                      <path d="M -46 0 L -40 -5 L -40 5 Z" fill={decisionColor} />
+                    </g>
+                  )}
+                  {/* To Cooperate (+) */}
+                  {(!isDragging || dragDirection === 'plus') && (
+                    <g>
+                      {!isDragging && (
+                        <>
+                          <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.5s" repeatCount="indefinite" />
+                          <animate attributeName="transform" values="translate(0,0); translate(4,0); translate(0,0)" dur="1.5s" repeatCount="indefinite" additive="sum" />
+                        </>
+                      )}
+                      <path d="M 46 0 L 40 -5 L 40 5 Z" fill={decisionColor} />
+                    </g>
+                  )}
+                </g>
+              )}
+
+              {/* Pulsing Halo (when idle or hovering) */}
+              {onDecisionChange && !isDragging && (
+                <circle
+                  r={isHoveringDecision ? 28 : 24}
+                  fill="none"
+                  stroke={decisionColor}
+                  strokeWidth="2"
+                  strokeOpacity="0.4"
+                  style={{ transition: 'all 0.2s ease' }}
+                >
+                  <animate attributeName="r" values={isHoveringDecision ? '28;32;28' : '24;28;24'} dur="2s" repeatCount="indefinite" />
+                  <animate attributeName="stroke-opacity" values="0.4;0.1;0.4" dur="2s" repeatCount="indefinite" />
+                </circle>
+              )}
+
+              {/* Large transparent hit area for easier grabbing */}
+              <circle r="40" fill="transparent" className="cursor-pointer" />
+
+              {/* Main Bubble - Matches standard edge style */}
+              <rect
+                x="-40"
+                y="-15"
+                width="80"
+                height="30"
+                rx="15"
+                fill={decisionColor}
+                fillOpacity={edgeOpacity}
+                stroke="white"
+                strokeOpacity={edgeOpacity}
+                strokeWidth={isDragging ? 3 : 2}
+                className="shadow-md"
+                style={{ transition: 'fill 0.3s ease, stroke-width 0.2s ease, fill-opacity 0.3s ease, stroke-opacity 0.3s ease' }}
+              />
+
+              <text
+                textAnchor="middle"
+                y="8"
+                fontSize="18"
+                fontWeight="800"
+                className="pointer-events-none"
+                fill={visualDecision > 50 ? 'white' : (visualDecision < 50 ? '#374151' : 'white')}
+                style={{ transition: 'all 0.2s ease' }}
+              >
+                {visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '?'}
+              </text>
+            </g>
+          </g>
+        );
+      })()}
 
       {/* ── Arrow Tips (last layer: always on top of nodes) ── */}
       {ALL_EDGES.map(edge => {

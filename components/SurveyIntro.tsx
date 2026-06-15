@@ -43,8 +43,6 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
   ) as AgentId;
 
   const agentMe = AGENTS[safeFocalNode];
-  const agentOpponent = AGENTS[safeOpponentNode];
-
 
   const networkDemoSetup = useMemo(() => {
     const others = AGENT_IDS.filter(id => id !== safeFocalNode && id !== safeOpponentNode);
@@ -73,13 +71,19 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
   const introNodePositions = useMemo(() => generateTrianglePositions(safeFocalNode, false), [safeFocalNode]);
 
-  const meAccent = agentMe.group === 'KMT' ? 'blue' : 'green';
-  const opponentAccent = agentOpponent.group === 'KMT' ? 'blue' : 'green';
-  const meTitleClass = meAccent === 'blue' ? 'text-blue-900' : 'text-green-900';
-  const meGroupClass = meAccent === 'blue' ? 'text-blue-700' : 'text-green-700';
-  const opponentBorderClass = opponentAccent === 'blue' ? 'border-blue-100' : 'border-green-100';
-  const opponentTitleClass = opponentAccent === 'blue' ? 'text-blue-900' : 'text-green-900';
-  const opponentGroupClass = opponentAccent === 'blue' ? 'text-blue-700' : 'text-green-700';
+  const noEdgeSetup = useMemo(() => ({
+    ...setup,
+    focalNode: safeFocalNode as string,
+    opponentNode: safeOpponentNode as string,
+    activeEdgeIds: [],
+  }), [setup, safeFocalNode, safeOpponentNode]);
+
+  const introGroupPositions = useMemo<Record<AgentId, { x: number; y: number }>>(() => ({
+    KMT1: { x: 110, y: 130 },
+    KMT2: { x: 110, y: 310 },
+    DPP3: { x: 330, y: 130 },
+    DPP4: { x: 330, y: 310 },
+  }), []);
 
   const isNextDisabled = useMemo(() => {
     // Step 3 (Part 1): Must reveal the single demo edge
@@ -92,84 +96,6 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
     if (introStep === 6) return !quizCorrect;
     return false;
   }, [introStep, introEdgeRevealed, introGraphRevealed, introSliderInteracted, quizCorrect, networkDemoSetup]);
-
-
-
-    // Helper to draw a single node exactly as it appears in the graph
-    const InlineNode = ({ agent, role }: { agent: typeof agentMe, role: 'me' | 'opponent' | 'none' }) => {
-      const clipPathId = `${React.useId().replace(/:/g, '')}-inline-clip-${role}`;
-      const groupAColor = COLORS.kmt;
-      const groupBColor = COLORS.dpp;
-      const groupColor = agent.group === 'KMT' ? groupAColor : groupBColor;
-
-      const r = 36; // Survey standard size
-      let strokeColor = groupColor;
-      let strokeWidth = 2;
-
-      if (role === 'me') { strokeColor = COLORS.highlight; strokeWidth = 5; }
-      else if (role === 'opponent') { strokeColor = COLORS.roleOpponent; strokeWidth = 5; }
-
-      // Re-use avatar drawing logic if selected
-      const avatarBody = (
-        <g>
-          <clipPath id={clipPathId}>
-            <circle cx={0} cy={0} r={r} />
-          </clipPath>
-          <circle cx={0} cy={0} r={r} fill={groupColor} clipPath={`url(#${clipPathId})`} />
-          <rect x={-r} y={9} width={r * 2} height={r} fill={agent.group === 'KMT' ? COLORS.avatarClothKmt : COLORS.avatarClothDpp} clipPath={`url(#${clipPathId})`} />
-          <path d={`M -6 9 L -2 5 L 0 7 L 2 5 L 6 9 Z`} fill="white" clipPath={`url(#${clipPathId})`} />
-          <rect x={-3} y={4} width={6} height={6} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
-          <circle cx={0} cy={-4} r={13} fill={COLORS.avatarSkin} clipPath={`url(#${clipPathId})`} />
-          <circle cx={-13} cy={-3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={`url(#${clipPathId})`} />
-          <circle cx={13} cy={-3} r={2.5} fill={COLORS.avatarSkinShadow} clipPath={`url(#${clipPathId})`} />
-          {agent.group === 'KMT' ? (
-            <path d={`M -13 -8 Q -8 -22 0 -21 Q 8 -22 13 -8 Q 6 -14 0 -16 Q -6 -14 -13 -8 Z`} fill={COLORS.avatarHairKmt} clipPath={`url(#${clipPathId})`} />
-          ) : (
-            <path d={`M -13 -8 Q -11 -23 -4 -22 Q 0 -25 4 -22 Q 11 -23 13 -8 Q 5 -15 0 -17 Q -5 -15 -13 -8 Z`} fill={COLORS.avatarHairDppIntro} clipPath={`url(#${clipPathId})`} />
-          )}
-          <circle cx={-4.5} cy={-4.5} r={2} fill={COLORS.avatarFeature} clipPath={`url(#${clipPathId})`} />
-          <circle cx={4.5} cy={-4.5} r={2} fill={COLORS.avatarFeature} clipPath={`url(#${clipPathId})`} />
-          <circle cx={-3.8} cy={-5.2} r={0.7} fill="white" clipPath={`url(#${clipPathId})`} />
-          <circle cx={5.2} cy={-5.2} r={0.7} fill="white" clipPath={`url(#${clipPathId})`} />
-          <path d={`M -3.5 -0.5 Q 0 2 3.5 -0.5`} stroke={COLORS.avatarMouth} strokeWidth="1.2" fill="none" clipPath={`url(#${clipPathId})`} />
-          {agent.group === 'KMT' && (
-            <g clipPath={`url(#${clipPathId})`}>
-              <rect x={-8.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
-              <rect x={2.5} y={-7.5} width={6} height={4.5} rx={1.5} fill="none" stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
-              <line x1={-2.5} y1={-5.5} x2={2.5} y2={-5.5} stroke={COLORS.avatarGlassesBlue} strokeWidth="0.85" />
-            </g>
-          )}
-          <circle cx={0} cy={0} r={r} fill="none" stroke={strokeColor} strokeWidth={strokeWidth} />
-        </g>
-      );
-
-      const rDraw = 36;
-      const glowR = rDraw + 4;
-
-      return (
-        <svg width={rDraw * 3} height={rDraw * 3} viewBox="-60 -60 120 120" className="inline-block overflow-visible mx-2">
-          <g>
-            <circle r={glowR} fill="none" stroke={role === 'me' ? COLORS.highlight : role === 'opponent' ? COLORS.roleOpponent : 'transparent'} strokeWidth="4" strokeOpacity={role === 'none' ? 0 : 0.6}>
-              <animate attributeName="stroke-opacity" values="0.6;0.2;0.6" dur="2s" repeatCount="indefinite" />
-              <animate attributeName="r" values={`${glowR};${glowR + 4};${glowR}`} dur="2s" repeatCount="indefinite" />
-            </circle>
-
-            {avatarBody}
-
-            {role !== 'none' && (
-              <g transform={`translate(0, ${rDraw})`}>
-                <rect x={-45} y="-14" width={90} height="16" rx="8" fill="white" stroke={strokeColor} strokeWidth="2" opacity="0.95" />
-                <text y="-2" textAnchor="middle" fontSize="10" className="font-black pointer-events-none">
-                  <tspan fill={role === 'me' ? COLORS.highlight : COLORS.rolePartner} className="uppercase">
-                    {role === 'me' ? '您' : '搭檔'}
-                  </tspan>
-                </text>
-              </g>
-            )}
-          </g>
-        </svg>
-      );
-    }
 
     // Mini avatar component for history legend
     const MiniAvatar = ({ agent, size = 20 }: { agent: typeof agentMe, size?: number }) => {
@@ -264,67 +190,28 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       {
         title: "參與者的背景與角色",
         content: (
-          <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
+          <div className="space-y-4 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-4xl">
             <p className="text-center text-sm text-gray-500">
-              <span className="font-bold text-gray-800">總共有四位參與者（包含您），來自於兩個團體</span>
+              <span className="font-bold text-gray-800">總共有四位參與者（包含您），來自於兩個團體。</span>
             </p>
 
-            <div className="bg-white p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm">
-              <p className="text-center text-sm font-bold text-gray-700 mb-6 uppercase tracking-wide">兩個團體</p>
-              <div className="flex flex-row justify-center items-stretch gap-4 md:gap-8">
-                {/* Model Group A */}
-                <div className="flex-1 flex flex-col items-center p-2 bg-blue-50/30 rounded-xl border border-blue-200 min-w-0">
-                  <div className="flex flex-col items-center mb-2" style={{ transform: 'scale(0.72)', transformOrigin: 'top center', marginBottom: '-22px' }}>
-                    <InlineNode agent={{ ...AGENTS['KMT1'], label: 'KMT' }} role="none" />
-                  </div>
-                  <span className="text-lg font-black text-blue-500">× 2</span>
-                  <span className="text-xs font-bold text-blue-900 bg-blue-100 px-2 py-1 rounded mt-auto">國民黨</span>
-                </div>
-
-                <div className="block w-px bg-gray-200 self-stretch mx-2"></div>
-
-                {/* Model Group B */}
-                <div className="flex-1 flex flex-col items-center p-2 bg-green-50/30 rounded-xl border border-green-100 min-w-0">
-                  <div className="flex flex-col items-center mb-2" style={{ transform: 'scale(0.72)', transformOrigin: 'top center', marginBottom: '-22px' }}>
-                    <InlineNode agent={{ ...AGENTS['DPP3'], label: 'DPP' }} role="none" />
-                  </div>
-                  <span className="text-lg font-black text-green-400">× 2</span>
-                  <span className="text-xs font-bold text-green-900 bg-green-50 px-2 py-1 rounded mt-auto">民進黨</span>
-                </div>
-              </div>
-            </div>
-
-            <p className="text-center text-sm text-gray-500 mb-2">
-              <span className="font-bold text-gray-900">四位參與者將會兩兩成對進行遊戲。在接下來的實驗中，您會和其他三位參與者分別進行兩人之間的遊戲。這些參與者都是真人。</span>
+            <p className="text-center text-sm text-gray-500">
+              <span className="font-bold text-gray-800">四位參與者將會兩兩成對進行遊戲。</span>
             </p>
 
-            <div className="bg-white p-3 sm:p-4 md:p-6 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm">
-              <div className="flex flex-row justify-center items-stretch gap-4 md:gap-8 mb-6">
-                {/* You Card */}
-                <div className={`flex-1 flex flex-col items-center justify-center gap-4 p-4 rounded-2xl border shadow-sm relative overflow-hidden min-w-[140px]`}>
-                  <div className={`absolute top-0 left-0 w-full h-1.5`}></div>
-                  <p className={`text-center text-sm font-bold ${meTitleClass}`}>您</p>
-                  <div className="flex flex-col items-center transform scale-100">
-                    <InlineNode agent={agentMe} role="me" />
-                    <span className={`font-black ${meGroupClass} text-lg mt-2 tracking-tight`}>
-                      {agentMe.group === 'KMT' ? '國民黨' : '民進黨'}
-                    </span>
-                  </div>
-                </div>
+            <p className="text-center text-sm text-gray-500">
+              <span className="font-bold text-gray-800">在接下來的實驗中，您會和其他三位參與者分別進行兩人之間的遊戲。</span>
+            </p>
 
-                {/* Partner Card */}
-                <div className={`flex-1 flex flex-col items-center justify-center gap-4 p-4 rounded-2xl border ${opponentBorderClass} shadow-sm relative overflow-hidden min-w-[140px]`}>
-                   <div className={`absolute top-0 left-0 w-full h-1.5`}></div>
-                   <p className={`text-center text-sm font-bold ${opponentTitleClass}`}>搭檔</p>
-                   <div className="flex flex-col items-center transform scale-100">
-                     <InlineNode agent={agentOpponent} role="opponent" />
-                     <span className={`font-black ${opponentGroupClass} text-lg mt-2 tracking-tight`}>
-                       {agentOpponent.group === 'KMT' ? '國民黨' : '民進黨'}
-                     </span>
-                   </div>
-                </div>
-              </div>
+            <div className="h-[340px] w-full">
+              <NetworkGraph
+                mode="survey"
+                setup={noEdgeSetup}
+                positionOverrides={introGroupPositions}
+                hideDecisionEdge={true}
+              />
             </div>
+
           </div>
         )
       },

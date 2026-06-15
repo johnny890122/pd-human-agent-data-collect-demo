@@ -11,7 +11,8 @@ const SurveyWelcome: React.FC = () => {
 
   useEffect(() => {
     const ua = navigator.userAgent;
-    setIsChrome(/Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua));
+    // CriOS is Chrome on iOS (iPhone/iPad); Chrome/ covers Android/Desktop Chrome
+    setIsChrome((/Chrome\//.test(ua) || /CriOS\//.test(ua)) && !/Edg\//.test(ua) && !/OPR\//.test(ua));
   }, []);
 
   const handleStart = () => {
@@ -57,7 +58,7 @@ const SurveyWelcome: React.FC = () => {
               感謝您撥冗參與。在接下來的實驗中，您將會遇到數個互動情境，並需要根據提供的情境資訊做出相對應的決策。
             </p>
             <p>
-              整個過程大約需要 5 到 10 分鐘。您的所有回答都將匿名處理，並僅供學術研究用途，請安心作答。
+              整個過程大約需要 20 分鐘。您的所有回答都將匿名處理，並僅供學術研究用途，請安心作答。
             </p>
             <p>
               準備好後，請點擊下方按鈕以進入實驗說明階段。

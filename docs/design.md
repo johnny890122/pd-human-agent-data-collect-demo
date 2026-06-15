@@ -32,6 +32,8 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 | Phase 17 | 🟡 Partial | Ongoing | Testing complete, heatmap deferred |
 | Phase 30 | 📋 Planned | — | Submission invalidation (REQ-350..354) |
 | Phase 31 | 📋 Planned | — | Complete submission data CSV export (REQ-360..363) |
+| Phase 34 | 📋 Planned | — | Partner node peach-pink highlight (REQ-406) |
+| Phase 35 | 📋 Planned | — | Debrief screen with realised round and payment (REQ-407) |
 
 **Recent Updates**:
 - 2026-04-29: Legacy API completely removed (~500 lines)
@@ -1595,6 +1597,7 @@ This complete solution ensures data flows correctly: Database → Resolver → G
 | REQ-340..342 | Submission progress tracking in admin history table | 📋 Planned (Phase 27) |
 | REQ-351..354 | `Submission.isInvalid` field, `invalidateSubmission` mutation, cascading `submissionCount` / `responseCount` corrections, admin UI filter | 📋 Planned (Phase 30) |
 | REQ-405.1 | Complete network history display in survey introduction | 📋 Planned |
+| REQ-406 | `COLORS.rolePartnerHighlight` token in `constants.ts`; three color references in `NetworkGraph.tsx` (ring stroke, glow aura, badge fill) | 📋 Planned (Phase 34) |
 
 ---
 
@@ -2048,6 +2051,95 @@ function getSubmissionStage(submission: Submission, totalScenarios: number): Sta
 
 ---
 
+## Phase 34 — Partner Node Peach-Pink Visual Highlight (REQ-406)
+
+**Status**: 📋 Designed 2026-06-15 | **Priority**: Medium | **Components**: [`constants.ts`](../constants.ts), [`components/NetworkGraph.tsx`](../components/NetworkGraph.tsx)
+
+### Overview
+
+The partner node ("搭檔") in the experiment network graph currently renders with near-invisible gray emphasis colors. This design section documents the change to a vivid peach-pink (`#f472b6`, Tailwind `pink-400`) that matches the visual prominence of the focal node ("您") amber highlight (`#f59e0b`).
+
+### Current Color Scheme
+
+| Token | Value | Usage |
+|-------|-------|-------|
+| `COLORS.highlight` | `#f59e0b` (amber-500) | Focal node ring stroke, glow aura, badge fill |
+| `COLORS.roleOpponent` | `#374151` (gray-700) | **Partner node** ring stroke and glow aura — **TO CHANGE** |
+| `COLORS.rolePartner` | `#6b7280` (gray-500) | **Partner node** badge fill — **TO CHANGE** |
+
+### New Color Scheme
+
+Add one new token to `COLORS` in `constants.ts`:
+
+```typescript
+rolePartnerHighlight: '#f472b6',   // pink-400 — partner node emphasis (ring, glow, badge)
+```
+
+The existing `roleOpponent` and `rolePartner` tokens are **not removed** — they may be referenced elsewhere in the codebase and their gray values remain valid for any non-emphasis usage.
+
+### NetworkGraph.tsx — Three Affected Locations
+
+#### 1. Node Ring Stroke (partner node branch)
+
+```typescript
+// Before (~line 646):
+strokeColor = COLORS.roleOpponent; strokeWidth = 4;
+
+// After:
+strokeColor = COLORS.rolePartnerHighlight; strokeWidth = 4;
+```
+
+#### 2. Pulsing Glow Aura (partner node animated circle)
+
+```typescript
+// Before (~line 742):
+stroke={COLORS.roleOpponent}
+
+// After:
+stroke={COLORS.rolePartnerHighlight}
+```
+
+#### 3. Role Badge Fill
+
+```typescript
+// Before (~line 771):
+roleFill = COLORS.rolePartner; // gray-500
+
+// After:
+roleFill = COLORS.rolePartnerHighlight;
+```
+
+### Visual Comparison
+
+| Element | Before | After |
+|---------|--------|-------|
+| Partner ring stroke | `#374151` gray-700 (very dark, low contrast) | `#f472b6` pink-400 (vibrant, high contrast) |
+| Partner glow aura | `#374151` gray-700 | `#f472b6` pink-400 |
+| Partner badge fill | `#6b7280` gray-500 | `#f472b6` pink-400 |
+| Focal ring/glow/badge | `#f59e0b` amber-500 | `#f59e0b` amber-500 (unchanged) |
+
+### Design Rationale
+
+The focal node ("您") and partner node ("搭檔") are the two nodes a participant must attend to simultaneously when making their cooperation-probability judgment. They should be visually co-equal in salience. The current gray partner colors are muted by design system defaults rather than intentional choice. Peach-pink (`#f472b6`) provides:
+
+- High contrast against both dark and light backgrounds
+- Clear semantic differentiation from the focal node's amber (avoiding confusion about which role is which)
+- Warm-toned palette that fits the existing amber/orange-family highlight approach
+
+### Implementation Impact
+
+| Aspect | Details |
+|--------|---------|
+| **Files changed** | 2 files: `constants.ts`, `components/NetworkGraph.tsx` |
+| **Lines changed** | ~4 lines total |
+| **Backend changes** | None |
+| **Data model changes** | None |
+| **Breaking changes** | None — `roleOpponent` and `rolePartner` tokens preserved |
+
+**Maps to**: REQ-406
+
+---
+
 ## Phase 33 — Chrome-Only Browser Enforcement (REQ-415)
 
 **Status**: 📋 Designed 2026-05-30 | **Priority**: High | **Component**: [`components/SurveyWelcome.tsx`](../components/SurveyWelcome.tsx)
@@ -2465,5 +2557,88 @@ query GetScenariosForExport($ids: [ID!]!) {
 ### Migration Notes
 
 None. This is a new feature, not a schema change. Existing data is read-only for export.
+
+---
+
+## Phase 35: Debrief Screen with Realised Round and Payment (REQ-407)
+
+### Overview
+
+Insert a debrief step into `SurveyOutro` between the registration code step (step 1) and the email collection step. The debrief reveals each round's decisions and highlights the randomly drawn "實現回合" that determines the participant's cash reward.
+
+### Step Renumbering
+
+| Old step | New step | Content |
+|----------|----------|---------|
+| 1 | 1 | 報名代碼確認 (unchanged) |
+| — | **2 (new)** | **Debrief: 每回合決策結果 + 實現回合 + 金額** |
+| 2 | 3 | Email 收集 |
+| 3 | 4 | 完成頁 |
+
+`setStep(2)` in step 1's button advances to the debrief. Step 1's button `onClick` call already targets step 2, so the only change there is renaming the old step 2 block to step 3.
+
+### Component Changes — `SurveyOutro.tsx`
+
+**New state:**
+```ts
+const [selectedRoundIdx, setSelectedRoundIdx] = useState<number>(() =>
+  Math.floor(Math.random() * Math.max(results.length, 1))
+);
+```
+Initialised once in `useState` initialiser so it never re-randomises on re-render.
+
+**Props** — no changes to `SurveyOutroProps` for this phase. Opponent data will be added as an optional prop in a later phase.
+
+### Debrief UI Layout (step 2)
+
+```
+┌─────────────────────────────────────────────────────┐
+│  標題: 實驗結果回顧                                   │
+│  副標題: 以下是您每回合的決策記錄                      │
+│                                                     │
+│  ┌──┬──────────────┬──────────────┬──────┐          │
+│  │# │ 您的決策      │ 對手的決策    │ 點數 │          │
+│  ├──┼──────────────┼──────────────┼──────┤          │
+│  │1 │ 70% 合作     │     —        │  —   │          │
+│  │2 │ 30% 不合作   │     —        │  —   │  ← plain │
+│  │3 │ 80% 合作     │     —        │  —   │  ← 🎯抽中│  ← amber highlight
+│  │… │ …            │     —        │  —   │          │
+│  └──┴──────────────┴──────────────┴──────┘          │
+│                                                     │
+│  ┌── 您的獎勵 ────────────────────────────────────┐  │
+│  │  抽中：第 3 回合                               │  │
+│  │  點數：— 點    (待對手資料串接後顯示)           │  │
+│  │  獎勵：— × 100 = — 元                         │  │
+│  └────────────────────────────────────────────────┘  │
+│                                                     │
+│  [ 繼續 ]                                           │
+└─────────────────────────────────────────────────────┘
+```
+
+**Row styling:**
+- Plain row: white background, gray border
+- Selected round row: `bg-amber-50 border-l-4 border-amber-400` + `🎯 抽中` badge on the round number cell
+
+**Decision label logic:**
+```ts
+const label = (p: number) => p >= 0.5 ? '合作' : '不合作';
+const pct   = (p: number) => `${Math.round(p * 100)}%`;
+```
+
+**Payment card:**
+- Container: `bg-indigo-50 rounded-xl p-4 border border-indigo-200`
+- Once opponent data is wired, `points` will be derived from the PD payoff matrix outcome for the selected round
+- Until then, all three derived values (點數, 計算式, 金額) render as `—`
+
+**Placeholder data contract (for future wiring):**
+```ts
+// Future optional prop (Phase 35+):
+// opponentResults?: { scenarioId: string; cooperationProbability: number }[]
+// points?: number[]  // per-round payoff from PD matrix
+```
+
+### No Backend Changes
+
+The drawn round index is not persisted. It is a purely presentational random selection for participant communication purposes.
 
 ---

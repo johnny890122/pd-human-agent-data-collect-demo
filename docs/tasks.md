@@ -30,6 +30,8 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 | Phase 30 | 📋 Planned | — | Submission invalidation (REQ-350..354) |
 | Phase 31 | 📋 Planned | — | Complete submission data CSV export (REQ-360..363) |
 | Phase 32 | 📋 Planned | — | Icon-based invalidation UI with confirmation (REQ-355..358) |
+| Phase 34 | 📋 Planned | — | Partner node peach-pink highlight (REQ-406) |
+| Phase 35 | 📋 Planned | — | Debrief screen with realised round and payment (REQ-407) |
 
 ---
 
@@ -1756,6 +1758,75 @@ Replace text-based "Invalidate"/"Restore" buttons with intuitive icon buttons, a
 
 ---
 
+## Phase 34: Partner Node Peach-Pink Visual Highlight (REQ-406)
+
+**Status**: 📋 Planned (2026-06-15)
+
+**Objective**: Replace the three dark-gray color references used for the partner node ("搭檔") in `NetworkGraph.tsx` with a new vibrant peach-pink token, making it as visually prominent as the focal node's amber highlight.
+
+**Scope**: Frontend only — one constant and one component. No backend, GraphQL, or data model changes.
+
+**Estimated Effort**: < 1 hour.
+
+---
+
+- [ ] **TASK-3401**: Add `rolePartnerHighlight` color token to `COLORS` in `constants.ts` — [REQ-406]
+  - **File**: [`constants.ts`](../constants.ts) — the `COLORS` export object, after the existing `rolePartner` entry (line 48)
+  - **Change**: Insert the following line:
+    ```typescript
+    rolePartnerHighlight: '#f472b6', // pink-400 — partner node emphasis (ring, glow, badge)
+    ```
+  - Do NOT remove or alter `roleOpponent: '#374151'` or `rolePartner: '#6b7280'` — preserve them for backward compatibility.
+  - *Acceptance*: `COLORS.rolePartnerHighlight` resolves to `'#f472b6'` at runtime with no TypeScript errors.
+
+- [ ] **TASK-3402**: Update partner node ring stroke in `NetworkGraph.tsx` to use `COLORS.rolePartnerHighlight` — [REQ-406]
+  - **File**: [`components/NetworkGraph.tsx`](../components/NetworkGraph.tsx) (~line 646)
+  - **Change**:
+    ```typescript
+    // Before:
+    strokeColor = COLORS.roleOpponent; strokeWidth = 4;
+
+    // After:
+    strokeColor = COLORS.rolePartnerHighlight; strokeWidth = 4;
+    ```
+  - *Acceptance*: The partner node's outer ring renders in `#f472b6` (pink-400), matching the visual weight of the focal node's amber ring.
+
+- [ ] **TASK-3403**: Update partner node pulsing glow aura stroke in `NetworkGraph.tsx` to use `COLORS.rolePartnerHighlight` — [REQ-406]
+  - **File**: [`components/NetworkGraph.tsx`](../components/NetworkGraph.tsx) (~line 742)
+  - **Change**:
+    ```typescript
+    // Before:
+    stroke={COLORS.roleOpponent}
+
+    // After:
+    stroke={COLORS.rolePartnerHighlight}
+    ```
+  - *Acceptance*: The animated glow aura radiating from the partner node renders in `#f472b6`, not the previous near-invisible dark gray.
+
+- [ ] **TASK-3404**: Update partner node role badge fill in `NetworkGraph.tsx` to use `COLORS.rolePartnerHighlight` — [REQ-406]
+  - **File**: [`components/NetworkGraph.tsx`](../components/NetworkGraph.tsx) (~line 771)
+  - **Change**:
+    ```typescript
+    // Before:
+    roleFill = COLORS.rolePartner; // gray-500
+
+    // After:
+    roleFill = COLORS.rolePartnerHighlight;
+    ```
+  - *Acceptance*: The "搭檔" role badge background renders in `#f472b6`, clearly distinguishing it from other nodes while maintaining readability of the white badge text.
+
+---
+
+**Acceptance Criteria for Phase 34**:
+- `COLORS.rolePartnerHighlight` exists in `constants.ts` with value `'#f472b6'`.
+- `COLORS.roleOpponent` and `COLORS.rolePartner` remain unchanged at their existing gray values.
+- All three partner node visual elements (ring stroke, glow aura, badge fill) render in `#f472b6` on the network graph.
+- The focal node ("您") amber highlight is unaffected.
+- No TypeScript compile errors introduced.
+- No backend changes, no GraphQL changes, no data model changes.
+
+---
+
 ## Backlog / Future Enhancements
 
 ### Features (Out of Scope Today)
@@ -2519,3 +2590,43 @@ saveSession(currentId, submission._id, path);
 - Opening the page in Chrome (or Brave) shows no warning and a fully functional button
 - The `handleStart` function cannot be triggered from a non-Chrome browser (button is `disabled`)
 - No backend calls or data model changes required
+
+---
+
+## Phase 35: Debrief Screen with Realised Round and Payment (REQ-407)
+
+**Goal**: Insert a debrief step into `SurveyOutro` between the code step and the email step. The screen shows each round's decisions and highlights the randomly drawn 實現回合 with its cash reward (點數 × 100 NTD). Opponent data and point values are placeholder for this phase.
+
+- [ ] **TASK-3501**: Renumber existing steps in `SurveyOutro.tsx` — [`components/SurveyOutro.tsx`](../components/SurveyOutro.tsx) [REQ-407]
+  - Change `if (step === 2)` (email block) to `if (step === 3)`.
+  - Change `setStep(3)` inside `handleFinalSubmit` to `setStep(4)`.
+  - Change the final `return` fallback (step 3 completion card) to guard with `if (step === 4)` and add a final `return null` after it.
+
+- [ ] **TASK-3502**: Add `selectedRoundIdx` state initialised once — [`components/SurveyOutro.tsx`](../components/SurveyOutro.tsx) [REQ-407]
+  - Add: `const [selectedRoundIdx] = useState<number>(() => Math.floor(Math.random() * Math.max(results.length, 1)));`
+  - No setter needed — index must never re-randomise.
+
+- [ ] **TASK-3503**: Build the debrief step 2 block — [`components/SurveyOutro.tsx`](../components/SurveyOutro.tsx) [REQ-407]
+  - Add `if (step === 2)` block rendering a full-screen card with:
+    - **Header**: title「實驗結果回顧」, subtitle「以下是您每回合的決策記錄」.
+    - **Round table**: one row per `results[i]` with columns: 回合 (1-based), 您的決策 (`${Math.round(p*100)}%` + 合作/不合作 label), 對手的決策 (`—` placeholder), 點數 (`—` placeholder).
+    - **Selected row styling**: `results[selectedRoundIdx]` row gets `bg-amber-50` background, left `border-l-4 border-amber-400` accent, and a `🎯 抽中` badge on the round-number cell.
+    - **Payment summary card** below the table:
+      - Label「您的獎勵」.
+      - 抽中回合: 第 `{selectedRoundIdx + 1}` 回合.
+      - 點數: `—` (placeholder, to be wired with opponent data).
+      - 金額公式: `— × 100 = — 元` (placeholder).
+    - **繼續 button**: `onClick={() => setStep(3)}`, always enabled.
+
+- [ ] **TASK-3504**: Verify step flow end-to-end — manual browser test [REQ-407]
+  - Step 1 (code) → click 下一步 → lands on step 2 (debrief).
+  - Selected round is highlighted amber; all other rows are plain.
+  - Payment card shows correct round number; point fields show `—`.
+  - Click 繼續 → step 3 (email). Submit email → step 4 (completion). No regressions.
+
+**Acceptance Criteria for Phase 35**:
+- Debrief screen is shown after code entry and before email collection.
+- One and only one round is highlighted as 🎯 抽中; selection does not change on re-render.
+- Opponent and point columns display `—` (data wiring deferred).
+- Payment card shows correct round number derived from the random selection.
+- All downstream steps (email → completion) still function correctly.

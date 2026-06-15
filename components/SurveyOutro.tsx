@@ -119,7 +119,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results, onBack, onComplete, 
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 md:p-8 text-center space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
         <h2 className="text-2xl font-bold text-gray-900">表單已完成</h2>
-        <p className="text-gray-600">您的聯絡方式已送出，再次感謝您的參與！您可以安全關閉此頁面。</p>
+        <p className="text-gray-600">您的填答已送出，再次感謝您的參與！您可以安全關閉此頁面。</p>
       </div>
     </div>
   );

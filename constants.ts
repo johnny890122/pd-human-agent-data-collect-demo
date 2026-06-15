@@ -46,6 +46,7 @@ export const COLORS = {
   edgeInactive: '#e5e7eb',
   roleOpponent: '#374151',
   rolePartner: '#6b7280',
+  rolePartnerHighlight: '#f472b6', // pink-400 — partner node emphasis (ring, glow, badge)
   blue: '#3b82f6',
   textDark: '#333333',
 

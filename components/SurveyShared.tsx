@@ -46,15 +46,15 @@ export const PayoffMatrix = ({ compact = false, userProb }: { compact?: boolean;
     <div className={`bg-gray-50 rounded-xl border border-gray-200 p-4 transition-all duration-300 ${compact ? 'text-xs' : 'text-sm'} text-gray-700 text-left w-full mx-auto`}>
       <div className="space-y-3 mb-4">
         <p>
-          遊戲每一回合一開始，您將會收到<strong className="text-gray-900"> 1 點數</strong>，接下來您有選兩個選擇：
+          遊戲每一回合一開始，您將會收到<strong className="text-gray-900"> 1 點</strong>，接下來您有兩個選擇：
         </p>
         <ul className="list-disc pl-6 space-y-1 font-medium">
           <li>將點數給對方</li>
           <li>將點數保留給自己</li>
         </ul>
         <p className="mt-2">
-          若是您將1點數給予對方，對方會收到<strong className="text-gray-900"> 2 點數</strong>。<br/>
-          若是對方給予您點數，您會收到<strong className="text-gray-900"> 2 點數</strong>。
+          若是您將 1 點給予對方，對方會收到<strong className="text-gray-900"> 2 點</strong>。<br/>
+          若是對方給予您點數，您會收到<strong className="text-gray-900"> 2 點</strong>。
         </p>
       </div>
       
@@ -63,15 +63,15 @@ export const PayoffMatrix = ({ compact = false, userProb }: { compact?: boolean;
       <ul className="space-y-2">
         <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
-          若是您<strong>不給</strong>，對方也<strong>不給</strong>，那麼您和對方都是拿到 <strong className="text-gray-900">1 點</strong>
+          若是您<strong>不給</strong>，對方也<strong>不給</strong>，那麼您和對方都保留原本的 <strong className="text-gray-900">1 點</strong>
         </li>
         <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
-          若是您<strong>給</strong>對方，對方<strong>不給</strong>您，那麼您拿到 <strong className="text-red-700">0點</strong>，對方拿到 2 + 1 總共 <strong className="text-gray-900">3 點</strong>
+          若是您<strong>給</strong>對方，對方<strong>不給</strong>您，那麼您拿到 <strong className="text-red-700">0 點</strong>，對方拿到 2 + 1 總共 <strong className="text-gray-900">3 點</strong>
         </li>
         <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>
-          若是您<strong>不給</strong>對方，對方<strong>給</strong>您，那麼您拿到 2 + 1 總共 <strong className="text-green-700">3點</strong>，對方拿 <strong className="text-gray-900">0 點</strong>
+          若是您<strong>不給</strong>對方，對方<strong>給</strong>您，那麼您拿到 2 + 1 總共 <strong className="text-green-700">3 點</strong>，對方拿 <strong className="text-gray-900">0 點</strong>
         </li>
         <li className={`transition-all duration-300 p-2 rounded-lg`}>
           <span className="inline-block w-2 h-2 rounded-full bg-gray-400 mr-2"></span>

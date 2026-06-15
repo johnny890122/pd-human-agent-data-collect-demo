@@ -29,6 +29,7 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-05-06 | **ADMIN CAPABILITY** Invalidate submission feature (REQ-350..REQ-353) | Admin can mark any submission as invalid (`isInvalid: true`). Invalid submissions are excluded from `submissionCount` (releasing the slot for a new participant) and from scenario `responseCount` (correcting Mixed Mode balanced selection). Admin can toggle a filter in the history/submission list to show or hide invalid submissions. |
 | 2026-05-06 | **DATA EXPORT** Complete submission data CSV export (REQ-360..REQ-362) | Admin can export detailed submission data including all participant responses, scenario configurations, active edges, cooperation probabilities, demographics, and timestamps. The CSV format is designed for easy analysis and full data restoration. |
 | 2026-05-06 | **UI ENHANCEMENT** Icon-based invalidation controls with confirmation (REQ-355..REQ-357) | Replace text-based "Invalidate"/"Restore" buttons with intuitive icon buttons. Add confirmation modal to prevent accidental invalidation. Replace inline "Invalid(1)" badge with tab-based view switching for cleaner UI. |
+| 2026-06-15 | **UI ENHANCEMENT** Partner node peach-pink highlight color (REQ-406) | The partner node ("搭檔") in `NetworkGraph` now uses a vibrant peach-pink (#f472b6, pink-400) for its ring stroke, glow aura, and role badge fill — matching the visual prominence of the focal node's amber highlight. A new `rolePartnerHighlight` token is added to `COLORS` in `constants.ts`; the existing `roleOpponent` and `rolePartner` gray tokens are preserved for backward compatibility. |
 
 ---
 
@@ -401,6 +402,41 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
    
 - **REQ-405 — "Session full" gate.** When the live `submissionCount` for a session reaches `sampleSize` and the participant has no resumable entry, the system MUST display 「人數已滿」 instead of the survey UI. For Mixed Mode groups, the gate closes when all scenarios reach `targetSize`.
   - *Acceptance:* Already-started entries (those holding a `restoredSubmissionId`) MAY continue to completion even after the gate closes.
+
+### REQ-407 — Post-Experiment Debrief Screen
+
+- **REQ-407 — Debrief screen displaying per-round decisions and realised payment.** After the participant completes all scenarios and confirms their registration code (SurveyOutro step 1), the system MUST display a debrief screen (step 2) before the email collection step. The debrief screen reveals each round's decisions and communicates the randomly selected "實現回合" that determines the participant's cash reward.
+
+  - *Rationale:* Transparency about the random incentive mechanism (one randomly drawn round pays out at 點數 × 100 NTD) is required for research ethics. Participants must see which round was drawn and how the reward is calculated before providing contact information.
+
+  - *Acceptance:*
+    - The debrief screen appears as SurveyOutro **step 2** (inserted between the current code step and the email step). Old step 2 becomes step 3; old step 3 becomes step 4.
+    - A round table MUST display one row per scenario answered, with the following columns:
+      1. **回合** — round index (1-based)
+      2. **您的決策** — participant's `cooperationProbability` formatted as a percentage (e.g., "70%") with a qualitative label (≥ 50% → "合作", < 50% → "不合作")
+      3. **對手的決策** — opponent's cooperation probability, formatted identically; displayed as "—" until data is wired
+      4. **點數** — payoff points for that round based on the PD outcome matrix; displayed as "—" until opponent data is wired
+    - One row MUST be randomly selected as the **實現回合** (realised round). Selection is made once on step entry and MUST NOT re-randomise on re-render. The selected row is visually highlighted with a distinct accent (e.g., amber background band + 🎯 badge).
+    - A payment summary card MUST appear below the table showing:
+      - Which round was drawn (e.g., "第 3 回合")
+      - The point value of that round (placeholder until wired)
+      - The cash equivalent: **點數 × 100 新台幣** (e.g., "3 點 × 100 = **300 元**")
+    - A "繼續" button advances to the email step (step 3).
+    - *Scope:* Frontend only for this phase. Backend does not need to record the drawn round index; point values and opponent data are wired in a subsequent phase.
+
+### REQ-406 — Partner Node Peach-Pink Visual Highlight
+
+- **REQ-406 — Vibrant peach-pink color for the partner node in NetworkGraph.** The partner node (displayed as "搭檔" via its role badge) in `NetworkGraph.tsx` MUST use a peach-pink color (`#f472b6`, Tailwind `pink-400`) for all of its emphasis visual effects, replacing the current dark-gray colors. This makes the partner node as visually prominent as the focal node ("您"), which uses amber (`#f59e0b`).
+  - *Rationale:* The current partner node ring stroke (`#374151`, gray-700) and glow aura (`#374151`) are nearly invisible against dark backgrounds, and the badge fill (`#6b7280`, gray-500) fails to draw the participant's eye to the counterpart node they are evaluating. The focal node uses a vivid amber highlight; the partner node should be equally eye-catching so participants immediately identify both key nodes.
+  - *Acceptance:*
+    - A new color token `rolePartnerHighlight: '#f472b6'` is added to the `COLORS` constant in `constants.ts`.
+    - The existing tokens `roleOpponent: '#374151'` and `rolePartner: '#6b7280'` are preserved unchanged for backward compatibility.
+    - In `NetworkGraph.tsx`, the partner node ring stroke (`strokeColor` assignment at the `isOpponent` branch) uses `COLORS.rolePartnerHighlight` instead of `COLORS.roleOpponent`.
+    - The partner node pulsing glow aura (`<circle stroke={...}>` animated element) uses `COLORS.rolePartnerHighlight` instead of `COLORS.roleOpponent`.
+    - The partner node role badge fill (`roleFill` assignment) uses `COLORS.rolePartnerHighlight` instead of `COLORS.rolePartner`.
+    - No other visual elements or logic are changed — only the three color references described above.
+    - The focal node amber highlight is unaffected.
+  - *Scope:* Frontend only — one constant file and one component file. No backend, data model, or GraphQL changes.
 
 ### REQ-415 — Chrome-Only Browser Enforcement
 

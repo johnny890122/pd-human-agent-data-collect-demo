@@ -541,6 +541,8 @@ export async function fetchSubmission(submissionId: string): Promise<SubmissionT
         }
         realisedRoundIndex
         opponentProbs
+        myDecisions
+        opponentDecisions
         isCompleted
       }
     }
@@ -552,6 +554,8 @@ export async function fetchSubmission(submissionId: string): Promise<SubmissionT
 export interface DebriefResult {
   realisedRoundIndex: number;
   opponentProbs: number[];
+  myDecisions: boolean[];
+  opponentDecisions: boolean[];
 }
 
 export async function drawRealisedRound(submissionId: string): Promise<DebriefResult> {
@@ -560,6 +564,8 @@ export async function drawRealisedRound(submissionId: string): Promise<DebriefRe
       drawRealisedRound(submissionId: $submissionId) {
         realisedRoundIndex
         opponentProbs
+        myDecisions
+        opponentDecisions
       }
     }
   `;

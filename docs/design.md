@@ -33,7 +33,7 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 | Phase 30 | 📋 Planned | — | Submission invalidation (REQ-350..354) |
 | Phase 31 | 📋 Planned | — | Complete submission data CSV export (REQ-360..363) |
 | Phase 34 | 📋 Planned | — | Partner node peach-pink highlight (REQ-406) |
-| Phase 35 | 📋 Planned | — | Debrief screen with realised round and payment (REQ-407) |
+| Phase 35 | ✅ Complete | 2026-07-02 | Debrief screen with realised round, real opponent pairing, and persisted probabilistic payment (REQ-407, REQ-407.1) |
 
 **Recent Updates**:
 - 2026-04-29: Legacy API completely removed (~500 lines)
@@ -51,6 +51,7 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 - 2026-05-06: **BUG FIXED** Mixed Mode session creation timing issue (BUG-004) — `startMixedSession` now deferred until after intro completion to match Manual Mode behavior and prevent duplicate sessions from React StrictMode — see Phase 28
 - 2026-05-06: Submission invalidation feature designed (REQ-350..REQ-354) — new `isInvalid` field on `Submission`, `invalidateSubmission` mutation, cascading `submissionCount` and `Scenario.responseCount` corrections, admin UI filter — see Phase 30
 - 2026-05-06: Complete submission data CSV export designed (REQ-360..REQ-363) — client-side CSV generation with row-per-answer format including full scenario configurations, demographics, timestamps, and validity flags — see Phase 31
+- 2026-07-02: Debrief give/no-give outcome changed from a 50%-threshold rule to a persisted Bernoulli draw on the cooperation probability itself (REQ-407.1) — `drawRealisedRound` now also draws and persists `Submission.myDecisions`/`Submission.opponentDecisions` so the debrief screen and realised cash payout are stable across page refreshes; per-row probability percentages and the 50%-only "randomly decided" tooltip were removed from the UI — see Phase 35
 
 ---
 
@@ -1437,6 +1438,223 @@ In [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) at the "關係結構" step
 
 ---
 
+### Decision Slider — Randomized Default & Mandatory Interaction (REQ-402.1)
+
+#### Current Implementation
+
+In [`SurveyView.tsx`](../components/SurveyView.tsx), `sliderValue` (the participant's "your decision" value, 0–100) is reset to a hardcoded `50` every time the scenario changes:
+
+```typescript
+// Line 236-241 (current)
+useEffect(() => {
+  setRevealedEdgeIds(new Set());
+  setIsDecisionPhase(false);
+  setHasInteracted(false);
+  setSliderValue(50);
+}, [scenarioIdx]);
+```
+
+The confirm button only gates on `allRevealed`, so a participant can advance without ever touching the slider — silently submitting whatever the default (50) happens to be:
+
+```typescript
+// Line 601-607 (current)
+<button
+  onClick={!isDecisionPhase && allRevealed ? () => { setIsDecisionPhase(true); setHasInteracted(false); } : handleNext}
+  disabled={!allRevealed}
+  ...
+>
+```
+
+#### Enhanced Design
+
+**1. Randomize the per-scenario starting value** instead of a fixed constant:
+
+```typescript
+useEffect(() => {
+  setRevealedEdgeIds(new Set());
+  setIsDecisionPhase(false);
+  setHasInteracted(false);
+  setSliderValue(Math.floor(Math.random() * 101)); // random integer in [0, 100]
+}, [scenarioIdx]);
+```
+
+**2. Gate the confirm button on `hasInteracted` while in the decision phase**, on top of the existing `allRevealed` check:
+
+```typescript
+<button
+  onClick={!isDecisionPhase && allRevealed ? () => { setIsDecisionPhase(true); setHasInteracted(false); } : handleNext}
+  disabled={!allRevealed || (isDecisionPhase && !hasInteracted)}
+  ...
+>
+```
+
+`hasInteracted` already flips to `true` on the slider's `onChange` (`DecisionSlider value={sliderValue} onChange={(v) => { setSliderValue(v); setHasInteracted(true); }} ...`), so no new state is introduced — the gate simply reuses the existing flag that previously only controlled the floating value bubble.
+
+#### Rationale
+
+- Fixed 50% invites anchoring bias and is indistinguishable from "participant didn't engage."
+- Randomizing start position + requiring one drag ensures every stored `cooperationProbability` reflects a deliberate choice, without changing the data contract (still `sliderValue / 100`, still saved via the existing `handleNext` → `onSaveAnswer` path).
+
+#### Implementation Impact
+
+- **Code changes**: 1 file ([`components/SurveyView.tsx`](../components/SurveyView.tsx)) — the `useEffect` initializer and the confirm button's `disabled` expression.
+- **Backend/GraphQL/schema**: ✅ No changes — purely local React state, matching the requirement to keep this "純前端控制" (pure frontend control).
+- **Testing**: Visual verification on `/survey/scenarios/0?sessionId=<any>` — confirm slider starting position differs across scenario reloads, and confirm button stays disabled until the slider is dragged.
+
+---
+
+### Disabled-State Visual Feedback for Confirm Button + Slider Glow Prompt (REQ-402.2)
+
+#### Problem
+
+REQ-402.1 disabled the confirm button via the `disabled` HTML attribute when `isDecisionPhase && !hasInteracted`, but the button's Tailwind `className` ternary in [`SurveyView.tsx`](../components/SurveyView.tsx) only checked `!allRevealed` to decide gray-vs-black styling. Result: the button was functionally unclickable but still rendered with the "enabled" black background and `animate-glow-indigo` pulse — confusing, since it looked active.
+
+#### Fix 1 — Button gray-out matches `disabled`
+
+```typescript
+// Before:
+className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed
+  ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
+  : 'bg-gray-900 text-white hover:bg-black hover:-translate-y-1 active:translate-y-0 animate-glow-indigo'
+  }`}
+
+// After:
+className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed || (isDecisionPhase && !hasInteracted)
+  ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
+  : 'bg-gray-900 text-white hover:bg-black hover:-translate-y-1 active:translate-y-0 animate-glow-indigo'
+  }`}
+```
+
+The className condition now mirrors the `disabled` expression exactly — same boolean logic, evaluated twice (once for `disabled`, once for styling) rather than introducing a shared variable, consistent with the file's existing style of inlining these checks.
+
+#### Fix 2 — Glowing prompt on the untouched slider
+
+To visually invite the participant to interact (rather than just silently blocking the button), [`DecisionSlider`](../components/SurveyShared.tsx) now pulses with an indigo glow while `hasInteracted` is `false`. The glow is self-contained in `SurveyShared.tsx` (a local `<style>` block, mirroring the pattern already used in `SurveyView.tsx` for `animate-glow-indigo`) so it works wherever `DecisionSlider` is rendered — both the real decision phase (`SurveyView.tsx`) and the practice slider in the intro tutorial (`SurveyIntro.tsx`), since both pass a `hasInteracted` flag that starts `false`.
+
+```typescript
+{!hasInteracted && (
+  <style>{`
+    @keyframes glow-slider-pulse {
+      0% { box-shadow: 0 0 5px rgba(79, 70, 229, 0.3), 0 0 10px rgba(79, 70, 229, 0.15); }
+      50% { box-shadow: 0 0 15px rgba(79, 70, 229, 0.7), 0 0 25px rgba(79, 70, 229, 0.4); }
+      100% { box-shadow: 0 0 5px rgba(79, 70, 229, 0.3), 0 0 10px rgba(79, 70, 229, 0.15); }
+    }
+    .animate-glow-slider {
+      animation: glow-slider-pulse 1.6s infinite ease-in-out;
+    }
+  `}</style>
+)}
+...
+<input
+  ...
+  className={`w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100 ${!hasInteracted ? 'animate-glow-slider' : ''}`}
+/>
+```
+
+The glow disappears the instant `onChange` fires (`hasInteracted` flips to `true`), so it functions purely as a "this needs your input" affordance, not a persistent decoration.
+
+#### Fix 3 — Gray out the "決策分析" probability text until interacted
+
+The analysis paragraph below the slider ("您有 X% 機率會給予，Y% 機率不會給予對方。") previously always rendered in `text-gray-600`, even while the value shown was just the randomized (REQ-402.1) starting position the participant hadn't chosen yet. It now dims to `text-gray-300` while `!hasInteracted`, and transitions back to normal color on first interaction:
+
+```typescript
+<p className={`transition-colors duration-300 ${!hasInteracted ? 'text-gray-300' : ''}`}>
+  您有 <span>{value}%</span> 機率會給予，<span>{100 - value}%</span> 機率不會給予對方。
+</p>
+```
+
+#### Implementation Impact
+
+- **Code changes**: 2 files — [`components/SurveyView.tsx`](../components/SurveyView.tsx) (button className) and [`components/SurveyShared.tsx`](../components/SurveyShared.tsx) (`DecisionSlider` glow + analysis text gray-out).
+- **Backend/GraphQL/schema**: ✅ No changes.
+- **Testing**: Visual verification that the confirm button is gray while `isDecisionPhase && !hasInteracted`, turns black with its pulse the instant the slider is dragged, and that the slider itself glows only before the first interaction.
+
+---
+
+### Slider Visual Camouflage — Appears Valueless Until Interacted (REQ-402.3)
+
+#### Problem
+
+REQ-402.1 gives `DecisionSlider` a randomized starting value instead of a fixed 50%, so anchoring bias is reduced — but the slider still visibly renders that random value's thumb position and indigo fill immediately, which can itself look like a starting "answer" the participant might mistake for a suggestion or leave unchanged. The requirement is for the slider to visually present as if it has **no** value at all until the participant actually touches it.
+
+#### Design decision
+
+A native `<input type="range">` cannot hold a `null`/empty value — it always needs a numeric `value` to be a valid controlled input. Rewriting it as a fully custom slider (to truly defer initializing a value until first touch) was considered but rejected as disproportionate for a cosmetic requirement. Instead, this is solved with **visual camouflage**: the randomized value keeps existing under the hood (unchanged from REQ-402.1), but the thumb and filled-track color are set to match the track's own background color while `!hasInteracted`, making the value's position visually indistinguishable from an empty track.
+
+```typescript
+// Before:
+className={`w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100 ${!hasInteracted ? 'animate-glow-slider' : ''}`}
+
+// After:
+className={`w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-100 ${!hasInteracted ? 'accent-gray-200 animate-glow-slider' : 'accent-indigo-600'}`}
+```
+
+`accent-gray-200` matches the track's `bg-gray-200`, so Chrome's native thumb + filled-track rendering (both colored via `accent-color`) blends into the track. This project is Chrome-only (REQ-415), so no cross-browser `accent-color` fallback is needed. The moment the participant drags the slider, the class switches to `accent-indigo-600`, revealing the thumb and true value — consistent with the floating value bubble and "決策分析" text, which already only appear post-interaction (REQ-402.2).
+
+#### Implementation Impact
+
+- **Code changes**: 1 file — [`components/SurveyShared.tsx`](../components/SurveyShared.tsx), `DecisionSlider`'s `<input>` className.
+- **Backend/GraphQL/schema**: ✅ No changes — the underlying `value`/`sliderValue` state and submission payload (`cooperationProbability: sliderValue / 100`) are unchanged.
+- **Testing**: Visual verification that the slider track shows no visible thumb or fill color before interaction, and that dragging reveals the indigo thumb/fill immediately.
+
+---
+
+### Undecided-State Copy + Neutral Network Graph Decision Edge (REQ-402.4)
+
+#### Problem
+
+REQ-402.3 camouflaged the slider's own thumb/fill, but two other UI surfaces still leaked the randomized-but-untouched value:
+
+1. The "決策分析" paragraph under the slider still computed and displayed `您有 X% 機率會給予...` from the random starting value.
+2. `NetworkGraph`'s decision edge — the animated dashed path, the draggable percentage bubble ("給予"/"不給予"/"中立"), and the arrow tip — all colored themselves (`COLORS.coop`/`COLORS.defect`/`COLORS.highlight`) and labeled themselves from the same untouched `decision` prop, effectively announcing a stance on the graph before the participant chose one.
+
+#### Fix 1 — Analysis text shows a call-to-action pre-interaction
+
+```typescript
+<p className={`transition-colors duration-300 ${!hasInteracted ? 'text-gray-300' : ''}`}>
+  {hasInteracted
+    ? <>您有 <span>{value}%</span> 機率會給予，<span>{100 - value}%</span> 機率不會給予對方。</>
+    : '請點擊輸入您的決策'}
+</p>
+```
+
+#### Fix 2 — `NetworkGraph` gains a `hasInteracted` prop; decision edge renders neutral until set
+
+A new optional prop, `hasInteracted?: boolean` (default `true`, so existing admin/preview callers that never pass it are unaffected), is threaded through `NetworkGraph.tsx`. All three decision-edge render sites — the Layer 2 path, the Layer 6 draggable bubble (including its label and `dashSpeed` animation timing), and the arrow-tip marker — now check it first:
+
+```typescript
+if (!hasInteracted) {
+  decisionColor = COLORS.highlight;
+  edgeOpacity = 0.5;
+} else if (visualDecision > 50) {
+  decisionColor = COLORS.coop;
+  ...
+```
+
+The bubble label:
+
+```typescript
+{!hasInteracted ? '未決策' : visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '中立'}
+```
+
+And the dash animation, which previously varied speed with the raw `decision` value even pre-interaction:
+
+```typescript
+const dashSpeed = hasInteracted ? 1 - (decision / 100) * 0.6 : 0.7;
+```
+
+`COLORS.highlight` (`#f59e0b`, amber-500 — the same orange already used for the exact-50% "中立" case) was chosen over `COLORS.neutral` (gray) per feedback, so the undecided state visually matches the existing neutral/中立 amber accent instead of looking like a disabled/inactive gray edge. The color was already defined and the arrow-marker `<defs>` block already predefines a marker for it (`[COLORS.edgeInactive, COLORS.highlight, COLORS.coop, COLORS.defect, COLORS.neutral, 'transparent']`), so no new marker/color token was needed.
+
+**Callers updated**: [`SurveyView.tsx`](../components/SurveyView.tsx) passes `hasInteracted={hasInteracted}` to its `<NetworkGraph>`; [`SurveyIntro.tsx`](../components/SurveyIntro.tsx) passes `hasInteracted={introSliderInteracted}` to its interactive practice-slider `<NetworkGraph>` for the same behavior in the tutorial.
+
+#### Implementation Impact
+
+- **Code changes**: 3 files — [`components/SurveyShared.tsx`](../components/SurveyShared.tsx) (analysis text), [`components/NetworkGraph.tsx`](../components/NetworkGraph.tsx) (new prop + 3 render sites + dash speed), [`components/SurveyView.tsx`](../components/SurveyView.tsx) and [`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx) (pass the prop through).
+- **Backend/GraphQL/schema**: ✅ No changes.
+- **Testing**: Visual verification that before interaction the decision edge (path, bubble, arrow tip) renders in amber (`COLORS.highlight`) with a "未決策" label and the analysis text reads "請點擊輸入您的決策"; after the first drag, all of these switch to their value-driven colors/labels immediately.
+
+---
+
 ## Known Issues and Fixes
 
 ### Fixed Issues
@@ -2560,85 +2778,117 @@ None. This is a new feature, not a schema change. Existing data is read-only for
 
 ---
 
-## Phase 35: Debrief Screen with Realised Round and Payment (REQ-407)
+## Phase 35: Debrief Screen with Realised Round, Real Opponent Pairing, and Persisted Payment (REQ-407, REQ-407.1)
+
+**Status**: ✅ **Complete** — superseding the original frontend-placeholder design below. Opponent pairing and persisted give/no-give draws are fully backend-wired.
 
 ### Overview
 
-Insert a debrief step into `SurveyOutro` between the registration code step (step 1) and the email collection step. The debrief reveals each round's decisions and highlights the randomly drawn "實現回合" that determines the participant's cash reward.
+`SurveyOutro` inserts a debrief step (step 2) between the registration code step (step 1) and the email collection step. The debrief reveals each round's give/no-give outcome and highlights the randomly drawn "實現回合" that determines the participant's cash reward. Both the drawn round and every round's give/no-give outcome (mine and my opponent's) are decided server-side, once, and persisted — so re-opening or refreshing the debrief screen always shows the same result and pays out the same amount.
 
 ### Step Renumbering
 
 | Old step | New step | Content |
 |----------|----------|---------|
 | 1 | 1 | 報名代碼確認 (unchanged) |
-| — | **2 (new)** | **Debrief: 每回合決策結果 + 實現回合 + 金額** |
+| — | **2** | **Debrief: 每回合決策結果 + 實現回合 + 金額** |
 | 2 | 3 | Email 收集 |
 | 3 | 4 | 完成頁 |
 
-`setStep(2)` in step 1's button advances to the debrief. Step 1's button `onClick` call already targets step 2, so the only change there is renaming the old step 2 block to step 3.
+### Backend: `drawRealisedRound` Resolver (`backend/graphql/resolvers.js`)
+
+Called once when the participant reaches step 2 ([`SurveyOutro.tsx`](../components/SurveyOutro.tsx)). Two responsibilities:
+
+**1. Draw which round is realised (paid out):**
+```js
+const drawnIndex = Math.floor(Math.random() * totalRounds); // uniform over answered rounds
+```
+
+**2. Pair with a real opponent, per round, and draw a give/no-give outcome for both sides:**
+
+- The session's `groupId` + `opponentNode` identify the opposing node group (`KMT1`/`KMT2` vs `DPP3`/`DPP4`).
+- For each of the participant's scenarios, find `Scenario` docs in the group with the **same `scenarioIndex`** but `focalNode` in the opponent group (the mirrored condition).
+- Collect `cooperationProbability` answers from completed, valid `Submission`s that answered any of those mirrored scenarios.
+- For each round, randomly sample one probability from that pool as `opponentProbs[i]`. **Fallback**: `Math.random()` when there's no group/opponent context, or no partner has answered the mirrored scenario yet.
+- **Give/no-give is a Bernoulli draw on the probability itself, not a threshold** (REQ-407.1): for every round, `myDecisions[i] = Math.random() < results[i].cooperationProbability` and `opponentDecisions[i] = Math.random() < opponentProbs[i]`. This applies uniformly — there is no special-cased comparison against 50%, and no distinction between "the participant picked exactly 50%" and any other value.
+
+```js
+const myDecisions = submission.results.map(r => Math.random() < r.cooperationProbability);
+const opponentDecisions = opponentProbs.map(p => Math.random() < p);
+
+await SubmissionModel.findByIdAndUpdate(submissionId, {
+  $set: { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions }
+});
+```
+
+**Idempotency & persistence**: `realisedRoundIndex`, `opponentProbs`, `myDecisions`, `opponentDecisions` are all persisted on `Submission` ([`backend/models/Submission.js`](../backend/models/Submission.js)). If `drawRealisedRound` is called again for a submission that already has `realisedRoundIndex` set, it returns the cached values instead of re-drawing — so a page refresh cannot change the outcome or payout. Legacy submissions that predate `myDecisions`/`opponentDecisions` (but already have `realisedRoundIndex`/`opponentProbs` from before REQ-407.1) are migrated in place on next access: the missing boolean arrays are drawn once and persisted.
+
+**Why persistence matters here**: before REQ-407.1, only the exact-50%-probability tie was decided by an unpersisted client-side coin flip (`Math.random() > 0.5`, recomputed via `useMemo` on every component mount) — a narrow edge case. Generalizing to a Bernoulli draw for *every* probability means nearly every round is now a random draw; without server-side persistence, refreshing the debrief screen could change the participant's realised cash payout, which is unacceptable for a real-incentive research design.
+
+### GraphQL Schema (`backend/graphql/typeDefs.js`)
+
+```graphql
+type Submission {
+  ...
+  realisedRoundIndex: Int
+  opponentProbs: [Float!]
+  myDecisions: [Boolean!]
+  opponentDecisions: [Boolean!]
+  ...
+}
+
+type DebriefResult {
+  realisedRoundIndex: Int!
+  opponentProbs: [Float!]!
+  myDecisions: [Boolean!]!
+  opponentDecisions: [Boolean!]!
+}
+```
 
 ### Component Changes — `SurveyOutro.tsx`
 
-**New state:**
-```ts
-const [selectedRoundIdx, setSelectedRoundIdx] = useState<number>(() =>
-  Math.floor(Math.random() * Math.max(results.length, 1))
-);
-```
-Initialised once in `useState` initialiser so it never re-randomises on re-render.
+**State**: `selectedRoundIdx`, `myDecisions: boolean[]`, `opponentDecisions: boolean[]` are populated from `fetchSubmission` (resume/refresh case) or `drawRealisedRound` (first visit), never computed locally except as a last-resort fallback if both GraphQL calls fail (in which case the fallback draws + displays a result but does not persist it).
 
-**Props** — no changes to `SurveyOutroProps` for this phase. Opponent data will be added as an optional prop in a later phase.
+**No client-side probability threshold or coin-flip logic remains.** `randomDecisions`/`myAtFifty`/`oppAtFifty` were removed; `myGive`/`oppGive` for each row are read directly from the persisted `myDecisions[i]`/`opponentDecisions[i]` booleans.
 
 ### Debrief UI Layout (step 2)
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │  標題: 實驗結果回顧                                   │
 │  副標題: 以下是您每回合的決策記錄                      │
 │                                                     │
-│  ┌──┬──────────────┬──────────────┬──────┐          │
-│  │# │ 您的決策      │ 對手的決策    │ 點數 │          │
-│  ├──┼──────────────┼──────────────┼──────┤          │
-│  │1 │ 70% 合作     │     —        │  —   │          │
-│  │2 │ 30% 不合作   │     —        │  —   │  ← plain │
-│  │3 │ 80% 合作     │     —        │  —   │  ← 🎯抽中│  ← amber highlight
-│  │… │ …            │     —        │  —   │          │
-│  └──┴──────────────┴──────────────┴──────┘          │
+│  ┌──┬──────────┬──────────┬──────┐                  │
+│  │# │ 您        │ 搭檔      │ 點數 │                  │
+│  ├──┼──────────┼──────────┼──────┤                  │
+│  │1 │ 合作      │ 不合作    │  0   │                  │
+│  │2 │ 不合作    │ 合作      │  3   │  ← amber highlight (selected round)
+│  │… │ …         │ …         │  …   │                  │
+│  └──┴──────────┴──────────┴──────┘                  │
 │                                                     │
 │  ┌── 您的獎勵 ────────────────────────────────────┐  │
-│  │  抽中：第 3 回合                               │  │
-│  │  點數：— 點    (待對手資料串接後顯示)           │  │
-│  │  獎勵：— × 100 = — 元                         │  │
+│  │  抽中回合：第 2 回合                            │  │
+│  │  點數：3 點                                    │  │
+│  │  獎勵金額：300 元                               │  │
 │  └────────────────────────────────────────────────┘  │
 │                                                     │
 │  [ 繼續 ]                                           │
 └─────────────────────────────────────────────────────┘
 ```
 
+Each row shows only the qualitative 合作/不合作 badge — the underlying `cooperationProbability` percentage is not displayed, and no tooltip explains a "randomly decided" edge case, since every row's outcome is now equally a probabilistic draw (there is nothing exceptional about any single value to call out).
+
 **Row styling:**
+
 - Plain row: white background, gray border
-- Selected round row: `bg-amber-50 border-l-4 border-amber-400` + `🎯 抽中` badge on the round number cell
+- Selected round row: `bg-amber-50 border-l-4 border-amber-400`
 
-**Decision label logic:**
+**Payoff computation** (client-side, from the persisted booleans):
+
 ```ts
-const label = (p: number) => p >= 0.5 ? '合作' : '不合作';
-const pct   = (p: number) => `${Math.round(p * 100)}%`;
+const points = myGive && oppGive ? 2 : !myGive && oppGive ? 3 : myGive && !oppGive ? 0 : 1;
 ```
 
-**Payment card:**
-- Container: `bg-indigo-50 rounded-xl p-4 border border-indigo-200`
-- Once opponent data is wired, `points` will be derived from the PD payoff matrix outcome for the selected round
-- Until then, all three derived values (點數, 計算式, 金額) render as `—`
-
-**Placeholder data contract (for future wiring):**
-```ts
-// Future optional prop (Phase 35+):
-// opponentResults?: { scenarioId: string; cooperationProbability: number }[]
-// points?: number[]  // per-round payoff from PD matrix
-```
-
-### No Backend Changes
-
-The drawn round index is not persisted. It is a purely presentational random selection for participant communication purposes.
+**Payment card:** `bg-indigo-50 rounded-xl p-4 border border-indigo-200`, showing the drawn round, its points, and `points × 100` NTD.
 
 ---

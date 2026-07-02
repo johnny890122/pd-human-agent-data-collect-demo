@@ -90,6 +90,18 @@ export const DecisionSlider: React.FC<{
 }> = ({ value, onChange, onInteraction, hasInteracted = true }) => {
   return (
     <div className="w-full max-w-md mx-auto">
+      {!hasInteracted && (
+        <style>{`
+          @keyframes glow-slider-pulse {
+            0% { box-shadow: 0 0 5px rgba(79, 70, 229, 0.3), 0 0 10px rgba(79, 70, 229, 0.15); }
+            50% { box-shadow: 0 0 15px rgba(79, 70, 229, 0.7), 0 0 25px rgba(79, 70, 229, 0.4); }
+            100% { box-shadow: 0 0 5px rgba(79, 70, 229, 0.3), 0 0 10px rgba(79, 70, 229, 0.15); }
+          }
+          .animate-glow-slider {
+            animation: glow-slider-pulse 1.6s infinite ease-in-out;
+          }
+        `}</style>
+      )}
       <div className="relative pt-6 pb-2 px-4">
         {hasInteracted && (
           <div
@@ -105,7 +117,7 @@ export const DecisionSlider: React.FC<{
             onChange(Number(e.target.value));
             if (onInteraction) onInteraction();
           }}
-          className="w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600 focus:outline-none focus:ring-4 focus:ring-indigo-100"
+          className={`w-full h-4 bg-gray-200 rounded-lg appearance-none cursor-pointer focus:outline-none focus:ring-4 focus:ring-indigo-100 ${!hasInteracted ? 'accent-gray-200 animate-glow-slider' : 'accent-indigo-600'}`}
         />
         <div className="flex justify-between text-[10px] font-bold text-gray-400 mt-2 uppercase tracking-wide">
           <span>0%</span>
@@ -116,7 +128,11 @@ export const DecisionSlider: React.FC<{
       <div className="mt-4 pt-4 border-t border-gray-100">
         <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 space-y-2 border border-gray-100">
           <p className="font-semibold text-gray-800 border-b border-gray-200 pb-2 mb-2">決策分析：</p>
-          <p>您有 <span>{value}%</span> 機率會給予，<span>{100 - value}%</span> 機率不會給予對方。</p>
+          <p className={`transition-colors duration-300 ${!hasInteracted ? 'text-gray-300' : ''}`}>
+            {hasInteracted
+              ? <>您有 <span>{value}%</span> 機率會給予，<span>{100 - value}%</span> 機率不會給予對方。</>
+              : '請點擊輸入您的決策'}
+          </p>
         </div>
       </div>
     </div>

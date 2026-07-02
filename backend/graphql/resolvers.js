@@ -118,6 +118,8 @@ function toSubmissionGraph(doc) {
     isInvalid: doc.isInvalid === true,
     realisedRoundIndex: doc.realisedRoundIndex ?? null,
     opponentProbs: doc.opponentProbs ?? null,
+    myDecisions: doc.myDecisions ?? null,
+    opponentDecisions: doc.opponentDecisions ?? null,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
@@ -706,7 +708,15 @@ export const resolvers = {
           opponentProbs = submission.results.map(() => Math.random());
           await SubmissionModel.findByIdAndUpdate(submissionId, { $set: { opponentProbs } });
         }
-        return { realisedRoundIndex: submission.realisedRoundIndex, opponentProbs };
+        let myDecisions = submission.myDecisions;
+        let opponentDecisions = submission.opponentDecisions;
+        // Migrate old submissions that predate the persisted give/no-give draws
+        if (!myDecisions?.length || !opponentDecisions?.length) {
+          myDecisions = submission.results.map(r => Math.random() < r.cooperationProbability);
+          opponentDecisions = opponentProbs.map(p => Math.random() < p);
+          await SubmissionModel.findByIdAndUpdate(submissionId, { $set: { myDecisions, opponentDecisions } });
+        }
+        return { realisedRoundIndex: submission.realisedRoundIndex, opponentProbs, myDecisions, opponentDecisions };
       }
 
       const totalRounds = submission.results?.length ?? 0;
@@ -795,11 +805,17 @@ export const resolvers = {
         opponentProbs = submission.results.map(() => Math.random());
       }
 
+      // Draw each round's give/no-give outcome as a Bernoulli trial on the cooperation
+      // probability itself (not a >50% threshold), once, and persist it — so a page
+      // refresh on the debrief screen can't change the participant's realised payout.
+      const myDecisions = submission.results.map(r => Math.random() < r.cooperationProbability);
+      const opponentDecisions = opponentProbs.map(p => Math.random() < p);
+
       await SubmissionModel.findByIdAndUpdate(submissionId, {
-        $set: { realisedRoundIndex: drawnIndex, opponentProbs }
+        $set: { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions }
       });
 
-      return { realisedRoundIndex: drawnIndex, opponentProbs };
+      return { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions };
     },
 
     // ========================================================================

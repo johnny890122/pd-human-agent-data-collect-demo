@@ -209,7 +209,14 @@ const App: React.FC = () => {
               setRestoredSubmissionId(storedSession.submissionId);
               const fullSessionPath = storedSession.path;
               const currentFullPath = location.pathname + location.search;
-              if (currentFullPath !== fullSessionPath) {
+              // The outro flow has its own per-step routes (/survey/outro/1..4) that the
+              // participant navigates freely once scenarios are done. The cached path here
+              // is only ever set once (to step 1) when the last scenario finishes, so forcing
+              // a navigate back to it on every subsequent outro step change would trap the
+              // participant on step 1. Scenario resume (the reason this cache exists) doesn't
+              // apply once inside outro.
+              const isOutroFlow = location.pathname.startsWith('/survey/outro');
+              if (currentFullPath !== fullSessionPath && !isOutroFlow) {
                 navigate(fullSessionPath, { replace: true });
               }
             } else if (location.pathname.startsWith('/survey') && !location.pathname.includes('/outro') && !location.pathname.startsWith('/survey/intro') && !location.pathname.startsWith('/survey/welcome')) {
@@ -397,7 +404,7 @@ const App: React.FC = () => {
 
     setIsSubmitting(false);
     const urlSuffix = sessionIdFromUrl ? `?sessionId=${sessionIdFromUrl}` : '';
-    navigate(`/survey/outro${urlSuffix}`, { replace: true });
+    navigate(`/survey/outro/4${urlSuffix}`, { replace: true });
   };
 
   const handleBackToAdmin = () => {
@@ -530,20 +537,37 @@ const App: React.FC = () => {
             />
           }
         />
-        <Route 
-          path="/survey/outro" 
+        <Route
+          path="/survey/outro/:outroStep"
           element={
-            <SurveyView 
-              setup={setup} 
+            <SurveyView
+              setup={setup}
               onStartSurvey={handleSurveyStart}
               onSaveAnswer={handleSaveAnswer}
-              onComplete={handleSurveyComplete} 
+              onComplete={handleSurveyComplete}
               onBack={handleBackToAdmin}
               initialEntryId={restoredSubmissionId}
               isTurnstileVerified={isTurnstileVerified}
               onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
-          } 
+          }
+        />
+        {/* Bare /survey/outro (no step segment) — kept for legacy links / stale localStorage
+            session cache entries saved before per-step routes existed; defaults to step 1. */}
+        <Route
+          path="/survey/outro"
+          element={
+            <SurveyView
+              setup={setup}
+              onStartSurvey={handleSurveyStart}
+              onSaveAnswer={handleSaveAnswer}
+              onComplete={handleSurveyComplete}
+              onBack={handleBackToAdmin}
+              initialEntryId={restoredSubmissionId}
+              isTurnstileVerified={isTurnstileVerified}
+              onTurnstileVerified={() => setIsTurnstileVerified(true)}
+            />
+          }
         />
         <Route 
           path="/survey/demographics" 

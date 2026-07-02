@@ -439,6 +439,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                     scenario={networkDemoScenario}
                     positionOverrides={introNodePositions}
                     decision={introSliderValue}
+                    hasInteracted={introSliderInteracted}
                     revealedEdgeIds={new Set(networkDemoSetup.activeEdgeIds)}
                     hideDecisionEdge={false}
                   />

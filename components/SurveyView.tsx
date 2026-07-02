@@ -237,7 +237,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     setRevealedEdgeIds(new Set());
     setIsDecisionPhase(false);
     setHasInteracted(false);
-   setSliderValue(50);
+    setSliderValue(Math.floor(Math.random() * 101)); // random integer in [0, 100]
   }, [scenarioIdx]);
 
   const handleEdgeReveal = (edgeId: string) => {
@@ -296,11 +296,11 @@ const SurveyView: React.FC<SurveyViewProps> = ({
       }
       navigateWithSession(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      const nextPath = `/survey/outro${sessionId ? `?sessionId=${sessionId}` : ''}`;
+      const nextPath = `/survey/outro/1${sessionId ? `?sessionId=${sessionId}` : ''}`;
       if (entryId) {
         saveSession(sessionId || setup._id || '', entryId, nextPath);
       }
-      navigateWithSession('/survey/outro');
+      navigateWithSession('/survey/outro/1');
     }
   };
 
@@ -308,8 +308,11 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   // Determine which step we're on based on the URL path
   const isIntroStep = location.pathname.startsWith('/survey/intro/');
   const isScenariosStep = location.pathname.startsWith('/survey/scenarios/');
-  const isOutroStep = location.pathname === '/survey/outro';
+  const isOutroStep = location.pathname.startsWith('/survey/outro');
   const isPostIntroStep = isScenariosStep || isOutroStep;
+  // Which debrief sub-step within SurveyOutro (code confirm / debrief / email / done); defaults to 1.
+  const outroStep = params.outroStep ? parseInt(params.outroStep, 10) : 1;
+  const validOutroStep = Number.isInteger(outroStep) && outroStep >= 1 && outroStep <= 4 ? outroStep : 1;
 
   useEffect(() => {
     if (!isPostIntroStep || isTurnstileVerified) {
@@ -383,7 +386,16 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
   // ── Outro ──────────────────────────────────────────────────────────────────
   if (isOutroStep) {
-    return <SurveyOutro results={results} onBack={onBack} onComplete={onComplete} entryId={entryId} />;
+    return (
+      <SurveyOutro
+        results={results}
+        onBack={onBack}
+        onComplete={onComplete}
+        entryId={entryId}
+        currentStep={validOutroStep}
+        onNavigateStep={(step) => navigateWithSession(`/survey/outro/${step}`)}
+      />
+    );
   }
 
   // ── Demographics ──────────────────────────────────────────────────────────
@@ -545,6 +557,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                   positionOverrides={randomPositions ?? undefined}
                   decision={sliderValue}
                   onInteraction={() => setHasInteracted(true)}
+                  hasInteracted={hasInteracted}
                   revealedEdgeIds={revealedEdgeIds}
                   onEdgeReveal={handleEdgeReveal}
                   hideDecisionEdge={!allRevealed || !isDecisionPhase}
@@ -600,8 +613,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
             <button
               onClick={!isDecisionPhase && allRevealed ? () => { setIsDecisionPhase(true); setHasInteracted(false); } : handleNext}
-              disabled={!allRevealed}
-              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed
+              disabled={!allRevealed || (isDecisionPhase && !hasInteracted)}
+              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed || (isDecisionPhase && !hasInteracted)
                 ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
                 : 'bg-gray-900 text-white hover:bg-black hover:-translate-y-1 active:translate-y-0 animate-glow-indigo'
                 }`}

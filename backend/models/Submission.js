@@ -32,6 +32,8 @@ const submissionSchema = new mongoose.Schema(
     isInvalid: { type: Boolean, required: true, default: false },
     realisedRoundIndex: { type: Number, required: false, default: null },
     opponentProbs: { type: [Number], required: false, default: null },
+    myDecisions: { type: [Boolean], required: false, default: null },
+    opponentDecisions: { type: [Boolean], required: false, default: null },
   },
   { timestamps: true }
 );

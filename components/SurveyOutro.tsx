@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SurveyResult } from '../types';
 import { drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
 
@@ -7,17 +7,20 @@ export interface SurveyOutroProps {
   onBack: () => void;
   onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
   entryId?: string;
+  /** Which of the 4 debrief sub-pages to render (1: code confirm, 2: debrief, 3: email, 4: done). Sourced from the URL so refreshing stays on the same page. */
+  currentStep: number;
+  /** Navigate to a different debrief sub-page (updates the URL via the parent). */
+  onNavigateStep: (step: number) => void;
 }
 
-const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack: _onBack, onComplete, entryId }) => {
-  const [step, setStep] = useState(1);
+const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack: _onBack, onComplete, entryId, currentStep: step, onNavigateStep }) => {
   const [codeValue, setCodeValue] = useState('');
   const [emailValue, setEmailValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedRoundIdx, setSelectedRoundIdx] = useState<number | null>(null);
   const [results, setResults] = useState<SurveyResult[]>(resultsProp);
-  const [opponentProbs, setOpponentProbs] = useState<number[]>([]);
-  const randomDecisions = useMemo(() => Array.from({ length: results.length }, () => Math.random() > 0.5), [results.length]);
+  const [myDecisions, setMyDecisions] = useState<boolean[]>([]);
+  const [opponentDecisions, setOpponentDecisions] = useState<boolean[]>([]);
 
   useEffect(() => {
     if (step !== 2) return;
@@ -34,24 +37,34 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
           setResults(liveResults);
         }
         // If debrief data already generated, reuse it (idempotent)
-        if (sub?.realisedRoundIndex !== null && sub?.realisedRoundIndex !== undefined && sub?.opponentProbs?.length) {
+        if (
+          sub?.realisedRoundIndex !== null && sub?.realisedRoundIndex !== undefined &&
+          sub?.opponentProbs?.length && sub?.myDecisions?.length && sub?.opponentDecisions?.length
+        ) {
           setSelectedRoundIdx(sub.realisedRoundIndex);
-          setOpponentProbs(sub.opponentProbs);
+          setMyDecisions(sub.myDecisions);
+          setOpponentDecisions(sub.opponentDecisions);
           return;
         }
       } catch {
         // proceed to draw anyway
       }
 
-      // First time: ask backend to generate and persist debrief data
+      // First time (or legacy submission missing the persisted draws): ask backend
+      // to generate and persist debrief data. The resolver is idempotent, so this
+      // is also how pre-existing realisedRoundIndex/opponentProbs get migrated.
       try {
         const debrief = await drawRealisedRound(entryId);
         setSelectedRoundIdx(debrief.realisedRoundIndex);
-        setOpponentProbs(debrief.opponentProbs);
+        setMyDecisions(debrief.myDecisions);
+        setOpponentDecisions(debrief.opponentDecisions);
       } catch {
         // fallback: local random so the page isn't stuck
-        setSelectedRoundIdx(Math.floor(Math.random() * Math.max(liveResults.length, 1)));
-        setOpponentProbs(liveResults.map(() => Math.random()));
+        const idx = Math.floor(Math.random() * Math.max(liveResults.length, 1));
+        const probs = liveResults.map(() => Math.random());
+        setSelectedRoundIdx(idx);
+        setMyDecisions(liveResults.map(r => Math.random() < r.cooperationProbability));
+        setOpponentDecisions(probs.map(p => Math.random() < p));
       }
     };
 
@@ -78,7 +91,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
         await onComplete(entryId, results, demographics);
       }
 
-      setStep(4);
+      onNavigateStep(4);
     } catch (error) {
       console.error('Failed to complete survey:', error);
       alert('提交失敗，請稍後再試');
@@ -103,7 +116,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
             onChange={(e) => setCodeValue(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
           />
           <button
-            onClick={() => setStep(2)}
+            onClick={() => onNavigateStep(2)}
             disabled={!codeValue.trim()}
             className={`w-full py-4 text-lg font-bold rounded-xl shadow-sm transition-all ${
               !codeValue.trim()
@@ -131,8 +144,8 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
       <div className="min-h-screen bg-gray-50 flex items-start justify-center p-4 pt-8">
         <div className="max-w-2xl w-full bg-white rounded-2xl shadow-xl p-6 md:p-8 space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
           <div className="text-center">
-            <h2 className="text-2xl font-bold text-gray-900">實驗結果回顧</h2>
-            <p className="text-gray-500 mt-1">以下是您每回合的決策記錄</p>
+            <h2 className="text-2xl font-bold text-gray-900">結果回顧</h2>
+            <p className="text-gray-500 mt-1">以下是系統根據您決策的機率值，隨機決定的結果。</p>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-200">
@@ -148,16 +161,10 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
               <tbody>
                 {results.map((r, i) => {
                   const isSelected = i === selectedRoundIdx;
-                  const myProb = r.cooperationProbability;
-                  const myPct = Math.round(myProb * 100);
-                  const myAtFifty = myProb === 0.5;
-                  const myGive = myAtFifty ? randomDecisions[i] : myProb > 0.5;
+                  const myGive = myDecisions[i];
                   const myLabel = myGive ? '合作' : '不合作';
                   const myLabelColor = myGive ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
-                  const oppProb = opponentProbs[i];
-                  const oppPct = Math.round(oppProb * 100);
-                  const oppAtFifty = oppProb === 0.5;
-                  const oppGive = oppAtFifty ? randomDecisions[i] : oppProb > 0.5;
+                  const oppGive = opponentDecisions[i];
                   const oppLabel = oppGive ? '合作' : '不合作';
                   const oppLabelColor = oppGive ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
                   const points = myGive && oppGive ? 2 : !myGive && oppGive ? 3 : myGive && !oppGive ? 0 : 1;
@@ -172,42 +179,14 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
                         </div>
                       </td>
                       <td className="px-3 py-3 text-gray-800">
-                        <div className="flex flex-col items-start gap-0.5">
-                          <span className="font-semibold text-sm">{myPct}%</span>
-                          {myAtFifty ? (
-                            <span className="relative group inline-block">
-                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full cursor-help ${myLabelColor}`}>
-                                {myLabel} *
-                              </span>
-                              <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-20 shadow-lg">
-                                您選擇了 50%，由系統隨機決定為此結果
-                              </span>
-                            </span>
-                          ) : (
-                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${myLabelColor}`}>
-                              {myLabel}
-                            </span>
-                          )}
-                        </div>
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${myLabelColor}`}>
+                          {myLabel}
+                        </span>
                       </td>
                       <td className="px-3 py-3 text-gray-800">
-                        <div className="flex flex-col items-start gap-0.5">
-                          <span className="font-semibold text-sm">{oppPct}%</span>
-                          {oppAtFifty ? (
-                            <span className="relative group inline-block">
-                              <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full cursor-help ${oppLabelColor}`}>
-                                {oppLabel} *
-                              </span>
-                              <span className="pointer-events-none absolute bottom-full left-0 mb-1 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-20 shadow-lg">
-                                搭檔選擇了 50%，由系統隨機決定為此結果
-                              </span>
-                            </span>
-                          ) : (
-                            <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${oppLabelColor}`}>
-                              {oppLabel}
-                            </span>
-                          )}
-                        </div>
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded-full ${oppLabelColor}`}>
+                          {oppLabel}
+                        </span>
                       </td>
                       <td className="px-3 py-3 text-right font-semibold text-gray-800">{points}</td>
                     </tr>
@@ -219,10 +198,8 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
 
           {(() => {
             const selResult = results[selectedRoundIdx];
-            const selOppProb = opponentProbs[selectedRoundIdx];
-            const selMyProb = selResult?.cooperationProbability ?? 0;
-            const selMyGive = selResult ? (selMyProb === 0.5 ? randomDecisions[selectedRoundIdx] : selMyProb > 0.5) : false;
-            const selOppGive = selOppProb === 0.5 ? randomDecisions[selectedRoundIdx] : selOppProb > 0.5;
+            const selMyGive = selResult ? myDecisions[selectedRoundIdx] : false;
+            const selOppGive = opponentDecisions[selectedRoundIdx];
             const selPoints = selResult
               ? (selMyGive && selOppGive ? 2 : !selMyGive && selOppGive ? 3 : selMyGive && !selOppGive ? 0 : 1)
               : null;
@@ -251,7 +228,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
           })()}
 
           <button
-            onClick={() => setStep(3)}
+            onClick={() => onNavigateStep(3)}
             className="w-full py-4 text-lg font-bold rounded-xl shadow-sm transition-all bg-indigo-600 hover:bg-indigo-700 text-white"
           >
             繼續

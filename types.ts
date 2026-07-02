@@ -74,6 +74,8 @@ export interface Submission {
   isInvalid?: boolean;
   realisedRoundIndex?: number | null;
   opponentProbs?: number[] | null;
+  myDecisions?: boolean[] | null;
+  opponentDecisions?: boolean[] | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -27,6 +27,8 @@ interface NetworkGraphProps {
   hideDecisionEdge?: boolean;
   /** Called when user finishes interacting with the decision slider/bubble */
   onInteraction?: () => void;
+  /** Whether the participant has interacted with the decision value yet; while false the decision edge renders as neutral/undecided */
+  hasInteracted?: boolean;
 }
 
 const NetworkGraph: React.FC<NetworkGraphProps> = ({
@@ -44,6 +46,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   onEdgeReveal,
   hideDecisionEdge = false,
   onInteraction,
+  hasInteracted = true,
 }) => {
   const [hoveredNode, setHoveredNode] = useState<AgentId | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -364,7 +367,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         let decisionColor: string;
         let edgeOpacity = 1;
 
-        if (visualDecision > 50) {
+        if (!hasInteracted) {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        } else if (visualDecision > 50) {
           decisionColor = COLORS.coop;
           edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
         } else if (visualDecision < 50) {
@@ -393,7 +399,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
 
         const path = `M ${pStartDecision.x} ${pStartDecision.y} Q ${ctrlX} ${ctrlY} ${pEndDecision.x} ${pEndDecision.y}`;
 
-        const dashSpeed = 1 - (decision / 100) * 0.6;
+        const dashSpeed = hasInteracted ? 1 - (decision / 100) * 0.6 : 0.7;
 
         return (
           <g style={{ transition: 'all 0.3s ease' }}>
@@ -736,7 +742,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         let decisionColor: string;
         let edgeOpacity = 1;
 
-        if (visualDecision > 50) {
+        if (!hasInteracted) {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        } else if (visualDecision > 50) {
           decisionColor = COLORS.coop;
           edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
         } else if (visualDecision < 50) {
@@ -874,7 +883,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
                 fill="white"
                 style={{ transition: 'all 0.2s ease' }}
               >
-                {visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '中立'}
+                {!hasInteracted ? '未決策' : visualDecision > 50 ? '給予' : visualDecision < 50 ? '不給予' : '中立'}
               </text>
             </g>
           </g>
@@ -928,7 +937,10 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
         const visualDecision = isDragging && localDecision !== null ? localDecision : decision;
         let decisionColor: string;
         let edgeOpacity = 1;
-        if (visualDecision > 50) {
+        if (!hasInteracted) {
+          decisionColor = COLORS.highlight;
+          edgeOpacity = 0.5;
+        } else if (visualDecision > 50) {
           decisionColor = COLORS.coop;
           edgeOpacity = 0.4 + (0.6 * (visualDecision - 50) / 50);
         } else if (visualDecision < 50) {

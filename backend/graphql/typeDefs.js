@@ -67,6 +67,8 @@ export const typeDefs = `#graphql
     isInvalid: Boolean!
     realisedRoundIndex: Int
     opponentProbs: [Float!]
+    myDecisions: [Boolean!]
+    opponentDecisions: [Boolean!]
     createdAt: String!
     updatedAt: String!
   }
@@ -74,6 +76,8 @@ export const typeDefs = `#graphql
   type DebriefResult {
     realisedRoundIndex: Int!
     opponentProbs: [Float!]!
+    myDecisions: [Boolean!]!
+    opponentDecisions: [Boolean!]!
   }
 
   type SurveyResult {

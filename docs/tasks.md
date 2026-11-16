@@ -3142,3 +3142,26 @@ saveSession(currentId, submission._id, path);
 - [x] **TASK-5003**: `GroupDetailView.tsx`: share the ledger's `payable` filter, compute total / avg / missing / budget [REQ-408.9]
 - [x] **TASK-5004**:「Actual Payout」card in the Statistics Cards grid [REQ-408.9]
 - [x] **TASK-5005**: `tsc` + check the card against the Export Payments CSV on a group with completed submissions [REQ-408.9]
+
+## Phase 51: Batch Is the Only Launch Mode (REQ-207)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-5101**: Requirements: REQ-207, REQ-201/202/204–206 superseded, overview + change log
+- [x] **TASK-5102**: Design: Phase 51
+- [x] **TASK-5103**: `SetupPanel.tsx`: remove the toggle and the manual launch path; `launchMode` from `readOnly` [REQ-207]
+- [x] **TASK-5104**: `App.tsx` / `AdminView.tsx`: default routes and Setup nav → `/admin/setup/mixed`; redirect bare `/admin/setup/manual`; drop unused state [REQ-207]
+- [x] **TASK-5105**: `tsc`; check `/admin/setup/mixed`, `/admin/setup`, `/admin/setup/manual` redirect, and the history read-only view; `npm run test:e2e` [REQ-207]
+
+## Phase 52: Remove Single-Session History; Rename「View Sessions」(REQ-207 amended, REQ-208)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-5201**: Requirements: REQ-207 amended, REQ-208, REQ-315 removed, change log
+- [x] **TASK-5202**: Design: Phase 52
+- [x] **TASK-5203**: `App.tsx`: redirect `/admin/setup/manual` and `/admin/view/manual`; drop `onSave` [REQ-207]
+- [x] **TASK-5204**: `AdminView.tsx`: remove the history tab and read-only view; rename nav to「View Sessions」[REQ-208]
+- [x] **TASK-5205**: `SetupPanel.tsx`: delete the manual layout; delete `HistoryTable.tsx` and `fetchAllSessions` [REQ-207]
+- [x] **TASK-5206**: Rewrite `AdminView.test.tsx`; `tsc`; vitest; browser check; `npm run test:e2e` [REQ-207, REQ-208]
+
+**Notes**: `backend/__tests__/new-data-model.test.js` has 3 failures (`createBatchSessions` ×2, session full gate) that also fail on the previous commit `3286f31`; unrelated to this phase.

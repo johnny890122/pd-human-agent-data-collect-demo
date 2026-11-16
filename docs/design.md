@@ -3405,3 +3405,40 @@ A startup guard throws if an `EDGE_CASES` id is missing from `ROADMAP` or placed
   - `{paid} participants · avg NT$ {avg}`
   - Mixed: `of budget ≤ NT$ {budget}`
   - amber `{missingPayout} 筆無報酬紀錄` when > 0.
+
+## Phase 51 — Batch Is the Only Launch Mode (REQ-207)
+
+### Routing (`App.tsx`, `components/AdminView.tsx`)
+- `/` and `/admin/setup` → `Navigate` to `/admin/setup/mixed` (was `/admin/setup/manual`).
+- 「Setup」nav item → `/admin/setup/mixed`.
+- `/admin/setup/manual` route stays, because the history page opens a past session there with `state.readOnly = true`. `AdminView` redirects (replace) to `/admin/setup/mixed` when that path is opened without `readOnly`.
+- `AdminView` drops the `generatedUrl` / `isSaving` state that only the manual launch used.
+
+### `components/SetupPanel.tsx`
+- `launchMode = readOnly ? 'manual' : 'mixed'` (was derived from the URL). The manual branches now render only the read-only history view.
+- Removed: Launch Mode toggle, `handleGenerateUrl` + `createManualSession` import, the「Confirm Setup」modal, the「Session is live」URL modal, the "select at least one edge" hint, and the `generatedUrl` / `isSaving` / `onSave` props.
+- The launch button is Batch-only: `Launch Batch Sessions`, disabled while `isMixedCreating`.
+
+### Unchanged
+- Backend `createManualSession`, `utils/graphqlClient.createManualSession`, the `scripts/test-manual-mode-*.mjs` API scripts, `HistoryTable`, and the participant `?sessionId=` flow.
+
+## Phase 52 — Remove Single-Session History; Rename「View Sessions」(REQ-207 amended, REQ-208)
+
+Nothing opens the manual layout once the history page is gone, so it is deleted rather than kept read-only.
+
+### Routing (`App.tsx`)
+- `/admin/setup/manual` → `<Navigate to="/admin/setup/mixed" replace />`; `/admin/view/manual` → `<Navigate to="/admin/view/batch" replace />` (route-level, replaces the Phase 51 redirect inside `AdminView`).
+- `onSave` prop dropped from every `AdminView` route (it was never used).
+
+### `components/AdminView.tsx`
+- Tabs: `setup` | `groups` only. Removed: history state/effects, `HistoryTable`, `handleLoadHistorySetup`, `handleBackFromReadOnly`, `handleNodeInteraction`, `toggleEdge`, read-only state.
+- Nav: 「Setup」,「View Sessions」(was「View Batch Sessions」), 「Clear Database」(dev), 「Logout」.
+
+### `components/SetupPanel.tsx`
+- Props are `setup`, `setSetup` only. Removed: `LaunchMode`, the Target Size slider, `NetworkGraph`, the manual Setting Preview (`SummaryWidget`), Complexity Check, the read-only Back button, and unused batch state (`batchEdgeCount`, `isBatchCreating`).
+
+### Deleted
+- `components/HistoryTable.tsx`; `fetchAllSessions` in `utils/graphqlClient.ts` (its only caller). The backend `allSessions` query is kept.
+
+### Tests
+- `components/__tests__/AdminView.test.tsx` rewritten (the old one targeted a「History」tab that no longer existed and was failing 3/3): nav items, Batch-only setup, `/admin/setup/manual` redirect.

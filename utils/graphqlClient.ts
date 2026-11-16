@@ -81,37 +81,6 @@ export async function fetchSession(id: string): Promise<Session | null> {
   return data.session;
 }
 
-export async function fetchAllSessions(excludeGroupSessions = false): Promise<Session[]> {
-  const query = `
-    query AllSessions($excludeGroupSessions: Boolean) {
-      allSessions(excludeGroupSessions: $excludeGroupSessions) {
-        _id
-        scenarioIds
-        activeEdgeIds
-        scenarios {
-          _id
-          activeEdgeIds
-          edgeStates
-          scenarioIndex
-        }
-        focalNode
-        opponentNode
-        sampleSize
-        groupId
-        submissionCount
-        metadata {
-          createdFor
-        }
-        createdAt
-        updatedAt
-      }
-    }
-  `;
-
-  const data = await runGraphQL<{ allSessions: Session[] }>(query, { excludeGroupSessions });
-  return data.allSessions || [];
-}
-
 export async function findUserSession(groupId: string, participantId: string): Promise<Session | null> {
   const query = `
     query FindUserSession($groupId: ID!, $participantId: String!) {

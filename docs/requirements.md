@@ -46,6 +46,8 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
 | 2026-11-16 | **ADMIN CAPABILITY** Mixed Mode cost estimate (REQ-314) | The Mixed setup page shows the estimated total payout (est. participants × per-participant payout range) in the Setting Preview and the launch confirmation, so the admin can budget before launching. Uses the payment constants from `utils/payment.js` (REQ-408.1). |
 | 2026-11-16 | **ADMIN CAPABILITY** Actual payout on the group page (REQ-408.9) | The group detail page (`/admin/view/batch/:groupId`) shows the total actually owed to participants so far — the sum of persisted `payoutNtd` over the same rows as the payment ledger — next to the Mixed Mode budget ceiling (REQ-314). |
+| 2026-11-16 | **SCOPE CHANGE** Single-session history removed; nav renamed「View Sessions」(REQ-207, REQ-208) | The「View Single Session」page (`/admin/view/manual`), its read-only session view and the manual setup layout are removed; old URLs redirect to `/admin/view/batch` and `/admin/setup/mixed`.「View Batch Sessions」is renamed「View Sessions」. Participant `?sessionId=` links and the `createManualSession` / `allSessions` API stay. Supersedes REQ-315/316. |
+| 2026-11-16 | **SCOPE CHANGE** Manual launch removed from the setup page (REQ-207) | The Launch Mode toggle and the Manual setup screen are removed; `/`, `/admin/setup` and the Setup nav open Batch (Mixed) setup. Existing single sessions keep working: the「View Single Session」history, its read-only view and their `?sessionId=` participant links are unchanged, and `createManualSession` stays on the API. Supersedes REQ-201, REQ-202, REQ-204–REQ-206 for new launches. |
 
 ---
 
@@ -58,7 +60,7 @@ The platform supports two primary user roles cooperating around an experimental 
    - **Mixed Mode** (`/admin/setup?mode=mixed`): Cross-k sampling with scenario-level targeting. Admin picks maxK, scenariosPerSession, and targetSizePerScenario; the system generates a scenario pool and serves balanced sessions to each arriving participant. ✅ **COMPLETED 2026-04-29**
    - **Batch Mode** (`/admin/view/batch`): Multiple sessions, one per k-edge combination (complete factorial sweep). Accessible via the Groups tab, not the Setup tab.
    
-   Manual Mode and Mixed Mode share the `/admin/setup` page and are selected with an inline two-button `LaunchMode` toggle. The active mode is always reflected in the URL as a `?mode=` query parameter, enabling bookmarking and direct links to each mode. Navigating to `/admin/setup` without the parameter defaults to Manual Mode. They distribute survey URLs and monitor responses at both session and scenario levels.
+   *2026-11-16 (REQ-207):* the setup page now launches Batch (Mixed) only; Manual Mode remains only for viewing past single sessions. Previously, Manual Mode and Mixed Mode shared the `/admin/setup` page and were selected with an inline two-button `LaunchMode` toggle. The active mode is always reflected in the URL as a `?mode=` query parameter, enabling bookmarking and direct links to each mode. Navigating to `/admin/setup` without the parameter defaults to Manual Mode. They distribute survey URLs and monitor responses at both session and scenario levels.
 
 2. A **Participant** opens a survey URL, passes a Cloudflare Turnstile bot check, completes a sequence of cooperation-probability scenarios, fills demographics, and submits. Their progress is persisted.
 
@@ -108,16 +110,16 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 ### REQ-200 — Single-Session Setup (`/admin/setup`)
 
-- **REQ-201 — Configure a session.** ✅ **USES NEW API (2026-04-29)** Admin selects (a) focal node, (b) opponent node, (c) active edge IDs from the 12 directed edges defined in `constants.ts`, and (d) target `sampleSize` (default 20).
+- **REQ-201 — Configure a session.** ⛔ **SUPERSEDED 2026-11-16 by REQ-207** (no new single sessions from the UI) Admin selects (a) focal node, (b) opponent node, (c) active edge IDs from the 12 directed edges defined in `constants.ts`, and (d) target `sampleSize` (default 20).
   - *Acceptance:* `createManualSession` mutation creates independent `Scenario` documents and a `Session` document with UUID `_id`, `groupId = null`, and the supplied fields. Returns the session with `scenariosCreated` count.
   
-- **REQ-202 — Generate a survey link.** ✅ **URL FORMAT UPDATED (2026-04-29)** After saving, the admin sees a shareable URL of the form `<origin>/survey/welcome?sessionId=<id>`.
+- **REQ-202 — Generate a survey link.** ⛔ **SUPERSEDED 2026-11-16 by REQ-207** (existing links still work) After saving, the admin sees a shareable URL of the form `<origin>/survey/welcome?sessionId=<id>`.
   - *Acceptance:* Opening that link hydrates the session via `session(id)` query and starts the participant flow.
   
 - **REQ-203 — Visualize the network graph.** The setup panel renders the 4-node directed graph with selectable edges and color-coded groups (Group A blue, Group B red).
   - *Acceptance:* Toggling an edge updates `activeEdgeIds`. Selecting focal/opponent nodes updates the corresponding fields.
 
-- **REQ-204 — Mode toggle with URL synchronization.** The `/admin/setup` page MUST expose a two-button toggle (labeled "Manual" and "Mixed") that selects the active launch strategy. The toggle state MUST be reflected in the URL as a `?mode=` query parameter at all times, so the current mode is always bookmarkable and shareable.
+- **REQ-204 — Mode toggle with URL synchronization.** ⛔ **SUPERSEDED 2026-11-16 by REQ-207** The `/admin/setup` page MUST expose a two-button toggle (labeled "Manual" and "Mixed") that selects the active launch strategy. The toggle state MUST be reflected in the URL as a `?mode=` query parameter at all times, so the current mode is always bookmarkable and shareable.
   - *Acceptance:*
     - Clicking "Manual" sets the URL to `/admin/setup?mode=manual` and renders the Manual Mode configuration UI.
     - Clicking "Mixed" sets the URL to `/admin/setup?mode=mixed` and renders the Mixed Mode configuration UI.
@@ -126,16 +128,27 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - A user who copies the URL `/admin/setup?mode=manual` and opens it in a new tab MUST land directly in Manual Mode.
     - The browser back button reflects natural navigation history, not toggling between modes.
 
-- **REQ-205 — Default mode when param is absent or invalid.** Navigating to `/admin/setup` without a `?mode=` parameter, or with an unrecognized value (e.g., `?mode=foo`), MUST default to Manual Mode. The URL MUST be corrected to `?mode=manual` immediately on load (via replace, not push).
+- **REQ-205 — Default mode when param is absent or invalid.** ⛔ **SUPERSEDED 2026-11-16 by REQ-207** Navigating to `/admin/setup` without a `?mode=` parameter, or with an unrecognized value (e.g., `?mode=foo`), MUST default to Manual Mode. The URL MUST be corrected to `?mode=manual` immediately on load (via replace, not push).
   - *Acceptance:*
     - `GET /admin/setup` (no param) → renders Manual Mode; URL becomes `/admin/setup?mode=manual`.
     - `GET /admin/setup?mode=invalid` → renders Manual Mode; URL becomes `/admin/setup?mode=manual`.
     - No flash of the wrong mode is visible before the URL correction.
 
-- **REQ-206 — Internal admin links preserve mode context.** Any link within the admin console that navigates to `/admin/setup` MUST include a `?mode=` parameter. The default when generating such links programmatically (e.g., "go to setup" buttons) MUST be `?mode=manual`.
+- **REQ-206 — Internal admin links preserve mode context.** ⛔ **SUPERSEDED 2026-11-16 by REQ-207** Any link within the admin console that navigates to `/admin/setup` MUST include a `?mode=` parameter. The default when generating such links programmatically (e.g., "go to setup" buttons) MUST be `?mode=manual`.
   - *Acceptance:*
     - No internal navigation produces a bare `/admin/setup` URL without a `?mode=` param.
     - Where the originating context already knows the target mode (e.g., "Edit in Mixed Mode" from a Mixed Mode group), the link uses `?mode=mixed`.
+
+- **REQ-207 — Batch is the only launch mode.** 📋 **NEW 2026-11-16** The setup page launches Batch (Mixed Mode) groups only.
+  - *Acceptance:*
+    - `/admin/setup/mixed` shows no Launch Mode toggle; it opens directly on the Batch configuration.
+    - `/`, `/admin/setup` and the「Setup」nav item go to `/admin/setup/mixed`.
+    - Opening `/admin/setup/manual` redirects (replace) to `/admin/setup/mixed`.
+    - *Amended 2026-11-16:* the「View Single Session」page and its read-only view of a past session are removed too (REQ-208); the manual setup layout no longer exists. Opening `/admin/view/manual` redirects (replace) to `/admin/view/batch`.
+    - Existing single-session participant links (`/survey/welcome?sessionId=…`) and the `createManualSession` / `allSessions` API are unchanged.
+
+- **REQ-208 — Admin navigation.** 📋 **NEW 2026-11-16** The admin sidebar lists exactly: 「Setup」(`/admin/setup/mixed`), 「View Sessions」(`/admin/view/batch`, renamed from「View Batch Sessions」), 「Clear Database」(development only) and「Logout」. There is no「View Single Session」item.
+  - *Acceptance:* covered by `components/__tests__/AdminView.test.tsx`.
 
 ### REQ-300 — Batch Launch / Session Groups (`/admin/view/batch`)
 
@@ -212,7 +225,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - Respect DNT (Do Not Track) headers - fallback to anonymous mode if DNT is enabled
     - Comply with privacy regulations (no biometric data, no cross-site tracking)
 
-### REQ-315 — Session History (`/admin/view/manual`)
+### REQ-315 — Session History (`/admin/view/manual`) ⛔ **REMOVED 2026-11-16 (REQ-207, REQ-208)** — URL redirects to `/admin/view/batch`
 
 - **REQ-316 — List standalone sessions.** Shows every `Session` where `groupId == null`, with submission counts and links to the survey URL and raw data.
   - *Acceptance:* Backed by `allSessions(excludeGroupSessions: true)` query. URLs use `?sessionId=` format.

@@ -482,37 +482,23 @@ const App: React.FC = () => {
       )}
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Navigate to="/admin/setup/manual" replace />} />
-        <Route path="/admin/setup" element={<Navigate to="/admin/setup/manual" replace />} />
-        <Route
-          path="/admin/setup/manual"
-          element={
-            <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/" element={<Navigate to="/admin/setup/mixed" replace />} />
+        <Route path="/admin/setup" element={<Navigate to="/admin/setup/mixed" replace />} />
+        <Route path="/admin/setup/manual" element={<Navigate to="/admin/setup/mixed" replace />} />
         <Route
           path="/admin/setup/mixed"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
+              <AdminView setup={setup} setSetup={setSetup} />
             </ProtectedRoute>
           }
         />
-        <Route
-          path="/admin/view/manual"
-          element={
-            <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
-            </ProtectedRoute>
-          }
-        />
+        <Route path="/admin/view/manual" element={<Navigate to="/admin/view/batch" replace />} />
         <Route
           path="/admin/view/batch"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
+              <AdminView setup={setup} setSetup={setSetup} />
             </ProtectedRoute>
           }
         />
@@ -520,7 +506,7 @@ const App: React.FC = () => {
           path="/admin/view/batch/:groupId"
           element={
             <ProtectedRoute>
-              <AdminView setup={setup} setSetup={setSetup} onSave={async () => undefined} />
+              <AdminView setup={setup} setSetup={setSetup} />
             </ProtectedRoute>
           }
         />

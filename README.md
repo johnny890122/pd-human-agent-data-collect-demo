@@ -44,9 +44,8 @@ Local development automatically uses Cloudflare Turnstile testing keys on `local
 
 The Admin Console (`/admin`) is a protected route that provides several key features for managing the experiment:
 
-- **Setup Panel (`/admin/setup`)**: Configure new experimental sessions. Select the focal node, opponent node, active edges within the network graph, and set the target sample size.
-- **Batch Mode / Groups (`/admin/view/batch`)**: Create and manage multiple sessions at once as a `SessionGroup`. Useful for running large-scale iterations of the experiment. The table view shows progress and completion percentages for each group.
-- **Session History (`/admin/view/manual`)**: View past single-session setups, track their submission counts, and access their specific configurations.
+- **Setup Panel (`/admin/setup`)**: Launch a Batch (Mixed Mode) group. Pick the focal and partner node, max k, scenarios per participant and target responses per scenario; the page shows the estimated participants and cost.
+- **View Sessions (`/admin/view/batch`)**: Every launched group with its progress; open one for its participants, actual payout and the payment / data exports.
 - **Session Replay (`/admin/replay/:sessionId`)**: Watch a video-like playback of a participant's interaction with the survey, recorded using RRWeb.
 - **Database Management**: In development mode, admins have the ability to clear the database for testing purposes.
 

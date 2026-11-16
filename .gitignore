@@ -27,3 +27,9 @@ package-lock.json
 plans/
 .claude/
 .env
+
+# IRB before/after screenshots and report (regenerate with npm run irb:shots / irb:report)
+docs/irb/screenshots/
+docs/irb/report/
+# E2E run output (screenshots, reports)
+test-results/

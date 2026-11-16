@@ -4,10 +4,12 @@ import { Session, SurveyResult } from '../types';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
-import { generateTrianglePositions, PayoffMatrix, DecisionSlider } from './SurveyShared';
+import { generateTrianglePositions, PayoffMatrix, DecisionSlider, GraphLegend, ALL_LEGEND_ITEMS } from './SurveyShared';
 import SurveyIntro from './SurveyIntro';
 import SurveyOutro from './SurveyOutro';
 import { saveSession } from '../utils/surveySession';
+import toast from 'react-hot-toast';
+import { ANSWER_LOCKED_MSG } from '../constants';
 
 interface SurveyViewProps {
   setup: Session;
@@ -65,12 +67,17 @@ const SurveyView: React.FC<SurveyViewProps> = ({
         window.history.pushState('blocked', '', window.location.href);
       }
     };
+    // REQ-402.4: tell the participant why Back did nothing once answers are confirmed
+    const onBack = () => {
+      if (/^\/survey\/(scenarios|outro)\//.test(window.location.pathname)) toast(ANSWER_LOCKED_MSG, { id: 'answer-locked' });
+      blockBackNavigation();
+    };
 
     blockBackNavigation();
-    window.addEventListener('popstate', blockBackNavigation);
+    window.addEventListener('popstate', onBack);
 
     return () => {
-      window.removeEventListener('popstate', blockBackNavigation);
+      window.removeEventListener('popstate', onBack);
     };
   }, [location.pathname]);
   
@@ -540,7 +547,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 w-full max-w-5xl">
+      <div className="grid grid-cols-1 xl:grid-cols-[3fr_2fr] gap-8 w-full max-w-5xl">
 
         {/* ── Left Column ───────────────────────────────────────────────────── */}
         <div className="space-y-6">
@@ -563,6 +570,9 @@ const SurveyView: React.FC<SurveyViewProps> = ({
                   hideDecisionEdge={!allRevealed || !isDecisionPhase}
                 />
               </div>
+
+              {/* Same legend in the same place every round (REQ-409.1) */}
+              <GraphLegend compact items={ALL_LEGEND_ITEMS} className="mx-0 md:mx-4 mt-4" />
 
               {/* ── Gradual reveal prompt — shown while edges remain hidden ── */}
               {!allRevealed && (

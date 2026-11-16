@@ -69,6 +69,8 @@ export const typeDefs = `#graphql
     opponentProbs: [Float!]
     myDecisions: [Boolean!]
     opponentDecisions: [Boolean!]
+    realisedPoints: Int
+    payoutNtd: Int
     createdAt: String!
     updatedAt: String!
   }
@@ -78,6 +80,8 @@ export const typeDefs = `#graphql
     opponentProbs: [Float!]!
     myDecisions: [Boolean!]!
     opponentDecisions: [Boolean!]!
+    realisedPoints: Int!
+    payoutNtd: Int!
   }
 
   type SurveyResult {
@@ -116,6 +120,7 @@ export const typeDefs = `#graphql
     totalSessions: Int!
     totalScenarios: Int!
     mode: String!
+    status: String!
     completionPercentage: Float
     createdAt: String!
     updatedAt: String!
@@ -187,6 +192,7 @@ export const typeDefs = `#graphql
     # Submission queries
     submission(id: ID!): Submission
     recentSubmissions(limit: Int = 20): [Submission!]!
+    submissionsByGroup(groupId: ID!): [Submission!]!
     
   }
 

@@ -8,10 +8,19 @@ import { randomUUID } from 'crypto';
 import { generateEdgeCombinations } from '../../utils/combinations.js';
 import { generateDesignMatrix } from '../../utils/mathBackend.js';
 import { balancedSelect } from '../../utils/scenarioSelection.js';
+import { payoffPoints, totalPayoutNtd } from '../../utils/payment.js';
 
 function requireDb() {
   if (!isDbConfigured()) {
     throw new Error('MONGODB_URI is not configured. Set it in your environment to enable persistence.');
+  }
+}
+
+// Participant contact data (email) is admin-only (REQ-408.8). Other admin resolvers are
+// still unguarded — see BUG-006.
+function requireAdmin(context) {
+  if (!context?.isAdmin) {
+    throw new Error('Unauthorized');
   }
 }
 
@@ -81,6 +90,20 @@ async function toSessionGraph(doc, populateScenarios = true) {
   };
 }
 
+/** REQ-309: a Mixed group is completed while no scenario is below its target; invalidation can re-open it. */
+async function refreshGroupStatus(groupId) {
+  if (!groupId) return;
+  const group = await SessionGroupModel.findById(groupId).lean();
+  const target = group?.config?.targetSizePerScenario;
+  if (!target) return;
+  const below = await ScenarioModel.countDocuments({ groupId, responseCount: { $lt: target } });
+  const status = below === 0 ? 'completed' : 'active';
+  if ((group.status || 'active') !== status) {
+    await SessionGroupModel.updateOne({ _id: groupId }, { $set: { status } });
+    console.log(`[refreshGroupStatus] group ${groupId} → ${status}`);
+  }
+}
+
 function toGroupGraph(doc) {
   if (!doc) return null;
   
@@ -99,6 +122,7 @@ function toGroupGraph(doc) {
     totalSessions: doc.totalSessions || 0,
     totalScenarios: doc.totalScenarios || 0,
     mode,
+    status: doc.status || 'active',
     completionPercentage: doc.completionPercentage || 0,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
@@ -120,6 +144,8 @@ function toSubmissionGraph(doc) {
     opponentProbs: doc.opponentProbs ?? null,
     myDecisions: doc.myDecisions ?? null,
     opponentDecisions: doc.opponentDecisions ?? null,
+    realisedPoints: doc.realisedPoints ?? null,
+    payoutNtd: doc.payoutNtd ?? null,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
@@ -247,12 +273,25 @@ export const resolvers = {
       return toSubmissionGraph(doc);
     },
 
-    recentSubmissions: async (_, { limit = 20 }) => {
+    recentSubmissions: async (_, { limit = 20 }, context) => {
+      requireAdmin(context);
       requireDb();
       await connectToDatabase();
       const docs = await SubmissionModel.find({})
         .sort({ createdAt: -1 })
         .limit(limit)
+        .lean();
+      return docs.map(doc => toSubmissionGraph(doc));
+    },
+
+    // Every submission of a group, however many there are (REQ-408.7, fixes BUG-007)
+    submissionsByGroup: async (_, { groupId }, context) => {
+      requireAdmin(context);
+      requireDb();
+      await connectToDatabase();
+      const sessions = await SessionModel.find({ groupId }, { _id: 1 }).lean();
+      const docs = await SubmissionModel.find({ sessionId: { $in: sessions.map(s => String(s._id)) } })
+        .sort({ createdAt: -1 })
         .lean();
       return docs.map(doc => toSubmissionGraph(doc));
     },
@@ -493,6 +532,11 @@ export const resolvers = {
         }
       }
       
+      // REQ-405.1: a full group takes no new participants (existing ones resumed above)
+      if (group.status === 'completed') {
+        throw new Error('GROUP_FULL: every scenario in this group has reached its target');
+      }
+
       // 3. 使用 balanced selection 策略選擇 scenarios
       console.log(`[startMixedSession] Selecting ${scenariosPerSession} scenarios...`);
       
@@ -616,23 +660,24 @@ export const resolvers = {
         throw new Error('Submission not found');
       }
       
-      const existingIndex = submission.results.findIndex(r => r.scenarioId === scenarioId);
-      
-      if (existingIndex >= 0) {
-        // 更新現有答案
-        submission.results[existingIndex].cooperationProbability = cooperationProbability;
-        submission.results[existingIndex].answeredAt = new Date();
-      } else {
-        // 新增答案
-        submission.results.push({
-          scenarioId,
-          cooperationProbability,
-          answeredAt: new Date(),
-        });
-        
-        // ** KEY: 更新 scenario 的 responseCount (原子操作) **
-        await ScenarioModel.findByIdAndUpdate(scenarioId, { $inc: { responseCount: 1 } });
+      // REQ-402.4: confirmed answers are final; a same-value retry is a harmless no-op
+      if (submission.isCompleted) {
+        throw new Error('ANSWER_LOCKED: this submission is already completed');
       }
+      const existing = submission.results.find(r => r.scenarioId === scenarioId);
+      if (existing) {
+        if (existing.cooperationProbability === cooperationProbability) return toSubmissionGraph(submission);
+        throw new Error('ANSWER_LOCKED: this scenario has already been answered');
+      }
+
+      submission.results.push({
+        scenarioId,
+        cooperationProbability,
+        answeredAt: new Date(),
+      });
+
+      // ** KEY: 更新 scenario 的 responseCount (原子操作) **
+      await ScenarioModel.findByIdAndUpdate(scenarioId, { $inc: { responseCount: 1 } });
       
       await submission.save();
       return toSubmissionGraph(submission);
@@ -665,23 +710,8 @@ export const resolvers = {
       );
       
       // ** Mixed Mode: 檢查 group completion (REQ-309) **
-      const session = await SessionModel.findById(submission.sessionId);
-      if (session && session.groupId && session.metadata?.createdFor === 'mixed') {
-        console.log(`[completeSurvey] Checking Mixed Mode group completion for group: ${session.groupId}`);
-        
-        const group = await SessionGroupModel.findById(session.groupId);
-        if (group && group.config?.targetSizePerScenario) {
-          const targetSize = group.config.targetSizePerScenario;
-          
-          // 檢查有多少 scenarios 還沒達到 targetSize
-          const incompleteCount = await ScenarioModel.countDocuments({
-            groupId: session.groupId,
-            responseCount: { $lt: targetSize }
-          });
-          
-          console.log(`[completeSurvey] Incomplete scenarios: ${incompleteCount}`);
-        }
-      }
+      const session = await SessionModel.findById(submission.sessionId).lean();
+      await refreshGroupStatus(session?.groupId);
       
       return toSubmissionGraph(submission);
     },
@@ -716,7 +746,16 @@ export const resolvers = {
           opponentDecisions = opponentProbs.map(p => Math.random() < p);
           await SubmissionModel.findByIdAndUpdate(submissionId, { $set: { myDecisions, opponentDecisions } });
         }
-        return { realisedRoundIndex: submission.realisedRoundIndex, opponentProbs, myDecisions, opponentDecisions };
+        let { realisedPoints, payoutNtd } = submission;
+        // Backfill submissions drawn before the payout was persisted (REQ-408.5). An existing
+        // payout is never recomputed, so a later fee change can't alter what was shown.
+        if (realisedPoints == null || payoutNtd == null) {
+          const round = submission.realisedRoundIndex;
+          realisedPoints = payoffPoints(myDecisions[round], opponentDecisions[round]);
+          payoutNtd = totalPayoutNtd(realisedPoints);
+          await SubmissionModel.findByIdAndUpdate(submissionId, { $set: { realisedPoints, payoutNtd } });
+        }
+        return { realisedRoundIndex: submission.realisedRoundIndex, opponentProbs, myDecisions, opponentDecisions, realisedPoints, payoutNtd };
       }
 
       const totalRounds = submission.results?.length ?? 0;
@@ -811,11 +850,15 @@ export const resolvers = {
       const myDecisions = submission.results.map(r => Math.random() < r.cooperationProbability);
       const opponentDecisions = opponentProbs.map(p => Math.random() < p);
 
+      // The amount shown on the debrief and paid out (REQ-408.5)
+      const realisedPoints = payoffPoints(myDecisions[drawnIndex], opponentDecisions[drawnIndex]);
+      const payoutNtd = totalPayoutNtd(realisedPoints);
+
       await SubmissionModel.findByIdAndUpdate(submissionId, {
-        $set: { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions }
+        $set: { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions, realisedPoints, payoutNtd }
       });
 
-      return { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions };
+      return { realisedRoundIndex: drawnIndex, opponentProbs, myDecisions, opponentDecisions, realisedPoints, payoutNtd };
     },
 
     // ========================================================================
@@ -887,6 +930,10 @@ export const resolvers = {
           }
         }
       }
+
+      // REQ-309: invalidating can drop a scenario below target and re-open the group
+      const session = await SessionModel.findById(submission.sessionId).lean();
+      await refreshGroupStatus(session?.groupId);
 
       return toSubmissionGraph(submission);
     },

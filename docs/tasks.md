@@ -36,6 +36,15 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 | Phase 37 | 📋 Planned | 2026-07-02 | Disabled confirm button gray-out + slider glow prompt (REQ-402.2) |
 | Phase 38 | 📋 Planned | 2026-07-02 | Slider visual camouflage — appears valueless until interacted (REQ-402.3) |
 | Phase 39 | 📋 Planned | 2026-07-02 | Undecided-state copy on analysis text + neutral network graph decision edge (REQ-402.4) |
+| Phase 40 | ✅ Complete | 2026-10-01 | IRB before/after capture tooling + baseline screenshots (NFR-7) |
+| Phase 41 | ✅ Complete | 2026-10-01 | IRB comment 2 — payment conversion disclosure, persisted payout, payment ledger (REQ-408) |
+| Phase 42 | ✅ Complete | 2026-10-01 | IRB comment 1 — figure legend, captions, minimum sizes (REQ-409) |
+| Phase 43 | ✅ Complete | 2026-10-01 | IRB after screenshots + before/after PDF report + packet caption index (NFR-7, REQ-409.4) |
+| Phase 44 | ✅ Complete | 2026-11-15 | Full-flow e2e test with screenshot review report (NFR-8) |
+| Phase 45 | ✅ Complete | 2026-11-15 | Registration code survives a refresh (REQ-403.1, BUG-009) |
+| Phase 46 | ✅ Complete | 2026-11-15 | E2E edge cases: return, attend twice, full group, guards (NFR-8.1) |
+| Phase 47 | ✅ Complete | 2026-11-15 | Test-case roadmap at the top of the e2e report (NFR-8.2) |
+| Phase 48 | ✅ Complete | 2026-11-16 | Full group closes (BUG-010), confirmed answers final (EC-6), unknown invite link (EC-11) |
 
 ---
 
@@ -2870,3 +2879,246 @@ saveSession(currentId, submission._id, path);
 - `NetworkGraph`'s decision edge (path, bubble, arrow tip, dash speed) renders neutral/gray with a "未決策" label until `hasInteracted` is `true`.
 - `hasInteracted` defaults to `true` on `NetworkGraph`, so admin/preview usages that don't pass it are unaffected.
 - No backend, GraphQL, schema, or data-contract changes.
+
+---
+
+## Phase 40: IRB Before/After Capture Tooling + Baseline Screenshots (NFR-7)
+
+**Status**: ✅ Complete (2026-10-01)
+
+**Objective**: Build deterministic screenshot tooling and capture the "before" set while the app source is still identical to commit `934e945`, so every IRB-driven edit can be shown before and after. See design.md Phase 40.
+
+**Scope**: Dev tooling only (`scripts/irb-shots/`, `package.json`, `.gitignore`). No app code changes in this phase.
+
+- [x] **TASK-4001**: Add tooling dependencies and scripts — [`package.json`](../package.json), [`.gitignore`](../.gitignore) [NFR-7]
+  - devDependencies `playwright-core` (drives the installed Google Chrome) and `mongodb-memory-server` (throwaway DB).
+  - Scripts `irb:shots` → `node scripts/irb-shots/capture.mjs`, `irb:report` → `node scripts/irb-shots/build-report.mjs`.
+  - Ignore `docs/irb/screenshots/` and `docs/irb/report/`.
+
+- [x] **TASK-4002**: Create the fixed fixture — `scripts/irb-shots/fixture.mjs` [NFR-7]
+  - 1 SessionGroup, 1 Session (KMT1 vs DPP3), 3 Scenarios, submissions `irb-fixture-sub-live` (in progress; draw round 2 = 不給/給 → 3 點) and `irb-fixture-sub-done` (completed; code `A1B2C3`, email `participant@example.com`).
+  - `seedFixture()` inserts through the app's own Mongoose models; no `realisedPoints`/`payoutNtd` (the "after" run backfills them).
+  - *Acceptance*: Seeding twice produces identical documents; the app's `session(id)` query returns the 3 scenarios.
+
+- [x] **TASK-4003**: Define the edit-part catalog and shot list — `scripts/irb-shots/shots.mjs` [NFR-7]
+  - Edit parts A1–A6 (payment) and B1–B3 (figures) with IRB comment, REQ and one-line change note.
+  - Shots S01–S14 and evidence E1–E2 exactly as in design.md, plus packet-only screens.
+
+- [x] **TASK-4004**: Implement the capture script — `scripts/irb-shots/capture.mjs` [NFR-7]
+  - Start in-memory MongoDB (or `IRB_SHOTS_MONGODB_URI`), seed, spawn `node server.js` on port 3100 with its own `ADMIN_PASSWORD`/`JWT_SECRET`.
+  - Per shot: Turnstile cookie + `survey_session_*` localStorage, seeded `Math.random`, frozen CSS/SVG animations, setup steps, full-page PNG at DPR 2 for desktop 1440×900 and phone 390×844.
+  - Evidence E1 (unauthenticated `recentSubmissions`), E2 (Payments CSV download, "after" only).
+  - `meta.json`: git SHA, dirty flag, `appSourceMatchesBaseline`, payment settings, timestamp.
+
+- [x] **TASK-4005**: Implement the report builder — `scripts/irb-shots/build-report.mjs` [NFR-7]
+  - HTML (cover, summary table, per-IRB-comment sections with Before | After pairs, appendices) → PDF via `page.pdf()`, A4 landscape.
+  - Fail the build when an edit part has no shot or evidence; JPEG copies via `sips` keep the PDF small.
+
+- [x] **TASK-4006**: Capture the baseline — `npm run build && npm run irb:shots -- --label before` [NFR-7]
+  - *Acceptance*: `docs/irb/screenshots/before/meta.json` shows `appSourceMatchesBaseline: true`; every shot exists for both viewports (S14 desktop only).
+
+**Acceptance Criteria for Phase 40**:
+- The "before" set is complete and provably taken from unmodified app source.
+- Running the capture twice produces visually identical images.
+- The study database is never touched.
+
+---
+
+## Phase 41: IRB Comment 2 — Points → Payment Conversion (REQ-408)
+
+**Status**: ✅ Complete (2026-10-01)
+
+**Objective**: One source of truth for the conversion, a payout computed and persisted on the server, consistent participant copy, and a payment ledger for the researcher. See design.md Phase 41.
+
+- [x] **TASK-4101**: Create the payment module — `utils/payment.js` [REQ-408.1]
+  - `POINT_TO_NTD`, `PARTICIPATION_FEE_NTD` (0, Open Question #8), `PAYMENT_METHOD_TEXT`, `PAYMENT_TIMELINE_TEXT` (Open Question #9), `payoffPoints`, `pointPayoutNtd`, `totalPayoutNtd(points, fee)`, `MIN_TOTAL_NTD`, `MAX_TOTAL_NTD`.
+  - Unit tests `utils/__tests__/payment.test.ts`: the 4 outcomes; totals at fee 0 (0–300) and fee 100 (100–400).
+
+- [x] **TASK-4102**: Persist payout fields — [`backend/models/Submission.js`](../backend/models/Submission.js), [`backend/graphql/typeDefs.js`](../backend/graphql/typeDefs.js), `toSubmissionGraph` in [`resolvers.js`](../backend/graphql/resolvers.js) [REQ-408.5]
+  - `realisedPoints`, `payoutNtd` (Number, default null) on the model; `Int` on `Submission`, `Int!` on `DebriefResult`.
+
+- [x] **TASK-4103**: Compute, persist and backfill the payout in `drawRealisedRound` [REQ-408.5]
+  - First draw: `$set` `realisedPoints`/`payoutNtd` with the other draw fields. Idempotent path: backfill when missing; never recompute an existing `payoutNtd`.
+
+- [x] **TASK-4104**: Guard participant PII and add the group query — [`resolvers.js`](../backend/graphql/resolvers.js), [`typeDefs.js`](../backend/graphql/typeDefs.js) [REQ-408.7, REQ-408.8]
+  - `requireAdmin(context)` helper; applied to `recentSubmissions` and the new `submissionsByGroup(groupId)`.
+
+- [x] **TASK-4105**: Update the client API and types — [`utils/graphqlClient.ts`](../utils/graphqlClient.ts), [`types.ts`](../types.ts) [REQ-408.5, REQ-408.7]
+  - `realisedPoints`/`payoutNtd` in `fetchSubmission` and `drawRealisedRound`; new `fetchSubmissionsByGroup(groupId)`.
+
+- [x] **TASK-4106**: Rework the debrief and email steps — [`components/SurveyOutro.tsx`](../components/SurveyOutro.tsx) [REQ-408.3, REQ-408.4, REQ-408.6]
+  - Load on steps 2 and 3 (loading / ready / error); remove the local random fallback; error card with「重試」.
+  - Payment card with formula, conditional 參與費 line and 合計 from `payoutNtd`; email sentence with amount, 電子禮券 and timeline.
+
+- [x] **TASK-4107**: Rewrite the payment explanation — intro step 7 in [`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx) [REQ-408.2]
+  - Rate badge, outcome table (合計 column only when fee > 0), range, worked example, payment form and timing — all from `utils/payment.js`.
+
+- [x] **TASK-4108**: Complete group data + Export Payments — [`components/GroupDetailView.tsx`](../components/GroupDetailView.tsx) [REQ-408.7]
+  - Replace both `fetchRecentSubmissions()` calls with `fetchSubmissionsByGroup(groupId)`; add the「Export Payments」CSV.
+
+- [x] **TASK-4109**: Verify payment behavior [REQ-408]
+  - `npm run test:run` (new tests pass; no new failures vs. the baseline), `npx tsc --noEmit` clean.
+  - An unauthenticated `recentSubmissions` request returns `Unauthorized`; the admin group page still loads.
+  - Refreshing the debrief keeps the same amount; the debrief total equals the Payments CSV total.
+
+**Acceptance Criteria for Phase 41**:
+- No component or resolver hard-codes the rate or fee.
+- The amount a participant sees is the persisted `payoutNtd`, and no screen shows an unrecorded amount.
+- Intro, debrief and email step state the same rate, range, form and timing.
+- The payment ledger lists every completed, valid submission of the group.
+
+---
+
+## Phase 42: IRB Comment 1 — Figure Legibility (REQ-409)
+
+**Status**: ✅ Complete (2026-10-01)
+
+**Objective**: Make every figure explain itself and be large enough to read. See design.md Phase 42.
+
+- [x] **TASK-4201**: Build `GraphLegend` — [`components/SurveyShared.tsx`](../components/SurveyShared.tsx) [REQ-409.1]
+  - Seven legend items drawn with `COLORS` tokens; `items` and `compact` props. Test: renders exactly the requested rows.
+
+- [x] **TASK-4202**: Add captions and legends to the intro — [`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx) [REQ-409.1, REQ-409.2]
+  - Captions under the figures of steps 0, 2, 3, 4, 5; legends on steps 0, 2, 4, 5 per the design placement table.
+
+- [x] **TASK-4203**: Enlarge the "?" marker and the graph cap — [`components/NetworkGraph.tsx`](../components/NetworkGraph.tsx) [REQ-409.3]
+  - r 13, `fontSize={18}`, transparent hit circle r 20; `lg:max-w-[520px]`.
+
+- [x] **TASK-4204**: Widen the scenario graph and add the compact legend — [`components/SurveyView.tsx`](../components/SurveyView.tsx) [REQ-409.1, REQ-409.3]
+  - `xl:grid-cols-[3fr_2fr]`; `GraphLegend compact` with all seven items under the graph, above the reveal prompt.
+
+- [x] **TASK-4205**: Fix intro sizes and invalid classes — [`components/SurveyIntro.tsx`](../components/SurveyIntro.tsx) [REQ-409.3]
+  - Interaction list `text-sm` + 24px avatars; `white-*` classes → valid gray/white classes; tip-1 demo `max-w-[360px]`; graph containers `h-[380px] md:h-[480px]`.
+
+- [x] **TASK-4206**: Repair the stale intro test — [`components/__tests__/SurveyIntro.test.tsx`](../components/__tests__/SurveyIntro.test.tsx) [REQ-409.2]
+  - Wrap in `MemoryRouter`; assert the step-0 caption and legend instead of the removed "You"/"Partner" cards.
+
+**Acceptance Criteria for Phase 42**:
+- Every graph encoding is explained next to the figure that uses it.
+- Sizes meet REQ-409.3 at 1440×900 and 390×844.
+- No change to the scenario data, the decision logic or the recorded values.
+
+---
+
+## Phase 43: IRB After Screenshots + Before/After PDF Report (NFR-7, REQ-409.4)
+
+**Status**: ✅ Complete (2026-10-01)
+
+- [x] **TASK-4301**: Capture the "after" set — `npm run build && npm run irb:shots -- --label after` [NFR-7]
+- [x] **TASK-4302**: Build the report — `npm run irb:report` → `docs/irb/report/irb-before-after-report.pdf` [NFR-7]
+  - *Acceptance*: every edit part has before/after pairs at both viewports (S14 desktop only); E1 shows the query rejected after the change; E2 total matches S11.
+- [x] **TASK-4303**: Write the packet caption index — `docs/irb/figures.md` [REQ-409.4]
+- [x] **TASK-4304**: Hand over — report path, pending items (Open Questions #8, #9), and the rerun command for when the fee or timeline is confirmed.
+- [x] **TASK-4305**: Add the 報酬規則說明 page to the report — `scripts/irb-shots/build-report.mjs` [NFR-7, REQ-408]
+  - Placed at the start of the IRB comment 2 section; every number is generated from the "after" capture's payment settings and `payoffPoints`, so it updates when the fee or timing is confirmed and the report is rebuilt.
+- [x] **TASK-4306**: Rewrite the report in Traditional Chinese for the advisor — `scripts/irb-shots/build-report.mjs`, `shots.mjs`, `fixture.mjs` [NFR-7]
+  - Remove commit hashes, file paths, code identifiers, requirement IDs and raw JSON; label edit parts 1-1…2-6 and shots 圖 1…; describe evidence E1/E2 in plain language.
+  - Replace the English fixture description and participant IDs visible on the admin screenshot, and recapture S14 for both sets.
+- [x] **TASK-4307**: Limit the advisor report to participant-facing changes — `scripts/irb-shots/shots.mjs`, `build-report.mjs` [NFR-7]
+  - Mark A5, A6, S14, E1 and E2 `internal` (still captured, not shown); drop the before/after rows from the cover; keep only the fee/timing item in the open items.
+  - Payment rules page: state that the researcher pays the saved amount without referring to the admin export.
+
+**Acceptance Criteria for Phase 43**:
+- The PDF opens, is readable when zoomed, and contains every pair listed in design.md.
+- Re-running steps 1–2 after changing `PARTICIPATION_FEE_NTD` regenerates a consistent report.
+
+**Implementation notes (2026-10-01)**:
+- **Verification**: `npx tsc --noEmit` clean; `npm run build` passes. Tests: 21 passed / 3 failed / 15 skipped, against a baseline of 1 passed / 5 failed / 15 skipped. New: `utils/__tests__/payment.test.ts` (5), `backend/__tests__/payout.test.js` (6, own in-memory MongoDB), `components/__tests__/SurveyOutro.test.tsx` (5); `SurveyIntro.test.tsx` repaired (4). Still failing, unchanged and out of scope: the 3 stale `AdminView.test.tsx` tests and `new-data-model.test.js` (needs a MongoDB on localhost).
+- **Baseline from a clean checkout**: the "before" set was captured from a git worktree of `934e945` via `capture.mjs --app <dir>` (design.md Phase 40), so `meta.json` records a clean, baseline-identical source.
+- **Randomness fix**: the Tailwind CDN runtime also calls `Math.random`, which shifted the shuffled node positions between runs. The capture now gives the app bundle its own seeded stream; both sets were recaptured afterwards.
+- **Found and fixed while repairing the intro test**: `MiniAvatar` gave every avatar of the same person the same clipPath id (`mini-avatar-<agent>`), producing duplicate DOM ids; ids are now unique per instance.
+- **Capture hardening**: the Tailwind CDN runtime is cached and served locally, each shot has a 120-second limit, and page loads retry once. Two runs stalled for ~17 minutes at a time with almost no CPU use — the Mac was sleeping, not the tooling hanging.
+- **Fixture replay**: the capture replays the completed participant's debrief visit (one idempotent `drawRealisedRound`) so the payment ledger shows a real payout, as it would for every real finisher.
+- **Pending PI decisions**: `PARTICIPATION_FEE_NTD` (Open Question #8), `PAYMENT_TIMELINE_TEXT` (#9), and approval of the caption and payment copy.
+
+---
+
+## Phase 44: Full-Flow E2E Test with Review Report (NFR-8)
+
+**Status**: ✅ Complete (2026-11-15)
+
+**Objective**: One command runs admin launch → invite link → participant survey → debrief → payment ledger and writes a screenshot report. See design.md Phase 44.
+
+- [x] **TASK-4401**: Add NFR-8 and BUG-008 (partner pairing never matches) — [`docs/requirements.md`](requirements.md) [NFR-8]
+- [x] **TASK-4402**: Write the Phase 44 design — [`docs/design.md`](design.md) [NFR-8]
+- [x] **TASK-4403**: Build the harness — [`scripts/e2e/full-flow.mjs`](../scripts/e2e/full-flow.mjs) [NFR-8]
+  - In-memory MongoDB, spawned `server.js` (`CLIENT_ORIGIN` = base URL), Chrome, cached Tailwind route, Turnstile stub, teardown in `finally`.
+- [x] **TASK-4404**: Drive the journey — admin launch (UI) → participant A (full) → participant B (partial) → DB checks [NFR-8]
+- [x] **TASK-4405**: Check the ledger — download Export Payments, parse it, compare with the DB and the debrief; add `npm run test:e2e` and ignore `test-results/` [NFR-8, REQ-408.7]
+- [x] **TASK-4406**: Write the report — `shot()`/`check()` recorders, `report.html` (summary, money trail, steps, ledger, known issues) and `report.pdf` [NFR-8]
+
+**Acceptance Criteria for Phase 44**:
+- `npm run test:e2e` exits 0 (40/40 after Phase 45), and the money trail shows the same amount at every stage.
+- Breaking the ledger amount makes it exit 1, and the report still contains every screenshot and marks the failed check.
+
+**Implementation notes (2026-11-15)**:
+- **Result**: 38/40 checks pass in ~45 s. Debrief = after reload = email step = DB `payoutNtd` = recomputed payout = ledger total. The 2 failures are the registration code (`unknown`) in the DB and in the ledger → **BUG-009**, which the debrief reload triggers. A probe run without the reload passed 40/40.
+- **BUG-008 confirmed** by the server log: `opponentProbs matched=0/5 fallback=5`.
+- **Deviations from the plan**: (1) The admin UI's minimum for scenarios/participant is 5, so A answers 5 scenarios, not 2. (2) The intro's「開始實驗！」always opens the Turnstile modal, so the Cloudflare script is stubbed and the real dev `/api/turnstile/verify` sets the cookie (no cookie injection). (3) B gets a different `timezoneId`/`locale`; otherwise both contexts share one FingerprintJS ID and B would resume A's session.
+- **Legend "?"**: the graph legend draws a permanent sample "?", so `revealAll` stops once a click reveals nothing, and the check uses the「開始決策」button instead of counting markers.
+
+---
+
+## Phase 45: Registration Code Survives a Refresh (REQ-403.1, BUG-009)
+
+**Status**: ✅ Complete (2026-11-15)
+
+- [x] **TASK-4501**: Add REQ-403.1 and mark BUG-009 fixed — [`docs/requirements.md`](requirements.md) [REQ-403.1]
+- [x] **TASK-4502**: Write the Phase 45 design — [`docs/design.md`](design.md) [REQ-403.1]
+- [x] **TASK-4503**: Persist, restore and clear the code; never save `unknown` — [`components/SurveyOutro.tsx`](../components/SurveyOutro.tsx) [REQ-403.1]
+- [x] **TASK-4504**: Unit tests (restore after remount, empty code → step 1) — [`components/__tests__/SurveyOutro.test.tsx`](../components/__tests__/SurveyOutro.test.tsx) [REQ-403.1]
+- [x] **TASK-4505**: Run `npm run test:e2e` → 40/40 [NFR-8]
+
+**Implementation notes (2026-11-15)**:
+- **Verification**: `npm run test:e2e` → PASS 40/40 (exit 0). Unit suite 23 passed / 3 failed / 15 skipped; the failures are the pre-existing stale `AdminView.test.tsx` tests and `new-data-model.test.js` (needs a local MongoDB). Both new `SurveyOutro` tests fail against the pre-fix component. `npx tsc --noEmit` clean.
+- **Test environment**: Node 26 shadows jsdom's `localStorage` with its own global, which is undefined without `--localstorage-file`, so the new tests stub it. This also exercised the no-storage fallback (no crash; in-memory only).
+- **Found, not fixed**: `App.handleSurveyComplete` catches a failed `completeSurvey` and still shows the done screen, so a participant whose save failed is told they are finished but is missing from the payment ledger. Candidate for its own BUG entry.
+
+---
+
+## Phase 46: E2E Edge Cases (NFR-8.1)
+
+**Status**: ✅ Complete (2026-11-15) — green since Phase 48 fixed BUG-010 (2026-11-16)
+
+- [x] **TASK-4601**: Add the EC-1…EC-13 catalogue to NFR-8 — [`docs/requirements.md`](requirements.md) [NFR-8.1]
+- [x] **TASK-4602**: Write the Phase 46 design — [`docs/design.md`](design.md) [NFR-8.1]
+- [x] **TASK-4603**: Step dependencies (`needs`) and observation checks in the harness/report [NFR-8.1]
+- [x] **TASK-4604**: EC-1, EC-2, EC-13 in the existing admin and participant A steps [NFR-8.1]
+- [x] **TASK-4605**: Participant C: leave, refresh, return, Back, finish (EC-3…EC-6) and return after completing (EC-7) [NFR-8.1]
+- [x] **TASK-4606**: Another device with the same code + admin invalidation + ledger re-export (EC-8) [NFR-8.1]
+- [x] **TASK-4607**: Full group (EC-9), non-Chrome and unknown link (EC-10, EC-11), API guards (EC-12) [NFR-8.1]
+- [x] **TASK-4608**: Run, log every failure as a BUG with its root cause [NFR-8.1]
+
+**Implementation notes (2026-11-15)**:
+- **Result**: 73/76 checks, 10 observations, ~100 s. Pass: EC-1, 2, 3, 4, 5, 7, 8, 10, 12, 13. Observed: EC-6 (Back is redirected forward), EC-11. Fail: EC-9, three checks → **BUG-010** (group never marked completed; new visitor gets an 18-scenario session of already-full scenarios; no 「無法參與實驗」).
+- **Observations needing a decision**: requirements.md Open Questions #10–#13 (duplicate code from a second device, unknown-link UX, completed submissions editable through the API, Back behaviour).
+- **Harness**: steps declare `needs`, so a broken step only skips the steps that depend on it; observations (ℹ) are shown but never fail the run; the report has an Edge cases table and an Observations table.
+
+## Phase 47: Test-Case Roadmap (NFR-8.2)
+
+**Status**: ✅ Complete (2026-11-15)
+
+- [x] **TASK-4701**: Add NFR-8.2 (roadmap) to requirements.md [NFR-8.2]
+- [x] **TASK-4702**: Write the Phase 47 design [NFR-8.2]
+- [x] **TASK-4703**: `ROADMAP` stage table + guard that every EC is placed exactly once [NFR-8.2]
+- [x] **TASK-4704**: Render the roadmap section (rail, happy-path badge, linked EC chips, legend, counts) and anchor step sections as `#step-<id>` [NFR-8.2]
+- [x] **TASK-4705**: Re-run `npm run test:e2e` and check the roadmap in report.html and report.pdf [NFR-8.2]
+
+## Phase 48: Full Group Closes, Final Answers, Unknown Link (BUG-010, REQ-402.4, REQ-405.1, REQ-405.2)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-4801**: Requirements: REQ-309 note, REQ-402.4, REQ-405.1, REQ-405.2, EC-6/9/11/12 expectations, BUG-010 fixed, Open Questions #11–#13 resolved
+- [x] **TASK-4802**: Design: Phase 48
+- [x] **TASK-4803**: `SessionGroup.status` (model, typeDef, `toGroupGraph`, client query, `types.ts`) [REQ-309]
+- [x] **TASK-4804**: `refreshGroupStatus` in `completeSurvey` and `invalidateSubmission`; `startMixedSession` refuses a completed group [REQ-309, REQ-405.1]
+- [x] **TASK-4805**: `saveSurveyAnswer` locks answered scenarios and completed submissions, same-value retry idempotent [REQ-402.4]
+- [x] **TASK-4806**: `App.tsx` entry gate (`full` / `unknown`) on arrival and on `GROUP_FULL` at intro end [REQ-405.1, REQ-405.2]
+- [x] **TASK-4807**: Toast on the existing Back trap (`SurveyView`) + earlier-scenario URL guard (`App.tsx`) [REQ-402.4]
+- [x] **TASK-4808**: Backend unit tests (status, GROUP_FULL, ANSWER_LOCKED); e2e EC-6/9/11/12 as checks; re-run [NFR-8.1]
+
+**Implementation notes (2026-11-16)**:
+- **Result**: `npm run test:e2e` PASS, 89/89 checks, 3 observations (EC-3 intro restarts, EC-8 duplicate code ×2 — Open Question #10 still open), ~80 s. Backend `group-closing.test.js` 5/5.
+- **Back was already trapped**: `SurveyView` pushes a duplicate `'blocked'` history entry, so Back never left the page; the gap was only the missing explanation. The toast was added there; the `App.tsx` guard covers opening an earlier scenario's URL.
+- **E2E flake fixed**: `setSlider` now steps through a neighbouring value first — when the random start (REQ-402.1) equalled the target value, React saw no change and the confirm button stayed locked (1 in 101 per scenario).
+

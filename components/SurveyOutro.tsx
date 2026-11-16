@@ -1,6 +1,48 @@
 import React, { useState, useEffect } from 'react';
-import { SurveyResult } from '../types';
-import { drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
+import { Submission, SurveyResult } from '../types';
+import { DebriefResult, drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
+import { PAYMENT_METHOD_TEXT, PAYMENT_TIMELINE_TEXT, POINT_TO_NTD, payoffPoints, pointPayoutNtd } from '../utils/payment.js';
+
+// The persisted debrief, if this submission already has a complete one (including its payout)
+function persistedDebrief(sub: Submission | null): DebriefResult | null {
+  if (
+    sub?.realisedRoundIndex == null || !sub.myDecisions?.length || !sub.opponentDecisions?.length ||
+    sub.realisedPoints == null || sub.payoutNtd == null
+  ) {
+    return null;
+  }
+  return {
+    realisedRoundIndex: sub.realisedRoundIndex,
+    opponentProbs: sub.opponentProbs ?? [],
+    myDecisions: sub.myDecisions,
+    opponentDecisions: sub.opponentDecisions,
+    realisedPoints: sub.realisedPoints,
+    payoutNtd: sub.payoutNtd,
+  };
+}
+
+// The registration code must survive a refresh on steps 2–3 (REQ-403.1, BUG-009). Storage can
+// be unavailable (private mode, blocked site data); then the code simply lives in memory.
+const codeKey = (entryId: string) => `survey_code_${entryId}`;
+
+function readStoredCode(entryId?: string): string {
+  if (!entryId) return '';
+  try {
+    return localStorage.getItem(codeKey(entryId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function writeStoredCode(entryId: string | undefined, code: string | null) {
+  if (!entryId) return;
+  try {
+    if (code) localStorage.setItem(codeKey(entryId), code);
+    else localStorage.removeItem(codeKey(entryId));
+  } catch {
+    // storage unavailable — keep the in-memory value only
+  }
+}
 
 export interface SurveyOutroProps {
   results: SurveyResult[];
@@ -14,62 +56,63 @@ export interface SurveyOutroProps {
 }
 
 const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack: _onBack, onComplete, entryId, currentStep: step, onNavigateStep }) => {
-  const [codeValue, setCodeValue] = useState('');
+  const [codeValue, setCodeValue] = useState(() => readStoredCode(entryId));
   const [emailValue, setEmailValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedRoundIdx, setSelectedRoundIdx] = useState<number | null>(null);
   const [results, setResults] = useState<SurveyResult[]>(resultsProp);
-  const [myDecisions, setMyDecisions] = useState<boolean[]>([]);
-  const [opponentDecisions, setOpponentDecisions] = useState<boolean[]>([]);
+  const [debrief, setDebrief] = useState<DebriefResult | null>(null);
+  const [debriefStatus, setDebriefStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
+  // entryId can arrive after mount (restored asynchronously on a refresh)
   useEffect(() => {
-    if (step !== 2) return;
+    if (!codeValue) setCodeValue(readStoredCode(entryId));
+  }, [entryId]);
+
+  const updateCode = (value: string) => {
+    setCodeValue(value);
+    writeStoredCode(entryId, value);
+  };
+
+  // Steps 2 (debrief) and 3 (email) both show the saved result, so both load it
+  useEffect(() => {
+    if (step !== 2 && step !== 3) return;
+    // Already loaded on the previous step (2 → 3): keep showing the same result
+    if (!entryId || debrief) return;
+    let cancelled = false;
 
     const load = async () => {
-      if (!entryId) return;
+      setDebriefStatus('loading');
 
       // Fetch submission for results (page-refresh case) and any already-persisted debrief data
-      let liveResults = results;
+      let saved: DebriefResult | null = null;
       try {
         const sub = await fetchSubmission(entryId);
-        if (sub?.results?.length) {
-          liveResults = sub.results;
-          setResults(liveResults);
-        }
-        // If debrief data already generated, reuse it (idempotent)
-        if (
-          sub?.realisedRoundIndex !== null && sub?.realisedRoundIndex !== undefined &&
-          sub?.opponentProbs?.length && sub?.myDecisions?.length && sub?.opponentDecisions?.length
-        ) {
-          setSelectedRoundIdx(sub.realisedRoundIndex);
-          setMyDecisions(sub.myDecisions);
-          setOpponentDecisions(sub.opponentDecisions);
-          return;
-        }
+        if (sub?.results?.length && !cancelled) setResults(sub.results);
+        saved = persistedDebrief(sub);
       } catch {
         // proceed to draw anyway
       }
 
-      // First time (or legacy submission missing the persisted draws): ask backend
-      // to generate and persist debrief data. The resolver is idempotent, so this
-      // is also how pre-existing realisedRoundIndex/opponentProbs get migrated.
       try {
-        const debrief = await drawRealisedRound(entryId);
-        setSelectedRoundIdx(debrief.realisedRoundIndex);
-        setMyDecisions(debrief.myDecisions);
-        setOpponentDecisions(debrief.opponentDecisions);
+        // First time (or a submission drawn before the payout was persisted): the resolver is
+        // idempotent, so it draws once and otherwise returns / backfills the saved result.
+        const result = saved ?? await drawRealisedRound(entryId);
+        if (cancelled) return;
+        setDebrief(result);
+        setDebriefStatus('ready');
       } catch {
-        // fallback: local random so the page isn't stuck
-        const idx = Math.floor(Math.random() * Math.max(liveResults.length, 1));
-        const probs = liveResults.map(() => Math.random());
-        setSelectedRoundIdx(idx);
-        setMyDecisions(liveResults.map(r => Math.random() < r.cooperationProbability));
-        setOpponentDecisions(probs.map(p => Math.random() < p));
+        // Never fall back to a locally drawn result: its amount would not match what the
+        // researcher pays (REQ-408.6)
+        if (!cancelled) setDebriefStatus('error');
       }
     };
 
     load();
-  }, [step]);
+    return () => {
+      cancelled = true;
+    };
+  }, [step, entryId, loadAttempt]);
 
   const trimmedEmail = emailValue.trim();
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
@@ -77,18 +120,24 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
 
   const handleFinalSubmit = async () => {
     if (!isEmailValid || isSubmitting) return;
+    // Without the code the payment can't be matched to the participant: ask for it again
+    if (!codeValue.trim()) {
+      onNavigateStep(1);
+      return;
+    }
 
     setIsSubmitting(true);
 
     try {
       const demographics = {
         age: parseInt(codeValue) || 0,
-        gender: codeValue || 'unknown',
+        gender: codeValue,
         education: trimmedEmail
       };
 
       if (onComplete && entryId) {
         await onComplete(entryId, results, demographics);
+        writeStoredCode(entryId, null);
       }
 
       onNavigateStep(4);
@@ -113,7 +162,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
             className="w-full p-4 border border-gray-200 rounded-xl text-center text-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-gray-50 focus:bg-white transition-colors"
             placeholder="請輸入代碼"
             value={codeValue}
-            onChange={(e) => setCodeValue(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
+            onChange={(e) => updateCode(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
           />
           <button
             onClick={() => onNavigateStep(2)}
@@ -132,13 +181,37 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
   }
 
   if (step === 2) {
-    if (selectedRoundIdx === null) {
+    if (debriefStatus === 'error') {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 md:p-8 text-center space-y-6">
+            <h2 className="text-2xl font-bold text-gray-900">讀取結果失敗</h2>
+            <p className="text-gray-600 leading-relaxed">
+              目前無法取得您的實驗結果。您的作答已經保存，請確認網路連線後再試一次。
+            </p>
+            <button
+              onClick={() => setLoadAttempt(attempt => attempt + 1)}
+              className="w-full py-4 text-lg font-bold rounded-xl shadow-sm transition-all bg-indigo-600 hover:bg-indigo-700 text-white"
+            >
+              重試
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (debriefStatus !== 'ready' || !debrief) {
       return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center">
           <div className="text-gray-400 text-sm">載入中...</div>
         </div>
       );
     }
+
+    const { realisedRoundIndex, myDecisions, opponentDecisions, realisedPoints, payoutNtd } = debrief;
+    const pointPayout = pointPayoutNtd(realisedPoints);
+    // Derived from the persisted total, so it always matches the amount that is paid
+    const participationFee = payoutNtd - pointPayout;
 
     return (
       <div className="min-h-screen bg-gray-50 flex items-start justify-center p-4 pt-8">
@@ -159,18 +232,17 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
                 </tr>
               </thead>
               <tbody>
-                {results.map((r, i) => {
-                  const isSelected = i === selectedRoundIdx;
-                  const myGive = myDecisions[i];
+                {myDecisions.map((myGive, i) => {
+                  const isSelected = i === realisedRoundIndex;
                   const myLabel = myGive ? '合作' : '不合作';
                   const myLabelColor = myGive ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
                   const oppGive = opponentDecisions[i];
                   const oppLabel = oppGive ? '合作' : '不合作';
                   const oppLabelColor = oppGive ? 'text-green-700 bg-green-100' : 'text-red-700 bg-red-100';
-                  const points = myGive && oppGive ? 2 : !myGive && oppGive ? 3 : myGive && !oppGive ? 0 : 1;
+                  const points = payoffPoints(myGive, oppGive);
                   return (
                     <tr
-                      key={r.scenarioId}
+                      key={results[i]?.scenarioId ?? i}
                       className={`border-b border-gray-100 last:border-0 ${isSelected ? 'bg-amber-50 border-l-4 border-l-amber-400' : ''}`}
                     >
                       <td className="px-3 py-3 font-medium text-gray-700 text-center">
@@ -196,36 +268,38 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
             </table>
           </div>
 
-          {(() => {
-            const selResult = results[selectedRoundIdx];
-            const selMyGive = selResult ? myDecisions[selectedRoundIdx] : false;
-            const selOppGive = opponentDecisions[selectedRoundIdx];
-            const selPoints = selResult
-              ? (selMyGive && selOppGive ? 2 : !selMyGive && selOppGive ? 3 : selMyGive && !selOppGive ? 0 : 1)
-              : null;
-            const reward = selPoints !== null ? selPoints * 100 : null;
-            return (
-              <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-5 space-y-3">
-                <h3 className="font-bold text-indigo-900 text-base">您的獎勵</h3>
-                <div className="space-y-1 text-sm text-indigo-800">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">抽中回合</span>
-                    <span className="font-semibold">第 {selectedRoundIdx + 1} 回合</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">點數</span>
-                    <span className="font-semibold">{selPoints ?? '—'} 點</span>
-                  </div>
-                  <div className="flex justify-between pt-2 border-t border-indigo-200 text-base">
-                    <span className="font-semibold text-indigo-900">獎勵金額</span>
-                    <span className="font-bold text-indigo-900">
-                      <span className="text-lg">{reward ?? '—'} 元</span>
-                    </span>
-                  </div>
-                </div>
+          <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-5 space-y-3">
+            <h3 className="font-bold text-indigo-900 text-base">您的獎勵</h3>
+            <div className="space-y-1 text-sm text-indigo-800">
+              <div className="flex justify-between">
+                <span className="text-gray-600">抽中回合</span>
+                <span className="font-semibold">第 {realisedRoundIndex + 1} 回合</span>
               </div>
-            );
-          })()}
+              <div className="flex justify-between">
+                <span className="text-gray-600">點數</span>
+                <span className="font-semibold">{realisedPoints} 點</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-gray-600">點數報酬</span>
+                <span className="font-semibold text-right">{realisedPoints} 點 × {POINT_TO_NTD} = 新台幣 {pointPayout} 元</span>
+              </div>
+              {participationFee > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">參與費</span>
+                  <span className="font-semibold">新台幣 {participationFee} 元</span>
+                </div>
+              )}
+              <div className="flex justify-between pt-2 border-t border-indigo-200 text-base">
+                <span className="font-semibold text-indigo-900">合計</span>
+                <span className="font-bold text-indigo-900">
+                  <span className="text-lg">新台幣 {payoutNtd} 元</span>
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-indigo-700 leading-relaxed">
+              報酬將以{PAYMENT_METHOD_TEXT}的形式，於{PAYMENT_TIMELINE_TEXT}寄送到您下一步填寫的 Email。
+            </p>
+          </div>
 
           <button
             onClick={() => onNavigateStep(3)}
@@ -249,7 +323,11 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
           </div>
           <h2 className="text-2xl font-bold text-gray-900">實驗結束！</h2>
           <p className="text-gray-600 leading-relaxed">
-            謝謝您的參與，請在以下空格填上您的email，我們將會盡快聯絡您，把現金禮券email給您！
+            謝謝您的參與！請在以下空格填上您的 Email，我們將於{PAYMENT_TIMELINE_TEXT}，
+            {debriefStatus === 'ready' && debrief
+              ? <>把<strong className="text-gray-900">新台幣 {debrief.payoutNtd} 元</strong>的{PAYMENT_METHOD_TEXT}</>
+              : <>把您的報酬以{PAYMENT_METHOD_TEXT}</>}
+            寄送到這個 Email。
           </p>
           <input
             type="email"

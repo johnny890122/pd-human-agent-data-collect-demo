@@ -246,7 +246,7 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
   return (
     <svg
       ref={svgRef}
-      className={`w-full h-full max-w-full lg:max-w-[440px] mx-auto ${className} touch-none select-none overflow-visible`}
+      className={`w-full h-full max-w-full lg:max-w-[520px] mx-auto ${className} touch-none select-none overflow-visible`}
       viewBox="-20 -20 460 480"
       preserveAspectRatio="xMidYMid meet"
       onPointerMove={handlePointerMove}
@@ -714,15 +714,17 @@ const NetworkGraph: React.FC<NetworkGraphProps> = ({
             {/* Unrevealed active edge: pulsing '?' prompt */}
             {isUnrevealedActive && (
               <g transform={`translate(${midX}, ${midY})`}>
+                {/* Larger invisible tap target around the marker (REQ-409.3) */}
+                <circle r="20" fill="transparent" />
                 {/* Outer Glow */}
-                <circle r="12" fill={COLORS.blue} fillOpacity="0.2">
-                  <animate attributeName="r" values="10;14;10" dur="2s" repeatCount="indefinite" />
+                <circle r="16" fill={COLORS.blue} fillOpacity="0.2">
+                  <animate attributeName="r" values="15;19;15" dur="2s" repeatCount="indefinite" />
                   <animate attributeName="fill-opacity" values="0.2;0.4;0.2" dur="2s" repeatCount="indefinite" />
                 </circle>
-                <circle r="9" fill="white" stroke={COLORS.blue} strokeWidth="2" className="shadow-lg">
-                  <animate attributeName="stroke-width" values="2;3;2" dur="1.4s" repeatCount="indefinite" />
+                <circle r="13" fill="white" stroke={COLORS.blue} strokeWidth="2.5" className="shadow-lg">
+                  <animate attributeName="stroke-width" values="2.5;3.5;2.5" dur="1.4s" repeatCount="indefinite" />
                 </circle>
-                <text textAnchor="middle" y="4" className="text-[14px] md:text-[12px] font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})` }}>?</text>
+                <text textAnchor="middle" y="6.5" fontSize="18" className="font-black fill-blue-600" style={{ filter: `drop-shadow(0px 1px 1px ${COLORS.blackShadow10})` }}>?</text>
               </g>
             )}
           </g>

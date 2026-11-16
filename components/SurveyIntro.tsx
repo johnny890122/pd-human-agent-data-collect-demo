@@ -4,7 +4,19 @@ import { Session } from '../types';
 import { AGENTS, COLORS } from '../constants';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
-import { AGENT_IDS, generateTrianglePositions, PayoffMatrix, DecisionSlider } from './SurveyShared';
+import { AGENT_IDS, generateTrianglePositions, PayoffMatrix, DecisionSlider, GraphLegend, FigureCaption } from './SurveyShared';
+import {
+  MAX_TOTAL_NTD, MIN_TOTAL_NTD, PARTICIPATION_FEE_NTD, PAYMENT_METHOD_TEXT, PAYMENT_TIMELINE_TEXT, POINT_TO_NTD,
+  payoffPoints, pointPayoutNtd, totalPayoutNtd,
+} from '../utils/payment.js';
+
+// Same order as PayoffMatrix: neither gives, only you give, only the partner gives, both give
+const PAYMENT_OUTCOMES = [
+  { myGive: false, oppGive: false },
+  { myGive: true, oppGive: false },
+  { myGive: false, oppGive: true },
+  { myGive: true, oppGive: true },
+];
 
 export interface SurveyIntroProps {
   setup: Session;
@@ -98,7 +110,8 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
 
     // Mini avatar component for history legend
     const MiniAvatar = ({ agent, size = 20 }: { agent: typeof agentMe, size?: number }) => {
-      const clipPathId = `mini-avatar-${agent.id}`;
+      // The same person appears in several rows, so the agent id alone is not unique
+      const clipPathId = `mini-avatar-${agent.id}-${React.useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
       const groupColor = agent.group === 'KMT' ? COLORS.kmt : COLORS.dpp;
       const r = size / 2;
       
@@ -131,7 +144,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       return (
         <svg
           viewBox="-20 -20 240 100"
-          className={`w-full max-w-[240px] h-auto mx-auto block overflow-visible my-2 transition-all duration-300 ${!isRevealed ? 'cursor-pointer hover:scale-105' : ''}`}
+          className={`w-full max-w-[360px] h-auto mx-auto block overflow-visible my-2 transition-all duration-300 ${!isRevealed ? 'cursor-pointer hover:scale-105' : ''}`}
           onClick={!isRevealed ? onReveal : undefined}
         >
           <defs>
@@ -202,7 +215,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               <span className="font-bold text-gray-800">在接下來的實驗中，您會和其他三位參與者分別進行兩人之間的遊戲。</span>
             </p>
 
-            <div className="h-[340px] w-full">
+            <div className="h-[380px] md:h-[460px] w-full">
               <NetworkGraph
                 mode="survey"
                 setup={noEdgeSetup}
@@ -211,6 +224,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               />
             </div>
 
+            <FigureCaption>
+              圖中的四個頭像代表四位參與者，頭像顏色代表所屬團體（藍色為國民黨、綠色為民進黨）。橘色外框、標示「您」的是您本人；粉紅色外框、標示「搭檔」的是與您配對進行遊戲的參與者。
+            </FigureCaption>
+            <GraphLegend items={['you', 'partner', 'groups']} />
           </div>
         )
       },
@@ -237,7 +254,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               </p>
 
               <div className="bg-gray-50/50 rounded-xl md:rounded-2xl p-2 sm:p-4 md:p-8 border-none md:border border-gray-100 flex flex-col md:flex-row items-center md:items-start gap-4 md:gap-12">
-                <div className="h-[350px] md:h-[400px] w-full max-w-lg flex-1">
+                <div className="h-[380px] md:h-[480px] w-full max-w-lg flex-1">
                   <NetworkGraph
                     mode="survey"
                     setup={networkDemoSetup}
@@ -250,10 +267,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 </div>
 
                 <div className="w-full max-w-lg md:max-w-sm flex-1">
-                  <div className="grid grid-cols-1 gap-4 text-xs max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="grid grid-cols-1 gap-4 text-sm md:max-h-[480px] overflow-y-auto pr-2 custom-scrollbar">
                     {/* Group 1: Your pair (You and Opponent) */}
                     <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-red-600 uppercase tracking-wider px-2">您這對的互動</p>
+                      <p className="text-sm font-bold text-red-600 tracking-wider px-2">您這對的互動</p>
                       {networkDemoSetup.activeEdgeIds
                         .filter(edgeId => {
                           const [source, target] = edgeId.split('-');
@@ -278,19 +295,19 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                           if (!sourceName || !targetName) return null;
                           
                           return (
-                            <div key={edgeId} className="flex items-center justify-between bg-white-50 px-3 py-2 rounded-lg border border-white-200 shadow-sm">
+                            <div key={edgeId} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
                               <div className="flex items-center gap-2">
                                 <div className="flex items-center gap-1">
-                                  <MiniAvatar agent={AGENTS[source as AgentId]} size={18} />
-                                  <span className={`font-bold ${isYou ? 'text-indigo-600' : 'text-white-700'}`}>{sourceName}</span>
+                                  <MiniAvatar agent={AGENTS[source as AgentId]} size={24} />
+                                  <span className={`font-bold ${isYou ? 'text-indigo-600' : 'text-gray-700'}`}>{sourceName}</span>
                                 </div>
-                                <span className="text-white-300">➜</span>
+                                <span className="text-gray-300">➜</span>
                                 <div className="flex items-center gap-1">
-                                  <MiniAvatar agent={AGENTS[target as AgentId]} size={18} />
-                                  <span className="text-white-600">{targetName}</span>
+                                  <MiniAvatar agent={AGENTS[target as AgentId]} size={24} />
+                                  <span className="text-gray-600">{targetName}</span>
                                 </div>
                               </div>
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                              <span className={`text-sm font-black px-2 py-1 rounded tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
                                 {isGive ? '給予' : '不給予'}
                               </span>
                             </div>
@@ -300,7 +317,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                     
                     {/* Group 2: Other pair */}
                     <div className="space-y-2">
-                      <p className="text-[10px] font-bold text-red-500 uppercase tracking-wider px-2">另一對參與者的互動</p>
+                      <p className="text-sm font-bold text-red-500 tracking-wider px-2">另一對參與者的互動</p>
                       {(() => {
                         // Find the other two participants (not focalNode or opponentNode)
                         const allParticipants = ['KMT1', 'KMT2', 'DPP3', 'DPP4'];
@@ -337,16 +354,16 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                               <div key={edgeId} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-gray-200 shadow-sm">
                                 <div className="flex items-center gap-2">
                                   <div className="flex items-center gap-1">
-                                    <MiniAvatar agent={sourceAgent} size={18} />
+                                    <MiniAvatar agent={sourceAgent} size={24} />
                                     <span className="font-bold text-gray-700">{sourceName}</span>
                                   </div>
                                   <span className="text-gray-300">➜</span>
                                   <div className="flex items-center gap-1">
-                                    <MiniAvatar agent={targetAgent} size={18} />
+                                    <MiniAvatar agent={targetAgent} size={24} />
                                     <span className="text-gray-600">{targetName}</span>
                                   </div>
                                 </div>
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
+                                <span className={`text-sm font-black px-2 py-1 rounded tracking-wider ${isGive ? 'bg-neutral-700 text-white' : 'bg-gray-300 text-gray-700'}`}>
                                   {isGive ? '給予' : '不給予'}
                                 </span>
                               </div>
@@ -357,6 +374,11 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   </div>
                 </div>
               </div>
+
+              <FigureCaption className="mt-4 md:mt-6">
+                每一個箭頭代表一次過去的互動：箭頭從做決定的人指向接收的人。深色標籤「給予」表示這個人把點數給了對方；淺色標籤「不給予」表示這個人把點數留給自己。圖旁的清單以文字列出相同的互動紀錄。
+              </FigureCaption>
+              <GraphLegend className="mt-4" items={['you', 'partner', 'groups', 'give', 'notGive']} />
             </div>
           </div>
         )
@@ -378,6 +400,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   onReveal={() => setIntroEdgeRevealed(true)}
                 />
               </div>
+
+              <FigureCaption className="mt-4 w-full max-w-md">
+                灰色虛線加上「?」代表一筆尚未查看的互動紀錄。點擊「?」後，虛線會變成實線，並顯示該次的決定（「給予」或「不給予」）。
+              </FigureCaption>
             </div>
           </div>
         )
@@ -393,7 +419,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               </p>
 
               <div className="bg-white/80 backdrop-blur rounded-xl md:rounded-2xl p-1 sm:p-2 md:p-6 mb-2 shadow-sm md:shadow-inner border-none md:border border-blue-100 w-full h-full flex-1">
-                <div className="h-[350px] md:h-[400px] w-full">
+                <div className="h-[380px] md:h-[480px] w-full">
                   <NetworkGraph
                     mode="survey"
                     setup={networkDemoSetup}
@@ -407,7 +433,10 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                 </div>
               </div>
 
-
+              <FigureCaption className="mt-4 w-full">
+                正式實驗的每一回合，您都需要先點開圖中所有的「?」，看完全部互動紀錄後，才能開始做決定。
+              </FigureCaption>
+              <GraphLegend className="mt-4 w-full" items={['unrevealed', 'give', 'notGive']} />
             </div>
           </div>
         )
@@ -432,7 +461,7 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
               </div>
 
               <div className="bg-white/80 md:bg-white/80 backdrop-blur rounded-xl md:rounded-2xl p-1 sm:p-4 md:p-6 mb-2 shadow-sm md:shadow-inner border-none md:border border-indigo-100 w-full flex-1 flex flex-col md:flex-row items-center gap-8 justify-center">
-                <div className="h-[350px] md:h-[400px] w-full max-w-lg relative flex-1">
+                <div className="h-[380px] md:h-[480px] w-full max-w-lg relative flex-1">
                   <NetworkGraph
                     mode="survey"
                     setup={networkDemoSetup}
@@ -454,6 +483,11 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
                   />
                 </div>
               </div>
+
+              <FigureCaption className="mt-4 w-full">
+                從「您」指向「搭檔」的動態虛線代表您這一回合的決定。滑桿數值代表您給予點數的機率；線上的標籤只顯示您目前的傾向（大於 50 顯示「給予」、小於 50 顯示「不給予」）。
+              </FigureCaption>
+              <GraphLegend className="mt-4 w-full" items={['you', 'partner', 'decision']} />
             </div>
           </div>
         )
@@ -539,18 +573,64 @@ const SurveyIntro: React.FC<SurveyIntroProps> = ({ setup, currentStep = 0, onNav
       },
       {
         title: "點數兌換報酬說明",
-        content: (
-          <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
-            <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm text-center">
-              <p className="text-lg text-gray-600 mb-4">
-                在實驗中，您將會參與數次的兩人遊戲。在所有遊戲結束後，電腦將隨機抽出其中的一次遊戲，根據您和對方在該遊戲中所做的決定所得到的點數，換算成現金報酬給您。
-              </p>
-              <div className="inline-block bg-green-50 border border-green-200 rounded-xl px-6 py-3 mt-4">
-                <span className="text-xl font-bold text-green-700">1點 = 100元台幣</span>
+        content: (() => {
+          const hasFee = PARTICIPATION_FEE_NTD > 0;
+          const examplePoints = payoffPoints(false, true);
+          return (
+            <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
+              <div className="bg-white p-4 sm:p-6 md:p-8 rounded-2xl md:rounded-3xl border-none md:border border-gray-200 shadow-none md:shadow-sm space-y-5">
+                <p className="text-lg text-gray-600">
+                  在實驗中，您將會參與數次的兩人遊戲。所有遊戲結束後，電腦會隨機抽出其中一次遊戲，依照您在該次遊戲中得到的點數換算成報酬。
+                </p>
+                <div className="text-center">
+                  <span className="inline-block bg-green-50 border border-green-200 rounded-xl px-6 py-3 text-xl font-bold text-green-700">
+                    1 點 = 新台幣 {POINT_TO_NTD} 元
+                  </span>
+                </div>
+                {hasFee && (
+                  <p>完成全部實驗的參與者，另可獲得參與費新台幣 {PARTICIPATION_FEE_NTD} 元。</p>
+                )}
+                <div className="overflow-x-auto rounded-xl border border-gray-200">
+                  <table className="w-full text-sm text-center">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-200 text-gray-700">
+                        <th className="px-3 py-2 font-semibold">您的決定</th>
+                        <th className="px-3 py-2 font-semibold">搭檔的決定</th>
+                        <th className="px-3 py-2 font-semibold">您得到的點數</th>
+                        <th className="px-3 py-2 font-semibold">點數報酬</th>
+                        {hasFee && <th className="px-3 py-2 font-semibold">合計（含參與費）</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {PAYMENT_OUTCOMES.map(({ myGive, oppGive }) => {
+                        const points = payoffPoints(myGive, oppGive);
+                        return (
+                          <tr key={`${myGive}-${oppGive}`} className="border-b border-gray-100 last:border-0 text-gray-800">
+                            <td className="px-3 py-2">{myGive ? '給' : '不給'}</td>
+                            <td className="px-3 py-2">{oppGive ? '給' : '不給'}</td>
+                            <td className="px-3 py-2 font-semibold">{points} 點</td>
+                            <td className="px-3 py-2">新台幣 {pointPayoutNtd(points)} 元</td>
+                            {hasFee && <td className="px-3 py-2 font-semibold">新台幣 {totalPayoutNtd(points)} 元</td>}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p>
+                  因此，您的{hasFee ? '總' : ''}報酬最少為<strong className="text-gray-900">新台幣 {MIN_TOTAL_NTD} 元</strong>，最多為<strong className="text-gray-900">新台幣 {MAX_TOTAL_NTD} 元</strong>。
+                </p>
+                <p className="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm">
+                  舉例：若抽中的那一次遊戲中，您選擇不給、搭檔選擇給，您會得到 {examplePoints} 點，報酬為 {examplePoints} × {POINT_TO_NTD} = 新台幣 {pointPayoutNtd(examplePoints)} 元
+                  {hasFee && `，加上參與費 ${PARTICIPATION_FEE_NTD} 元，合計新台幣 ${totalPayoutNtd(examplePoints)} 元`}。
+                </p>
+                <p>
+                  報酬將以<strong className="text-gray-900">{PAYMENT_METHOD_TEXT}</strong>的形式，於{PAYMENT_TIMELINE_TEXT}寄送到您在實驗最後填寫的 Email。
+                </p>
               </div>
             </div>
-          </div>
-        )
+          );
+        })()
       },
       {
         title: "準備開始",

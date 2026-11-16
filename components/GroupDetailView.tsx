@@ -1,11 +1,41 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { fetchSessionGroup, fetchSessionsByGroup, SessionGroup, fetchRecentSubmissions, invalidateSubmission, Submission, fetchScenariosByIds } from '../utils/graphqlClient';
+import { fetchSessionGroup, fetchSessionsByGroup, SessionGroup, fetchSubmissionsByGroup, invalidateSubmission, Submission, fetchScenariosByIds } from '../utils/graphqlClient';
 import { Session } from '../types';
 import { toast } from 'react-hot-toast';
 import { AGENTS, ALL_EDGES } from '../constants';
 import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
+import { pointPayoutNtd } from '../utils/payment.js';
 import ConfirmationModal from './ConfirmationModal';
+
+// CSV helpers shared by the research export and the payment ledger
+const escapeCSV = (value: any): string => {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  // Escape if contains comma, quote, or newline
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+// YYYYMMDD_HHmmss
+const csvTimestamp = () => new Date().toISOString()
+  .replace(/[-:]/g, '')
+  .replace(/T/, '_')
+  .replace(/\..+/, '')
+  .slice(0, 15);
+
+// UTF-8 with BOM so Excel shows the Chinese text correctly
+function downloadCsv(filename: string, headers: string[], rows: string[][]) {
+  const csvContent = [headers, ...rows].map(row => row.map(escapeCSV).join(',')).join('\n');
+  const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
 
 // Helper function to determine submission stage and progress
 interface StageInfo {
@@ -168,7 +198,7 @@ const GroupDetailView: React.FC = () => {
         if (showLoading) {
           setLoadingSubmissions(true);
         }
-        const data = await fetchRecentSubmissions();
+        const data = await fetchSubmissionsByGroup(groupId!);
         setSubmissions(data);
       } catch (e) {
         console.error('Failed to load submissions:', e);
@@ -202,7 +232,7 @@ const GroupDetailView: React.FC = () => {
 
     async function loadMixedSubmissions() {
       try {
-        const data = await fetchRecentSubmissions();
+        const data = await fetchSubmissionsByGroup(groupId!);
         setSubmissions(data);
       } catch (e) {
         console.error('Failed to load submissions:', e);
@@ -276,17 +306,6 @@ const GroupDetailView: React.FC = () => {
       // Step 3: Generate CSV rows (one row per answer)
       const groupName = group.name || "Standalone Session";
       const groupId = group._id || "";
-
-      // CSV Helper: Escape cell values
-      const escapeCSV = (value: any): string => {
-        if (value === null || value === undefined) return '';
-        const str = String(value);
-        // Escape if contains comma, quote, or newline
-        if (/[",\n\r]/.test(str)) {
-          return `"${str.replace(/"/g, '""')}"`;
-        }
-        return str;
-      };
 
       const rows: string[][] = [];
 
@@ -409,36 +428,65 @@ const GroupDetailView: React.FC = () => {
         'Submission Completed At'
       ];
 
-      const csvContent = [
-        headers.map(escapeCSV).join(','),
-        ...rows.map(row => row.map(escapeCSV).join(','))
-      ].join('\n');
-
-      // Step 6: Generate filename with timestamp
-      const now = new Date();
-      const timestamp = now.toISOString()
-        .replace(/[-:]/g, '')
-        .replace(/T/, '_')
-        .replace(/\..+/, '')
-        .slice(0, 15); // YYYYMMDD_HHmmss
+      // Step 6: Download with a timestamped filename
       const safeName = group.name.replace(/[^a-z0-9\u4e00-\u9fa5_-]/gi, '_');
-      const filename = `${safeName}_submissions_${timestamp}.csv`;
-
-      // Step 7: Create and download blob with UTF-8 BOM
-      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = filename;
-      link.click();
-      
-      // Cleanup
-      URL.revokeObjectURL(link.href);
+      const filename = `${safeName}_submissions_${csvTimestamp()}.csv`;
+      downloadCsv(filename, headers, rows);
 
       toast.success(`CSV 已匯出: ${filename}`, { id: 'csv-export' });
     } catch (error) {
       console.error('Failed to export CSV:', error);
       toast.error('CSV 匯出失敗', { id: 'csv-export' });
     }
+  };
+
+  /**
+   * Export the payment ledger (REQ-408.7): one row per completed, valid submission with the
+   * payout persisted by drawRealisedRound, so the amount paid equals the amount shown.
+   */
+  const handleExportPayments = () => {
+    if (!group) return;
+
+    const payable = groupSubmissions.filter(s => s.isCompleted && !s.isInvalid);
+    let missingPayout = 0;
+    const rows = payable.map(s => {
+      const hasPayout = s.realisedPoints != null && s.payoutNtd != null;
+      if (!hasPayout) missingPayout++;
+      const pointPayout = hasPayout ? pointPayoutNtd(s.realisedPoints!) : null;
+      return [
+        s._id,
+        s.participantId || '',
+        s.demographics?.gender || '',    // SurveyOutro stores the registration code here
+        s.demographics?.education || '', // ...and the email here
+        s.realisedRoundIndex != null ? String(s.realisedRoundIndex + 1) : '',
+        hasPayout ? String(s.realisedPoints) : '',
+        hasPayout ? String(s.payoutNtd! - pointPayout!) : '',
+        hasPayout ? String(pointPayout) : '',
+        hasPayout ? String(s.payoutNtd) : '',
+        s.completedAt || '',
+      ];
+    });
+
+    const headers = [
+      'Submission ID',
+      'Participant ID',
+      'Registration Code',
+      'Email',
+      'Realised Round',
+      'Points',
+      'Participation Fee (NTD)',
+      'Point Payout (NTD)',
+      'Total Payout (NTD)',
+      'Completed At',
+    ];
+    const safeName = group.name.replace(/[^a-z0-9一-龥_-]/gi, '_');
+    const filename = `${safeName}_payments_${csvTimestamp()}.csv`;
+    downloadCsv(filename, headers, rows);
+
+    if (missingPayout > 0) {
+      toast(`${missingPayout} 筆已完成的提交沒有報酬紀錄，請個別確認`, { icon: '⚠️' });
+    }
+    toast.success(`付款清單已匯出: ${filename}`);
   };
 
   if (loading) {
@@ -475,6 +523,7 @@ const GroupDetailView: React.FC = () => {
   // Filter submissions to only those belonging to this group's sessions
   const sessionIds = new Set(sessions.map(s => s._id));
   const groupSubmissions = submissions.filter(s => sessionIds.has(s.sessionId));
+  const payableCount = groupSubmissions.filter(s => s.isCompleted && !s.isInvalid).length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -624,16 +673,29 @@ const GroupDetailView: React.FC = () => {
             <h2 className="text-lg font-bold text-gray-900">
               All Submission
             </h2>
-            <button
-              onClick={handleExportCSV}
-              disabled={sessions.length === 0 || groupSubmissions.length === 0}
-              className={`px-4 py-2 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${'bg-purple-600 hover:bg-purple-700'}`}
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Export CSV
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleExportPayments}
+                disabled={payableCount === 0}
+                title="One row per completed, valid participant with the amount to pay"
+                className="px-4 py-2 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+                Export Payments
+              </button>
+              <button
+                onClick={handleExportCSV}
+                disabled={sessions.length === 0 || groupSubmissions.length === 0}
+                className={`px-4 py-2 text-white rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${'bg-purple-600 hover:bg-purple-700'}`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export CSV
+              </button>
+            </div>
           </div>
           
           {/* Tab-based view selector */}

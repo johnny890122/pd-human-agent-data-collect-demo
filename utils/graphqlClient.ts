@@ -413,6 +413,7 @@ export async function fetchSessionGroup(id: string): Promise<SessionGroupType | 
         totalSessions
         totalScenarios
         mode
+        status
         completionPercentage
         createdAt
         updatedAt
@@ -543,6 +544,8 @@ export async function fetchSubmission(submissionId: string): Promise<SubmissionT
         opponentProbs
         myDecisions
         opponentDecisions
+        realisedPoints
+        payoutNtd
         isCompleted
       }
     }
@@ -556,6 +559,8 @@ export interface DebriefResult {
   opponentProbs: number[];
   myDecisions: boolean[];
   opponentDecisions: boolean[];
+  realisedPoints: number;
+  payoutNtd: number;
 }
 
 export async function drawRealisedRound(submissionId: string): Promise<DebriefResult> {
@@ -566,6 +571,8 @@ export async function drawRealisedRound(submissionId: string): Promise<DebriefRe
         opponentProbs
         myDecisions
         opponentDecisions
+        realisedPoints
+        payoutNtd
       }
     }
   `;
@@ -606,6 +613,41 @@ export async function fetchRecentSubmissions(): Promise<SubmissionType[]> {
 
   const data = await runGraphQL<{ recentSubmissions: SubmissionType[] }>(query);
   return data.recentSubmissions || [];
+}
+
+// All submissions of a group (admin only) — unlike recentSubmissions, not capped at the newest N
+export async function fetchSubmissionsByGroup(groupId: string): Promise<SubmissionType[]> {
+  const query = `
+    query SubmissionsByGroup($groupId: ID!) {
+      submissionsByGroup(groupId: $groupId) {
+        _id
+        sessionId
+        participantId
+        results {
+          scenarioId
+          cooperationProbability
+          responseTime
+          answeredAt
+        }
+        demographics {
+          age
+          gender
+          education
+        }
+        isCompleted
+        completedAt
+        isInvalid
+        realisedRoundIndex
+        realisedPoints
+        payoutNtd
+        createdAt
+        updatedAt
+      }
+    }
+  `;
+
+  const data = await runGraphQL<{ submissionsByGroup: SubmissionType[] }>(query, { groupId });
+  return data.submissionsByGroup || [];
 }
 
 export async function invalidateSubmission(

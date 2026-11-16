@@ -29,6 +29,9 @@ const sessionGroupSchema = new mongoose.Schema(
     // 快取統計
     totalSessions: { type: Number, default: 0 },       // Sessions 已建立
     totalScenarios: { type: Number, default: 0 },      // Scenarios 已建立（Mixed Mode）
+
+    // REQ-309: completed once every scenario reached targetSizePerScenario (recomputed by refreshGroupStatus)
+    status: { type: String, enum: ['active', 'completed'], default: 'active' },
   },
   {
     timestamps: true,

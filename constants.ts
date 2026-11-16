@@ -94,3 +94,6 @@ export const INITIAL_SETUP: Session = {
 };
 
 export const TOAST_DURATION_MS = 2000;
+
+// REQ-402.4: confirmed answers are final (Back and earlier-scenario URLs)
+export const ANSWER_LOCKED_MSG = '已確認的答案無法修改。';

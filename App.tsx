@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, Routes, Route, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { Toaster } from 'react-hot-toast';
+import toast, { Toaster } from 'react-hot-toast';
 import AdminView from './components/AdminView';
 import SurveyView from './components/SurveyView';
 import Login from './components/Login';
@@ -19,7 +19,13 @@ import {
 } from './utils/graphqlClient';
 import { loadSession, saveSession, clearSession } from './utils/surveySession';
 import { getParticipantId } from './utils/participantId';
-import { INITIAL_SETUP, TOAST_DURATION_MS } from './constants';
+import { INITIAL_SETUP, TOAST_DURATION_MS, ANSWER_LOCKED_MSG } from './constants';
+
+// REQ-402.4: opening an earlier scenario's URL returns to where the participant was
+const scenarioIndexOf = (path: string): number | null => {
+  const m = path.match(/^\/survey\/scenarios\/(\d+)/);
+  return m ? Number(m[1]) : null;
+};
 
 const App: React.FC = () => {
   const navigate = useNavigate();
@@ -36,6 +42,8 @@ const App: React.FC = () => {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [pendingMixedGroupId, setPendingMixedGroupId] = useState<string | null>(null);
   const [mixedModeScenariosPerSession, setMixedModeScenariosPerSession] = useState<number | null>(null);
+  // REQ-405.1 / REQ-405.2: why a visitor cannot enter (full group, unknown invite link)
+  const [entryGate, setEntryGate] = useState<'full' | 'unknown' | null>(null);
   const [restoredSubmissionId, setRestoredSubmissionId] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
   const [isTurnstileVerified, setIsTurnstileVerified] = useState(false);
@@ -134,6 +142,11 @@ const App: React.FC = () => {
               
               console.log(`[App] Resume Mixed Mode: 已答 ${answeredCount}/${totalScenarios} 題，導航到第 ${nextScenarioIndex + 1} 題`);
               
+              // REQ-402.4: an earlier, already-confirmed scenario cannot be reopened
+              if (scenarioIndexOf(location.pathname) !== null && scenarioIndexOf(location.pathname)! < nextScenarioIndex) {
+                toast(ANSWER_LOCKED_MSG, { id: 'answer-locked' });
+              }
+
               // Update URL to sessionId and navigate to correct scenario
               setSearchParams({ sessionId: existingSession._id });
               const resumePath = `/survey/scenarios/${nextScenarioIndex}?sessionId=${existingSession._id}`;
@@ -150,6 +163,9 @@ const App: React.FC = () => {
               // Fetch group info to get scenariosPerSession for display in intro
               try {
                 const groupInfo = await fetchSessionGroup(groupIdFromUrl);
+                // A fetch error lands in the catch below and shows no gate (REQ-405.2)
+                if (!groupInfo) setEntryGate('unknown');
+                else if (groupInfo.status === 'completed') setEntryGate('full');
                 if (groupInfo?.config?.scenariosPerSession) {
                   setMixedModeScenariosPerSession(groupInfo.config.scenariosPerSession);
                 }
@@ -201,8 +217,15 @@ const App: React.FC = () => {
             let storedSession = isRestarting ? null : loadSession(sessionIdFromUrl);
             
             if (storedSession && location.pathname.startsWith('/survey/scenarios') && location.pathname !== storedSession.path.split('?')[0]) {
-              console.warn("Session path mismatch, ignoring stored session cookie.");
-              storedSession = null;
+              // REQ-402.4: going back to a confirmed scenario returns to where the participant was
+              const here = scenarioIndexOf(location.pathname)!;
+              const saved = scenarioIndexOf(storedSession.path);
+              if (storedSession.path.startsWith('/survey/outro') || (saved !== null && saved > here)) {
+                toast(ANSWER_LOCKED_MSG, { id: 'answer-locked' });
+              } else {
+                console.warn("Session path mismatch, ignoring stored session cookie.");
+                storedSession = null;
+              }
             }
 
             if (storedSession) {
@@ -365,7 +388,9 @@ const App: React.FC = () => {
       return submission._id;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error';
-      setBackendNotice(`Could not start survey session: ${message}`);
+      // REQ-405.1: the group filled up while this visitor was reading the intro
+      if (message.includes('GROUP_FULL')) setEntryGate('full');
+      else setBackendNotice(`Could not start survey session: ${message}`);
       return undefined;
     }
   };
@@ -422,17 +447,20 @@ const App: React.FC = () => {
   const isSurveyRoute = location.pathname.startsWith('/survey') && !location.pathname.startsWith('/survey/outro');
   const isSessionFull = (setup.submissionCount || 0) >= setup.sampleSize;
 
-  if (isSurveyRoute && isSessionFull && !restoredSubmissionId) {
-    return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8 text-center">
-        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
-          <h2 className="text-2xl font-bold text-gray-900">無法參與實驗</h2>
-          <p className="text-gray-600">
-            抱歉，此實驗人數可能已經額滿，或者是您先前已經參與過本次實驗。
-          </p>
-        </div>
+  const gate = (title: string, body: string) => (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-8 text-center">
+      <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full space-y-6">
+        <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
+        <p className="text-gray-600">{body}</p>
       </div>
-    );
+    </div>
+  );
+  const FULL_BODY = '抱歉，此實驗人數可能已經額滿，或者是您先前已經參與過本次實驗。';
+
+  if (isSurveyRoute && isSessionFull && !restoredSubmissionId) return gate('無法參與實驗', FULL_BODY);
+  if (location.pathname.startsWith('/survey') && entryGate === 'full') return gate('無法參與實驗', FULL_BODY);
+  if (location.pathname.startsWith('/survey') && entryGate === 'unknown') {
+    return gate('找不到此實驗', '此邀請連結無效或實驗已結束，請向研究人員確認連結是否正確。');
   }
 
   return (

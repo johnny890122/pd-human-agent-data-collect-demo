@@ -76,6 +76,8 @@ export interface Submission {
   opponentProbs?: number[] | null;
   myDecisions?: boolean[] | null;
   opponentDecisions?: boolean[] | null;
+  realisedPoints?: number | null;
+  payoutNtd?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -103,6 +105,7 @@ export interface SessionGroup {
   };
   totalSessions: number;
   totalScenarios: number;
+  status?: 'active' | 'completed';  // REQ-309: completed once every scenario reached its target
   mode?: SessionMode;  // Virtual field
   completionPercentage?: number;  // Virtual field
   createdAt: string;

@@ -15,7 +15,10 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "smoke:e2e": "node scripts/smoke-e2e.mjs"
+    "smoke:e2e": "node scripts/smoke-e2e.mjs",
+    "test:e2e": "vite build && node scripts/e2e/full-flow.mjs",
+    "irb:shots": "vite build && node scripts/irb-shots/capture.mjs",
+    "irb:report": "node scripts/irb-shots/build-report.mjs"
   },
   "dependencies": {
     "@apollo/server": "^5.4.0",
@@ -50,6 +53,8 @@
     "@types/uuid": "^11.0.0",
     "@vitejs/plugin-react": "^5.0.0",
     "jsdom": "^26.0.0",
+    "mongodb-memory-server": "^11.3.0",
+    "playwright-core": "^1.63.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vitest": "^3.2.4"

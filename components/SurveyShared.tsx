@@ -1,5 +1,6 @@
 import React from 'react';
 import { AgentId } from '../types';
+import { COLORS } from '../constants';
 
 export const AGENT_IDS: AgentId[] = ['KMT1', 'KMT2', 'DPP3', 'DPP4'];
 
@@ -81,6 +82,93 @@ export const PayoffMatrix = ({ compact = false, userProb }: { compact?: boolean;
     </div>
   );
 };
+
+// ─── Graph legend & captions (REQ-409.1, REQ-409.2) ──────────────────────────
+
+export type LegendItem = 'you' | 'partner' | 'groups' | 'give' | 'notGive' | 'unrevealed' | 'decision';
+
+export const ALL_LEGEND_ITEMS: LegendItem[] = ['you', 'partner', 'groups', 'give', 'notGive', 'unrevealed', 'decision'];
+
+const LEGEND_TEXT: Record<LegendItem, { label: string; description: string }> = {
+  you: { label: '您', description: '橘色外框的頭像是您本人' },
+  partner: { label: '搭檔', description: '粉紅色外框的頭像是與您配對進行遊戲的參與者' },
+  groups: { label: '國民黨／民進黨', description: '頭像顏色代表所屬團體：藍色為國民黨、綠色為民進黨' },
+  give: { label: '給予', description: '深色標籤：箭頭起點的人把點數給了箭頭終點的人' },
+  notGive: { label: '不給予', description: '淺色標籤：箭頭起點的人把點數留給自己' },
+  unrevealed: { label: '尚未查看', description: '點擊虛線上的「?」即可看到這筆互動紀錄' },
+  decision: { label: '您的決定', description: '從您指向搭檔的動態虛線，會隨滑桿改變' },
+};
+
+// Miniatures drawn with the same color tokens as NetworkGraph, so the legend always matches it
+const LegendSwatch = ({ item }: { item: LegendItem }) => {
+  const edge = (color: string, dashed = false) => (
+    <>
+      <line x1="2" y1="12" x2="36" y2="12" stroke={color} strokeWidth="3" strokeDasharray={dashed ? '6 3' : undefined} />
+      <path d="M35,6 L45,12 L35,18 Z" fill={color} />
+    </>
+  );
+
+  return (
+    <svg width="48" height="24" viewBox="0 0 48 24" className="flex-shrink-0" aria-hidden="true">
+      {item === 'you' && <circle cx="24" cy="12" r="9" fill="white" stroke={COLORS.highlight} strokeWidth="3.5" />}
+      {item === 'partner' && <circle cx="24" cy="12" r="9" fill="white" stroke={COLORS.rolePartnerHighlight} strokeWidth="3.5" />}
+      {item === 'groups' && (
+        <>
+          <circle cx="15" cy="12" r="8" fill={COLORS.kmt} />
+          <circle cx="33" cy="12" r="8" fill={COLORS.dpp} />
+        </>
+      )}
+      {item === 'give' && (
+        <>
+          {edge(COLORS.coop)}
+          <rect x="11" y="5" width="18" height="14" rx="7" fill={COLORS.coop} stroke="white" strokeWidth="1.5" />
+        </>
+      )}
+      {item === 'notGive' && (
+        <>
+          {edge(COLORS.defect)}
+          <rect x="11" y="5" width="18" height="14" rx="7" fill={COLORS.defect} stroke="white" strokeWidth="1.5" />
+        </>
+      )}
+      {item === 'unrevealed' && (
+        <>
+          {edge(COLORS.neutral, true)}
+          <circle cx="20" cy="12" r="9" fill="white" stroke={COLORS.blue} strokeWidth="2" />
+          <text x="20" y="16.5" textAnchor="middle" fontSize="13" fontWeight="900" fill={COLORS.blue}>?</text>
+        </>
+      )}
+      {item === 'decision' && edge(COLORS.highlight, true)}
+    </svg>
+  );
+};
+
+export const GraphLegend: React.FC<{ items: LegendItem[]; compact?: boolean; className?: string }> = ({
+  items,
+  compact = false,
+  className = '',
+}) => (
+  <div className={`rounded-xl border border-gray-200 bg-white text-left ${compact ? 'p-3' : 'p-4'} ${className}`}>
+    <p className="text-sm font-bold text-gray-700 mb-2">圖例</p>
+    <dl className={`grid gap-x-6 ${compact ? 'gap-y-2 sm:grid-cols-2' : 'gap-y-3 md:grid-cols-2'}`}>
+      {items.map(item => (
+        <div key={item} className="flex items-center gap-3">
+          <LegendSwatch item={item} />
+          <div className="text-sm leading-snug">
+            <dt className="font-bold text-gray-800">{LEGEND_TEXT[item].label}</dt>
+            <dd className="text-gray-600">{LEGEND_TEXT[item].description}</dd>
+          </div>
+        </div>
+      ))}
+    </dl>
+  </div>
+);
+
+export const FigureCaption: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
+  <p className={`text-sm text-gray-700 leading-relaxed text-left bg-gray-50 border-l-4 border-indigo-300 rounded-r-lg px-4 py-3 ${className}`}>
+    <span className="font-bold text-indigo-700 mr-1">圖說</span>
+    {children}
+  </p>
+);
 
 export const DecisionSlider: React.FC<{
   value: number;

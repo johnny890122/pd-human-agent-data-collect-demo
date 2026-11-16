@@ -35,6 +35,15 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-07-02 | **UI POLISH** Slider visually camouflaged to appear valueless until interacted (REQ-402.3) | `DecisionSlider`'s thumb and filled track now use `accent-gray-200` (matching the track background) while `hasInteracted` is `false`, making the underlying randomized starting value (REQ-402.1) visually imperceptible — the slider appears to have no position/value at all until the participant drags it, at which point it switches to `accent-indigo-600` and reveals the real value. The randomized numeric value still exists internally (native `<input type="range">` requires one); only the visual presentation is suppressed. |
 | 2026-07-02 | **UI POLISH** Undecided-state copy on slider analysis text + neutral network graph decision edge (REQ-402.4) | Extends REQ-402.3's camouflage to the remaining two places the randomized-but-untouched slider value leaked through: (1) the "決策分析" text under `DecisionSlider` now shows "請點擊輸入您的決策" instead of a probability sentence while `hasInteracted` is `false`; (2) `NetworkGraph`'s decision edge (path, draggable bubble, arrow tip, dash animation speed) now renders in `COLORS.highlight` (the same amber/orange already used for the exact-50% "中立" case) with the bubble label reading "未決策" instead of "給予"/"不給予"/"中立", via a new `hasInteracted` prop threaded from `SurveyView.tsx` and `SurveyIntro.tsx`. |
 | 2026-07-02 | **BEHAVIOR FIX + DATA MODEL** Debrief give/no-give outcome is now a persisted probabilistic draw, not a threshold (REQ-407.1) | `SurveyOutro`'s round table previously derived each round's "合作"/"不合作" outcome by comparing `cooperationProbability` to a 50% threshold (with an unpersisted client-side coin flip only for the exact-50% tie). This was replaced with a true Bernoulli draw (`Math.random() < p`) applied uniformly to every round's probability, for both the participant and the paired opponent. Because virtually every round is now a random draw (not just the 50% edge case), the outcome is drawn once server-side in `drawRealisedRound` and persisted on `Submission.myDecisions`/`Submission.opponentDecisions` (parallel boolean arrays alongside `realisedRoundIndex`/`opponentProbs`) so a page refresh cannot change the participant's realised cash payout. Per-row probability percentages and the "由系統隨機決定" 50%-only tooltip were also removed from the table — each row now shows only the 合作/不合作 badge, since every row's outcome is now equally a random draw. |
+| 2026-10-01 | **IRB REVISION** Points → payment conversion disclosure + persisted payout ledger (REQ-408) | Responds to IRB comment 2「確認點數與實際報酬的換算」. All payment parameters move to one module (`utils/payment.js`): 1 點 = 新台幣 100 元, an optional participation fee (`PARTICIPATION_FEE_NTD`, default 0 — **pending PI confirmation**, Open Question #8), 電子禮券 by email, and a timeline text (Open Question #9). The intro, debrief and email steps now state the rate, an outcome table, the min–max range, a worked example, and the payment form and timing consistently (previously the intro said 現金報酬 while the email step said 現金禮券). `drawRealisedRound` persists `realisedPoints`/`payoutNtd`; the debrief shows only the persisted amount (the unpersisted client-side fallback draw is removed). Admins get a complete group-scoped submissions query and an「Export Payments」CSV; queries returning participant email now require the admin JWT. |
+| 2026-10-01 | **IRB REVISION** Figure legibility — legend, captions, minimum sizes (REQ-409) | Responds to IRB comment 1「適度調整圖片尺寸及解析度，並補充相對應的說明，以利參與者理解欲傳達的訊息及內容」. A new `GraphLegend` explains every visual encoding of `NetworkGraph`; captions (圖說) are added under the intro figures; the "?" markers, scenario graph and intro interaction list are enlarged; 2× DPR screenshots with a caption index are produced for the IRB packet. |
+| 2026-10-01 | **PROCESS** Before/after screenshot evidence report (NFR-7) | Every participant-facing edit made for the IRB is captured before and after the change from the same seeded fixture (seeded randomness, frozen animations, desktop + phone at 2× DPR) and compiled into a PDF report via `npm run irb:shots` / `npm run irb:report`. |
+| 2026-10-01 | **ISSUES FOUND** Admin auth not enforced in resolvers (BUG-006); group view limited to 100 submissions (BUG-007) | Found during the IRB audit. BUG-007 is fixed by REQ-408.7; BUG-006 is partially addressed by REQ-408.8 (PII queries guarded) — admin mutations remain open. |
+| 2026-11-15 | **PROCESS** Full-flow end-to-end test with a review report (NFR-8); partner pairing never matches (BUG-008); registration code lost on refresh (BUG-009) | `npm run test:e2e` runs admin launch → invite link → participant survey → debrief → payment ledger export against an in-memory MongoDB in real Chrome, and writes a screenshot report. Writing the test exposed BUG-008 (the 搭檔 decision is a 50/50 draw, not a real participant's answer); its first run found BUG-009 (a refresh after outro step 1 saves the registration code as `unknown`). |
+| 2026-11-15 | **BUG FIX** Registration code survives a refresh (REQ-403.1, BUG-009) | The code entered on outro step 1 is kept in the browser per submission and restored after a refresh; the final submit never saves `unknown`. |
+| 2026-11-15 | **PROCESS** E2E edge cases EC-1…EC-13 (NFR-8.1); full group never closes (BUG-010) | Leave/refresh/return/Back, attend twice, another device, full group, non-Chrome, unknown link, API misuse. 12 of 13 cases pass or are recorded as observations; EC-9 fails (BUG-010). Open Questions #10–#13 list the observations that need a decision. |
+| 2026-11-15 | **PROCESS** Test-case roadmap at the top of the e2e report (NFR-8.2) | The report opens with the participant journey stage by stage, each stage's happy-path result and its edge cases coloured pass / fail / observed, so the reviewer sees coverage and failures at a glance. |
+| 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
 
 ---
 
@@ -72,6 +81,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **US-A4**: As an admin, I want to monitor scenario-level completion status (not just session-level) so that I can identify under-sampled scenarios and adjust recruitment accordingly. ✅ **IMPLEMENTED 2026-04-29**
 - **US-A5**: As an admin, I want to monitor real-time submission counts and completion percentages so that I know when a session or group has reached its target sample size.
 - **US-A6**: As an admin in development, I want to clear the database so that I can iterate on the schema without leftover state.
+- **US-A7**: As a researcher, I want a payment ledger listing each completed participant's drawn round, points and exact NT$ amount, so that what I pay always equals what the participant was shown.
 
 ### Participant Stories
 
@@ -79,6 +89,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **US-P2**: As a participant, I want to be told clearly if a session is full so that I do not waste time on a closed experiment.
 - **US-P3**: As a participant in a mixed-mode experiment, I want to complete a manageable number of scenarios (e.g., 20) sampled from a larger pool, so that my time commitment is reasonable while still contributing to balanced data collection. ✅ **IMPLEMENTED 2026-04-29**
 - **US-P4**: As a participant, I want the survey UI in my preferred language (zh-TW today; future locales planned).
+- **US-P5**: As a participant, I want to know before I start exactly how points convert to money (the rate, which round counts, the possible amounts, and how and when I am paid), so that I can make informed decisions.
+- **US-P6**: As a participant, I want every diagram to be large enough to read and to explain what its colors, arrows and symbols mean, so that I understand the information I am deciding on.
 
 ---
 
@@ -149,7 +161,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   - *Acceptance:* After `saveSurveyAnswer`, the referenced `Scenario` document's `responseCount` field is incremented by 1. Concurrent submissions to the same scenario are handled safely via MongoDB atomic operations. **Implemented**: Uses `$inc` in saveSurveyAnswer resolver.
 
 - **REQ-309 — Mixed Mode Completion Detection.** ✅ **COMPLETED** When all scenarios in a Mixed Mode group reach their `targetSize` (i.e., `responseCount >= targetSize`), the system automatically updates the group's status to `completed`.
-  - *Acceptance:* After each submission completion, query `Scenario.countDocuments({ groupId, responseCount: { $lt: targetSize } })`. If count is 0, update `SessionGroup.status = 'completed'`. Admin UI displays completion progress as `(scenarios where responseCount >= targetSize) / totalScenarios × 100%`. **Implemented**: Logic in completeSurvey resolver.
+  - *Acceptance:* After each submission completion, query `Scenario.countDocuments({ groupId, responseCount: { $lt: targetSize } })`. If count is 0, update `SessionGroup.status = 'completed'`. Admin UI displays completion progress as `(scenarios where responseCount >= targetSize) / totalScenarios × 100%`. **Implemented 2026-11-16 (BUG-010)**: `SessionGroup.status` (`active` | `completed`) is recomputed after every `completeSurvey` and after every invalidate/restore (REQ-350), so invalidating a submission that drops a scenario below target re-opens the group.
 
 - **REQ-313 — One Submission Per Participant Per Session.** 📋 **NEW 2026-05-06** The system MUST ensure that each unique participant can only create one `Submission` per session, so that a scenario's `responseCount` reflects the number of distinct people who responded, not the number of times anyone visited.
   - *Rationale:* `Scenario.responseCount` drives the Mixed Mode balanced selection strategy and the group completion check (REQ-308, REQ-309). If one participant submits twice to the same session, `responseCount` would be overcounted, causing skewed scenario selection and false "completed" group status.
@@ -406,14 +418,27 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - The "確認並前往下一題" / "確認並送出" confirm button remains disabled while in the decision phase until the participant has dragged the slider at least once (existing `hasInteracted` flag), in addition to the pre-existing requirement that all edges be revealed.
     - Purely a frontend behavior change in `SurveyView.tsx` / `SurveyShared.tsx` — no changes to the `cooperationProbability` data contract, GraphQL schema, or persistence layer. The stored value is still `sliderValue / 100`.
 
+- **REQ-402.4 — Confirmed answers are final.** 📋 **NEW 2026-11-16** (resolves Open Questions #12, #13; EC-6) Once the participant confirms a scenario, that answer cannot be changed.
+  - *Rationale:* The payout is drawn from the recorded answers (REQ-408), and the balanced selection counts each answer once (REQ-308). Letting a participant revise an answer after seeing later scenarios, or after seeing the debrief, would change the data the payment was based on.
+  - *Acceptance:*
+    - Browser Back on the scenarios or outro keeps the participant on the current page (the existing Back trap in `SurveyView`) and now shows the toast 「已確認的答案無法修改。」
+    - Opening an earlier scenario's URL returns the participant to where they were, with the same toast.
+    - `saveSurveyAnswer` rejects a *different* value for a scenario the submission has already answered (`ANSWER_LOCKED`). Re-sending the *same* value succeeds without changes, so a network retry is harmless.
+    - `saveSurveyAnswer` rejects any change to a completed submission (`ANSWER_LOCKED`).
+
 - **REQ-403 — Demographics + completion.** ✅ **BUG FIXED 2026-05-04** On the final step the participant submits `{ age, gender, education }`. The system marks the `Submission.isCompleted = true` and shows the outro screen.
   - *Acceptance:* `completeSurvey` returns the updated submission. On success, the local survey-session cache for that session is cleared. In Mixed Mode, this triggers a check for group completion status (REQ-309). **Bug Fix**: SurveyOutro now properly calls `completeSurvey` mutation when user submits email and code.
    
+- **REQ-403.1 — Registration code survives a refresh.** ✅ **IMPLEMENTED 2026-11-15** (BUG-009) The registration code entered on outro step 1 MUST be kept until `completeSurvey` succeeds, across page refreshes on outro steps 2 and 3, and MUST NOT be replaced by a placeholder.
+  - *Acceptance:* The code is stored in `localStorage[survey_code_<submissionId>]` when entered and restored when the outro mounts; it is removed after `completeSurvey` succeeds. If the code is missing at the final submit, the participant is sent back to step 1 and nothing is saved — `demographics.gender` is never `unknown`. Verified by the NFR-8 e2e test, which reloads the debrief before submitting.
+
 - **REQ-404 — Session persistence (resume).** Refreshing the browser or returning to the URL must restore `submissionId` and route from `localStorage[survey_session_<sessionId>]`.
   - *Acceptance:* If the stored `path` is meaningfully different from the current URL (e.g., user landed on `/survey/scenarios/0` but session was at `scenarios/2`), the app navigates back to the stored path; mismatch heuristic logs a warning and falls back to a fresh entry.
    
 - **REQ-405 — "Session full" gate.** When the live `submissionCount` for a session reaches `sampleSize` and the participant has no resumable entry, the system MUST display 「人數已滿」 instead of the survey UI. For Mixed Mode groups, the gate closes when all scenarios reach `targetSize`.
   - *Acceptance:* Already-started entries (those holding a `restoredSubmissionId`) MAY continue to completion even after the gate closes.
+  - **REQ-405.1 — Mixed group full (2026-11-16, BUG-010).** When the group's `status` is `completed` (REQ-309), a visitor without an existing session sees 「無法參與實驗」 on arrival, before the intro. `startMixedSession` refuses to create a new session for a completed group (`GROUP_FULL`); a visitor whose intro was already open when the group filled sees the same message instead of the scenarios. A participant who already has a session may still resume and finish.
+  - **REQ-405.2 — Unknown invite link (2026-11-16, resolves Open Question #11; EC-11).** When the invite link names a group that does not exist, the welcome page shows 「找不到此實驗」 with 「此邀請連結無效或實驗已結束，請向研究人員確認連結是否正確。」 on arrival and offers no way to start. A network error while checking does not show this message (the participant is not told the link is wrong when the server is merely unreachable).
 
 ### REQ-407 — Post-Experiment Debrief Screen
 
@@ -435,6 +460,36 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - **Give/no-give determination — probabilistic draw, not a threshold (REQ-407.1):** For every round, both the participant's own outcome and the opponent's outcome are decided by treating `cooperationProbability` as a literal probability `p` and drawing `give` with probability `p` via `Math.random() < p` (a Bernoulli trial) — **not** by comparing `p` against a 50% threshold. This applies uniformly to every probability value, including exactly 50%; there is no special-cased "coin flip" behavior distinct from any other value.
     - **Server-side persistence (REQ-407.1):** Because the outcome is now a random draw for effectively every round (not just the previous 50%-exact edge case), it MUST be drawn exactly once and persisted, so a page refresh on the debrief screen cannot change the participant's realised payout. `Submission.myDecisions: [Boolean]` and `Submission.opponentDecisions: [Boolean]` store the drawn outcome per round, populated by `drawRealisedRound` alongside the existing `realisedRoundIndex`/`opponentProbs`, and reused on subsequent loads (idempotent). Legacy submissions that have `realisedRoundIndex`/`opponentProbs` but predate this field are migrated in place the next time `drawRealisedRound` is called for them.
     - *Superseded:* The original 2026-06 version of this requirement described a frontend-only placeholder (opponent data as "—", threshold-based ≥50% labeling, a 50%-only client-side coin flip that was not persisted across refreshes, and probability percentages shown per row). All of that has been replaced by the above.
+    - *Amended 2026-10-01 (REQ-408):* The payment summary card shows the server-persisted `payoutNtd` (points × `POINT_TO_NTD` + `PARTICIPATION_FEE_NTD`) together with the explicit formula, instead of a client-computed `points × 100`. If the debrief data cannot be loaded, the screen shows an error with a retry button instead of a locally drawn, unpersisted result.
+
+### REQ-408 — Points → Payment Conversion Disclosure & Persisted Payout (IRB comment 2) ✅ **IMPLEMENTED 2026-10-01** (fee and timing values pending — Open Questions #8, #9)
+
+- **REQ-408.1 — Single source of truth for payment parameters.** All payment parameters MUST live in `utils/payment.js` and be imported by both the backend and the frontend. No component or resolver may hard-code the rate or the fee.
+  - *Rationale:* The rate was hard-coded in two components (`SurveyIntro`「1點 = 100元台幣」and `SurveyOutro` `selPoints * 100`) and nowhere on the server. The IRB asked the team to confirm the conversion, which requires one number in one place.
+  - *Acceptance:*
+    - `utils/payment.js` exports `POINT_TO_NTD` (100), `PARTICIPATION_FEE_NTD` (0 until confirmed — Open Question #8), `PAYMENT_METHOD_TEXT` ('電子禮券'), `PAYMENT_TIMELINE_TEXT` (Open Question #9), `payoffPoints(myGive, oppGive)`, `pointPayoutNtd(points)`, `totalPayoutNtd(points, fee?)`, `MIN_TOTAL_NTD` and `MAX_TOTAL_NTD`.
+    - `payoffPoints` returns 2 (both give), 0 (you give, partner withholds), 3 (you withhold, partner gives) and 1 (neither gives) — identical to `PayoffMatrix` and the comprehension quiz.
+    - Changing `PARTICIPATION_FEE_NTD` changes every participant-facing amount, the persisted payout and the payment ledger with no other code edits.
+
+- **REQ-408.2 — Payment explanation before the experiment (intro step 7「點數兌換報酬說明」).** The page MUST state: (a) that one round is drawn at random after all rounds; (b) the rate 1 點 = 新台幣 100 元; (c) a table of all four outcomes with the participant's points and NT$ amount; (d) the minimum–maximum total; (e) a worked example; (f) the payment form (電子禮券 sent to the email given at the end) and timing (`PAYMENT_TIMELINE_TEXT`). When `PARTICIPATION_FEE_NTD > 0`, the page MUST also show the fee, state that it is paid to participants who complete the experiment, and add a 合計 column that includes it. When the fee is 0, no fee wording appears.
+  - *Acceptance:* Every number on the page is computed from `utils/payment.js`. With fee 0 the range reads 新台幣 0–300 元; with fee 100 it reads 新台幣 100–400 元.
+
+- **REQ-408.3 — Debrief payment card shows the formula and the persisted total.** The card on outro step 2 MUST show the drawn round, its points, the explicit formula「X 點 × 100 = 新台幣 Y 元」, a 參與費 line only when the fee is greater than 0, and **合計 新台幣 Z 元**, where Z is the server-persisted `payoutNtd`. Amounts always carry the 新台幣 label.
+
+- **REQ-408.4 — Email step repeats the amount, form and timing.** Outro step 3 MUST state the amount (新台幣 Z 元), the payment form (電子禮券) and the timing, consistent with the intro. This replaces the old「現金禮券」/「盡快」wording that contradicted the intro's「現金報酬」.
+
+- **REQ-408.5 — Payout persisted server-side.** `drawRealisedRound` MUST compute `realisedPoints = payoffPoints(myDecisions[r], opponentDecisions[r])` and `payoutNtd = totalPayoutNtd(realisedPoints)` for the realised round r, and persist both on `Submission` together with the existing draw fields. Repeat calls return the persisted values; submissions drawn before this change are backfilled on next access.
+  - *Acceptance:* The `Submission` and `DebriefResult` GraphQL types expose `realisedPoints: Int` and `payoutNtd: Int`. Refreshing the debrief never changes the amount.
+
+- **REQ-408.6 — No unrecorded amounts.** If the debrief data cannot be fetched or drawn, the screen MUST show「讀取結果失敗」with a「重試」button and MUST NOT display any amount. The previous client-side fallback draw (random and unpersisted) is removed.
+
+- **REQ-408.7 — Payment ledger export.** The group detail view MUST load every submission of the group through a new admin query `submissionsByGroup(groupId: ID!)` (replacing the `recentSubmissions(limit: 100)` feed, which silently dropped older participants — BUG-007) and MUST offer an「Export Payments」button that produces a CSV with one row per completed, valid submission.
+  - *CSV columns:* Submission ID, Participant ID, Registration Code, Email, Realised Round (1-based), Points, Participation Fee (NTD), Point Payout (NTD), Total Payout (NTD), Completed At.
+  - *Acceptance:* UTF-8 with BOM; filename `{group_name}_payments_{YYYYMMDD_HHmmss}.csv`. Completed submissions without a persisted draw are listed with empty payout fields and reported in a warning toast. The research CSV (REQ-362) is unchanged.
+  - *Note:* The registration code and email are stored in `demographics.gender` and `demographics.education` (SurveyOutro reuses the demographics payload). The ledger maps them to explicit column names.
+
+- **REQ-408.8 — Participant contact data requires admin authentication.** `recentSubmissions` and `submissionsByGroup` return participant email and MUST reject requests without a valid admin JWT (`context.isAdmin`). Participant-facing operations (`session`, `submission(id)`, `startSurvey`, `saveSurveyAnswer`, `drawRealisedRound`, `completeSurvey`) are unchanged.
+  - *Acceptance:* An unauthenticated `recentSubmissions` query returns the error `Unauthorized`; the admin UI, which sends `Authorization: Bearer <token>`, keeps working. Admin mutations remain unguarded and are tracked as BUG-006.
 
 ### REQ-406 — Partner Node Peach-Pink Visual Highlight
 
@@ -449,6 +504,22 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - No other visual elements or logic are changed — only the three color references described above.
     - The focal node amber highlight is unaffected.
   - *Scope:* Frontend only — one constant file and one component file. No backend, data model, or GraphQL changes.
+
+### REQ-409 — Figure Legibility & Explanations (IRB comment 1) ✅ **IMPLEMENTED 2026-10-01** (caption copy pending PI approval)
+
+- **REQ-409.1 — Graph legend.** A `GraphLegend` component MUST explain every visual encoding used by `NetworkGraph`, drawing its swatches from the same `COLORS` tokens as the graph: 您 (amber ring), 搭檔 (pink ring), 國民黨 / 民進黨 (avatar colors), 給予 (dark label; the arrow points from the person who decided to the person who received), 不給予 (light label), 「?」 (a record not yet viewed; click to reveal), and 您的決定 (the animated line from 您 to 搭檔 that follows the slider).
+  - *Acceptance:* Shown on intro steps 0, 2, 4 and 5 (only the rows relevant to each figure) and, in compact form, under the graph on every scenario page, in the same position every round.
+
+- **REQ-409.2 — Captions (圖說).** Intro steps 0, 2, 3, 4 and 5 MUST have a caption directly under the figure explaining what the figure shows and what the participant should do with it. The copy is listed in design.md Phase 42 and MUST be approved by the PI before deployment.
+
+- **REQ-409.3 — Minimum sizes.**
+  - "?" reveal marker: radius ≥ 13 SVG units, 18px glyph, hit-area radius ≥ 20.
+  - Scenario graph: up to 520px wide on `xl` screens (the graph column takes 3/5 of the grid).
+  - Intro interaction list: text ≥ 14px (`text-sm`), 24px avatars; the invalid `white-*` Tailwind classes are fixed.
+  - Intro tip-1 demo edge: up to 360px wide.
+  - *Acceptance:* Verified at 1440×900 and 390×844 in the before/after report (NFR-7).
+
+- **REQ-409.4 — High-resolution screenshots for the IRB packet.** Every participant-facing screen MUST be available as a 2× DPR PNG (desktop 1440×900 and phone 390×844), with a caption index `docs/irb/figures.md` (figure number → screen → caption).
 
 ### REQ-415 — Chrome-Only Browser Enforcement
 
@@ -479,6 +550,32 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **NFR-4 — Deployment:** Single-Procfile deploy (`web: npm start`) on Heroku-class platforms, Node 20.x. Static assets served from `dist/` after `vite build`.
 - **NFR-5 — Compatibility:** SPA must handle deep links (server falls back to `index.html` for any non-`/graphql` route).
 - **NFR-6 — Body size:** GraphQL endpoint accepts JSON payloads (standard size limits after RRWeb removal).
+- **NFR-7 — Reproducible visual evidence for IRB-driven changes:** Participant-facing changes made in response to IRB comments MUST be documented with before/after screenshots of every edited screen, produced from a deterministic fixture (the same seeded database, seeded `Math.random`, frozen animations, desktop + phone at 2× DPR) and compiled into a PDF report (`npm run irb:shots -- --label before|after`, then `npm run irb:report`). The "before" set MUST be captured from app source identical to the pre-change commit, and the capture metadata MUST record this. The report MUST also contain a payment-rules page (報酬規則說明) explaining the conversion rate, participation fee, total formula, how the paid round and its points are decided, how the payout is persisted, and how it is delivered — with every number taken from the payment settings used in the "after" capture. The report is written in Traditional Chinese for the advisor/PI and must be readable without access to the code: no commit hashes, file paths, function or variable names, requirement IDs, or raw system output. It shows participant-facing changes only: admin-facing changes (the payment ledger export and admin-only access to participant email) are still captured for internal verification but are omitted from the report.
+- **NFR-8 — Full-flow end-to-end test:** One command (`npm run test:e2e`) MUST run the whole experiment as a real study does — the admin logs in and launches a Mixed Mode group, a participant opens the invite link in Chrome and completes the intro, every scenario, the debrief and the email step, and the admin exports the payment ledger — against an isolated in-memory MongoDB, with no manual steps.
+  - *Acceptance:*
+    - The amount shown on the debrief, the persisted `Submission.payoutNtd` and the ledger's「Total Payout (NTD)」are the same number, and that number equals `totalPayoutNtd(payoffPoints(myDecisions[r], opponentDecisions[r]))` for the persisted realised round `r` (US-A7, REQ-408.3, REQ-408.5, REQ-408.7). Reloading the debrief does not change it.
+    - Recorded answers, registration code and email match what the participant entered; the answered scenarios' `responseCount` and the session's `submissionCount` are incremented.
+    - A second participant who stops mid-survey is absent from the ledger.
+    - Every run writes `test-results/e2e/<timestamp>/` with one screenshot per checkpoint, `report.html` + `report.pdf` (summary, money trail, per-step screenshots and checks, ledger, known issues), the downloaded `payments.csv` and `server.log`. The report is written even when a step fails; the command exits non-zero if any check fails.
+    - Not covered: real partner pairing (BUG-008), visual layout (NFR-7).
+  - *Edge cases (NFR-8.1, added 2026-11-15):* the same run MUST also cover the cases below, each judged against the requirement named. Where no requirement defines the behaviour, the run records an **observation** (shown in the report, not pass/fail) for the team to decide.
+
+    | ID | Case | Expected |
+    |---|---|---|
+    | EC-1 | Wrong comprehension-quiz answers first | Hint shown, 下一步 stays disabled until the quiz is retried correctly |
+    | EC-2 | Empty registration code; malformed email | 下一步 disabled; email error shown and 送出 disabled (REQ-403) |
+    | EC-3 | Participant leaves during the intro | No session or submission is created (REQ-307, BUG-004) |
+    | EC-4 | Refresh mid-scenario before confirming | Same scenario shown again; the unconfirmed answer is not saved (REQ-404) |
+    | EC-5 | Close the tab, come back via the invite link | Resumes at the next unanswered scenario with the same session and submission (REQ-313, REQ-404) |
+    | EC-6 | Browser Back to a confirmed scenario | Stays on the next unanswered scenario with the 「已確認的答案無法修改。」 toast; the confirmed answer and `responseCount` unchanged; changing it through the API is rejected (REQ-402.4) |
+    | EC-7 | Come back after completing (same device) | 「無法參與實驗」 on arrival; no new session/submission; payout and code unchanged (REQ-313, REQ-405) |
+    | EC-8 | Same person on another device, same registration code | Observation: accepted as a new participant and listed twice in the ledger. Invalidating the duplicate removes it from the ledger (REQ-350, REQ-408.7) |
+    | EC-9 | Every scenario of the group reached its target | Group marked completed (REQ-309); a new visitor sees 「無法參與實驗」 on arrival and gets no session; `startMixedSession` refuses (REQ-405.1) |
+    | EC-10 | Non-Chrome browser | 開始實驗 disabled with the Chrome notice (REQ-415) |
+    | EC-11 | Invite link with an unknown group | 「找不到此實驗」 on arrival, no 開始實驗, no session (REQ-405.2) |
+    | EC-12 | Direct API misuse | Probability outside [0, 1] rejected (REQ-402); starting without Turnstile rejected (REQ-100); participant data without admin login rejected (REQ-408.8); changing an answer of a completed submission rejected (REQ-402.4) |
+    | EC-13 | No participant has completed yet | Export Payments disabled (REQ-408.7) |
+  - *Roadmap (NFR-8.2, added 2026-11-15):* the report MUST open with a roadmap that shows every test case on the participant journey at a glance: one row per stage (admin setup → invite link → intro → scenarios → outro & debrief → coming back → payment ledger → direct API), the happy-path result for that stage, and each edge case as a chip coloured by its result (pass / fail / observed / not run). Each chip links to the step that ran it. A case added to the catalogue but not placed on the roadmap fails the run.
 
 ---
 
@@ -489,6 +586,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | Issue ID | Description | Severity | Reported |
 |----------|-------------|----------|----------|
 | BUG-004 | Mixed Mode creates session too early (on welcome page load) | High | 2026-05-06 |
+| BUG-006 | GraphQL resolvers never check `context.isAdmin`; admin mutations can be called without logging in | High | 2026-10-01 |
+| BUG-008 | Partner pairing never matches a real participant; every 搭檔 decision is a 50/50 draw | High | 2026-11-15 |
 
 **BUG-004**: Mixed Mode session creation timing inconsistency
 
@@ -509,6 +608,34 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 - **Proposed Fix**: Move `startMixedSession` call from `App.tsx` page-load effect to lazy execution when user transitions from intro to scenarios, matching Manual Mode's `startSurvey` timing. Store `groupId` + `mode` in URL/state until session creation.
 
+**BUG-006**: Admin authentication is not enforced by any resolver
+
+- **Symptom**: `server.js` verifies the admin JWT and puts `isAdmin` in the GraphQL context, but no resolver reads it. Anyone who can reach `/graphql` can run admin operations such as `deleteSessionGroup` or `invalidateSubmission`, and could read participant email through `recentSubmissions`.
+- **Partial fix (2026-10-01, REQ-408.8)**: The queries that return participant email (`recentSubmissions`, `submissionsByGroup`) now require `context.isAdmin`.
+- **Remaining**: Guard every admin-only mutation and query with the same `requireAdmin(context)` helper. Also make sure `JWT_SECRET` is set in production — `server.js` otherwise signs and verifies tokens with the literal `'fallback_secret'`.
+
+
+**BUG-008**: Partner pairing never matches a real participant
+
+- **Symptom**: On the debrief, the 搭檔 decision of every round comes from `Math.random()`, not from a paired participant's answer as REQ-407 states. The server log prints `opponentProbs matched=0/N fallback=N` for every participant.
+- **Root Cause**: `createMixedGroup` gives every scenario of a group the group's single `focalNode`. `drawRealisedRound` looks for partner scenarios whose `focalNode` is in the opposite party **within the same `groupId`**, so it never finds any. Its match key, `scenarioIndex`, is also only the row index within one edge combination's design matrix, so even a reachable match would pair unrelated scenarios.
+- **Impact**: Payouts are still drawn once, persisted, shown and exported consistently (NFR-8 verifies this), but they depend on a fair coin instead of real partner behaviour. If the consent form tells participants they are paired with a real person, this is an undisclosed deviation — the PI should be informed.
+- **Proposed Fix**: To be designed separately — decide how partners are matched across groups (e.g. a KMT-focal and a DPP-focal group linked to each other) and match on a scenario identity that is the same for both perspectives (mirrored edge set + edge states), not `scenarioIndex`.
+
+
+**BUG-009**: Registration code lost on refresh — ✅ **FIXED 2026-11-15** (REQ-403.1)
+
+- **Symptom**: If the participant refreshes the page on outro step 2 (debrief) or step 3 (email), the submission is saved with `demographics.gender = 'unknown'` and the payment ledger's「Registration Code」reads `unknown`, so the researcher cannot match the payment to the registered participant. Found by the NFR-8 e2e test (it reloads the debrief to verify the payout does not change); without the reload the code is saved correctly.
+- **Root Cause**: `SurveyOutro` keeps the code only in component state (`codeValue`); nothing persists it, and `handleFinalSubmit` falls back to `codeValue || 'unknown'`. The outro step lives in the URL precisely so a refresh resumes it (REQ-404), but the code does not survive.
+- **Fix**: `SurveyOutro` stores the code in `localStorage[survey_code_<submissionId>]`, restores it on mount, removes it after `completeSurvey` succeeds, and sends the participant back to step 1 instead of saving `unknown` when it is missing.
+
+
+**BUG-010**: Full Mixed Mode group never closes
+
+- **Symptom**: After every scenario of a group has reached `targetSizePerScenario`, a new visitor still sees the welcome page, completes the whole intro and gets a session — made of scenarios that are already at target (18 of 18 in the NFR-8.1 run, EC-9). The group is never marked completed. Each such participant is oversampling that the researcher would still have to pay.
+- **Root Cause**: REQ-309 is marked completed but is not implemented: `SessionGroup` has no `status` field, and `completeSurvey` counts the scenarios below target and only logs the number. `startMixedSession` and the welcome page never check whether the group is full, so the REQ-405 gate for Mixed groups does not exist.
+- **Fix (2026-11-16)**: `SessionGroup.status` added and recomputed in `completeSurvey` and on invalidate/restore (REQ-309); `startMixedSession` refuses new sessions for a completed group (`GROUP_FULL`); the welcome page reads the group's status on arrival and shows 「無法參與實驗」 (REQ-405.1). Participants already in progress may finish.
+
 ---
 
 ## Known Issues (Fixed)
@@ -520,6 +647,9 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | BUG-001 | NetworkGraph TypeError: Cannot read properties of undefined (reading 'includes') | 2026-05-04 | ✅ Fixed |
 | BUG-002 | SurveyOutro not calling completeSurvey, causing all submissions to show as incomplete | 2026-05-04 | ✅ Fixed |
 | BUG-003 | Admin history view: clicking session ID shows 0 active edges in read-only setup panel | 2026-05-04 | ✅ Fixed |
+| BUG-009 | A page refresh after outro step 1 lost the registration code; the ledger showed `unknown` | 2026-11-15 | ✅ Fixed |
+| BUG-010 | A full Mixed group never closed; new visitors still got sessions of already-full scenarios | 2026-11-16 | ✅ Fixed |
+| BUG-007 | Group detail view and research CSV only see the 100 most recent submissions across all sessions | 2026-10-01 | ✅ Fixed (REQ-408.7) |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.
 
@@ -538,6 +668,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   2. **Resolver**: Modified [`toSessionGraph`](../backend/graphql/resolvers.js:56-67) to derive virtual field from first scenario
   3. **Query**: Updated [`fetchAllSessions`](../utils/graphqlClient.ts:88) GraphQL query to request `activeEdgeIds`
   4. **Component**: Simplified [`AdminView.tsx:47`](../components/AdminView.tsx:47) to use `session.activeEdgeIds` directly
+
+**BUG-007**: `GroupDetailView` loaded submissions through `recentSubmissions(limit: 100)`, which returns the 100 newest submissions across **all** sessions and groups, and then filtered them client-side by the group's session IDs. Once the database held more than 100 submissions, older participants silently disappeared from the group's submission list and from the research CSV export. Fixed by the group-scoped admin query `submissionsByGroup(groupId)` (REQ-408.7).
 
 ---
 
@@ -561,3 +693,10 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 5. **~~Mixed Mode duplicate participation.~~** ~~Should the system enforce `participantId` uniqueness per group more strictly? Via cookie, email requirement, or other method?~~ → **RESOLVED** via REQ-311 (device fingerprinting)
 6. **Fingerprinting library choice.** Should we use open-source FingerprintJS, commercial Fingerprint Pro, or implement custom fingerprinting? Trade-offs: accuracy vs cost vs privacy.
 7. **REQ-312 Mongoose `required: true` scope conflict.** Making `maxK`, `scenariosPerSession`, and `targetSizePerScenario` unconditionally `required: true` in the Mongoose schema will cause validation failures when creating Batch Mode or Manual Mode `SessionGroup` documents, which legitimately do not have these fields. Two resolution options: (a) keep `required: false` at the Mongoose level and rely exclusively on resolver-level validation + GraphQL type-system enforcement (`Int!`) to enforce presence for Mixed Mode — the schema-level constraint only applies when the resolver itself writes the document; (b) use a Mongoose conditional validator (`required: function() { return !!this.config?.maxK; }`) so the constraint applies only to Mixed Mode documents. The tasks in Phase 24 implement option (b) as it provides the deepest enforcement while remaining non-breaking for other modes. Confirm preferred approach before implementation.
+8. **REQ-408 base participation fee (pending PI).** Does the IRB-approved consent form (受試者同意書) promise a guaranteed participation fee? NT$100 has been mentioned. It is implemented as `PARTICIPATION_FEE_NTD` in `utils/payment.js`, defaulting to 0 (the behavior before 2026-10-01). If confirmed, set it to 100; the fee is then paid only to participants who complete the experiment, and the participant copy, debrief, persisted payout and payment ledger all pick it up automatically.
+9. **REQ-408 payout timeline (pending PI).** Within how many days after the experiment is the 電子禮券 emailed? `PAYMENT_TIMELINE_TEXT` keeps the original「盡快」wording until the PI confirms a number of days.
+10. **Same person on two devices (EC-8).** A second device with an already-used registration code is accepted as a new participant and appears in the payment ledger twice. Should `completeSurvey` reject (or flag) a registration code already used in the group, or is manual invalidation by the researcher (REQ-350) enough?
+11. **Invite link to an unknown or deleted group (EC-11).** The participant sees the normal welcome page, completes the whole intro, and only then gets「無法建立測驗連線，請重試。」, which invites a pointless retry. Should the welcome page check the group first and show a clear message? **Resolved 2026-11-16 → REQ-405.2.**
+12. **Completed submissions can be edited through the API (EC-12).** `saveSurveyAnswer` accepts changes to a submission that is already completed (and paid from). Should it refuse once `isCompleted` is true? **Resolved 2026-11-16 → REQ-402.4.**
+13. **Browser Back during the scenarios (EC-6).** Back after confirming a scenario is redirected to the next unanswered one, so a confirmed answer cannot be changed. Is that the intended rule (it protects the data), or should Back allow revising? **Resolved 2026-11-16 → REQ-402.4 (confirmed answers are final).**
+

@@ -34,6 +34,10 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 | Phase 31 | 📋 Planned | — | Complete submission data CSV export (REQ-360..363) |
 | Phase 34 | 📋 Planned | — | Partner node peach-pink highlight (REQ-406) |
 | Phase 35 | ✅ Complete | 2026-07-02 | Debrief screen with realised round, real opponent pairing, and persisted probabilistic payment (REQ-407, REQ-407.1) |
+| Phase 40 | ✅ Complete | 2026-10-01 | IRB before/after capture tooling + baseline ("before") screenshots (NFR-7) |
+| Phase 41 | ✅ Complete | 2026-10-01 | IRB comment 2 — points → payment conversion disclosure, persisted payout, payment ledger (REQ-408); fee and timing values pending PI (Open Questions #8, #9) |
+| Phase 42 | ✅ Complete | 2026-10-01 | IRB comment 1 — figure legend, captions, minimum sizes (REQ-409); caption copy pending PI approval |
+| Phase 43 | ✅ Complete | 2026-10-01 | IRB "after" screenshots + before/after PDF report + packet caption index (NFR-7, REQ-409.4) |
 
 **Recent Updates**:
 - 2026-04-29: Legacy API completely removed (~500 lines)
@@ -52,6 +56,7 @@ The system uses a **scenario-centric data model** where `Scenario` is the atomic
 - 2026-05-06: Submission invalidation feature designed (REQ-350..REQ-354) — new `isInvalid` field on `Submission`, `invalidateSubmission` mutation, cascading `submissionCount` and `Scenario.responseCount` corrections, admin UI filter — see Phase 30
 - 2026-05-06: Complete submission data CSV export designed (REQ-360..REQ-363) — client-side CSV generation with row-per-answer format including full scenario configurations, demographics, timestamps, and validity flags — see Phase 31
 - 2026-07-02: Debrief give/no-give outcome changed from a 50%-threshold rule to a persisted Bernoulli draw on the cooperation probability itself (REQ-407.1) — `drawRealisedRound` now also draws and persists `Submission.myDecisions`/`Submission.opponentDecisions` so the debrief screen and realised cash payout are stable across page refreshes; per-row probability percentages and the 50%-only "randomly decided" tooltip were removed from the UI — see Phase 35
+- 2026-10-01: IRB revisions designed — shared payment module `utils/payment.js`, persisted `realisedPoints`/`payoutNtd`, consistent payment copy, payment ledger export and admin-guarded PII queries (REQ-408); `GraphLegend`, captions and larger figure elements (REQ-409); deterministic before/after screenshot tooling and PDF report (NFR-7) — see Phases 40–43
 
 ---
 
@@ -1816,6 +1821,9 @@ This complete solution ensures data flows correctly: Database → Resolver → G
 | REQ-351..354 | `Submission.isInvalid` field, `invalidateSubmission` mutation, cascading `submissionCount` / `responseCount` corrections, admin UI filter | 📋 Planned (Phase 30) |
 | REQ-405.1 | Complete network history display in survey introduction | 📋 Planned |
 | REQ-406 | `COLORS.rolePartnerHighlight` token in `constants.ts`; three color references in `NetworkGraph.tsx` (ring stroke, glow aura, badge fill) | 📋 Planned (Phase 34) |
+| REQ-408 | `utils/payment.js`; `Submission.realisedPoints`/`payoutNtd`; `drawRealisedRound` persistence + backfill; `requireAdmin` + `submissionsByGroup`; `SurveyOutro` load/error flow and payment card; `SurveyIntro` step 7; `GroupDetailView` Export Payments | ✅ Complete (Phase 41) |
+| REQ-409 | `GraphLegend` in `SurveyShared.tsx`; captions in `SurveyIntro.tsx`; "?" marker + graph cap in `NetworkGraph.tsx`; scenario grid + legend in `SurveyView.tsx` | ✅ Complete (Phase 42) |
+| NFR-7, REQ-409.4 | `scripts/irb-shots/` (fixture, shot list, capture, report); `docs/irb/figures.md` | ✅ Complete (Phases 40, 43) |
 
 ---
 
@@ -2891,4 +2899,477 @@ const points = myGive && oppGive ? 2 : !myGive && oppGive ? 3 : myGive && !oppGi
 
 **Payment card:** `bg-indigo-50 rounded-xl p-4 border border-indigo-200`, showing the drawn round, its points, and `points × 100` NTD.
 
+> **Superseded 2026-10-01 (Phase 41, REQ-408):** the payment card now shows the server-persisted `payoutNtd` with the explicit formula, and the client-side fallback draw is gone. See Phase 41 below.
+
 ---
+
+## Phases 40–43 — IRB Revisions: Payment Conversion, Figure Legibility, Before/After Evidence (REQ-408, REQ-409, NFR-7)
+
+**Status**: ✅ Complete (2026-10-01) — pending PI decisions: participation fee, payment timing, caption/payment copy approval
+
+### Overview
+
+| IRB comment | Design response | Phase |
+|-------------|-----------------|-------|
+| 1.「適度調整圖片尺寸及解析度，並補充相對應的說明，以利參與者理解欲傳達的訊息及內容。」 | `GraphLegend` explains every graph encoding; captions under the intro figures; larger "?" markers, a wider scenario graph and a readable intro list; 2× DPR screenshots with a caption index for the IRB packet | 42, 43 |
+| 2.「確認點數與實際報酬的換算。」 | One payment module; payout computed and persisted on the server; consistent rate / range / example / payment form in the intro, debrief and email step; payment ledger export; admin-only access to participant email | 41 |
+| (Requested by the research team) before/after evidence for every edit | Deterministic capture tooling + PDF report | 40, 43 |
+
+**Why the figures were hard to read but never "low resolution" in the app:** every participant-facing figure (`NetworkGraph`, `InteractiveInlineEdge`, `MiniAvatar`) is inline SVG, so it scales without blur. The resolution problem the IRB saw comes from raster screenshots in the application packet, and is solved by Phase 43's 2× DPR captures. The size problem is real in the app and is solved by Phase 42.
+
+**Execution order:** Phase 40 (tooling + "before" shots, taken while the app source is still identical to commit `934e945`) → Phase 41 → Phase 42 → Phase 43 ("after" shots + report).
+
+---
+
+### Phase 40 — Before/After Capture Tooling (NFR-7)
+
+All tooling lives in `scripts/irb-shots/` and never changes the app bundle. It uses two devDependencies:
+
+- `playwright-core` — drives the locally installed Google Chrome (`channel: 'chrome'`), so no browser download is needed and screenshots use the same browser participants are required to use (REQ-415).
+- `mongodb-memory-server` — a throwaway in-memory MongoDB, so capture runs never touch the study database. Setting `IRB_SHOTS_MONGODB_URI` points the tooling at an existing dev database instead; the study database must never be used.
+
+| File | Responsibility |
+|------|----------------|
+| `fixture.mjs` | Fixed IDs and documents; `seedFixture()` inserts them through the app's own Mongoose models |
+| `shots.mjs` | The edit-part catalog (A1–A6, B1–B3) and the shot list shared by the capture and report scripts |
+| `capture.mjs` | Starts the DB and the built app, applies the fixture, captures every shot at both viewports, writes `meta.json` and text evidence |
+| `build-report.mjs` | Pairs before/after images, checks coverage, renders HTML and prints the PDF |
+
+**npm scripts:** `npm run irb:shots -- --label before|after` builds `dist/` from the working tree and captures it; `npm run irb:report` builds the PDF from the two captured sets.
+
+**Capturing the baseline from a clean checkout:** the "before" set in the report was captured from a git worktree of `934e945` (its `node_modules` symlinked to the main checkout), after `npx vite build` there:
+
+```bash
+git worktree add --detach <dir> 934e945 && ln -s "$PWD/node_modules" <dir>/node_modules
+(cd <dir> && npx vite build)
+node scripts/irb-shots/capture.mjs --label before --app <dir>
+```
+
+`--app` points the capture at another checkout (its `dist/`, `server.js` and git state); the tooling itself always runs from the main checkout. This also lets the "before" set be retaken at any time.
+
+#### Fixture (identical in every run)
+
+| Document | Key fields |
+|----------|-----------|
+| `SessionGroup` `irb-fixture-group` | Mixed-mode group (so the admin page loads submissions on mount): name「IRB 截圖測試組」; `maxK` 3, `scenariosPerSession` 3, `targetSizePerScenario` 5; focal KMT1, opponent DPP3 |
+| `Scenario` `irb-fixture-scn-1..3` | 3 active edges each with fixed `edgeStates`; `scenarioIndex` 0..2 |
+| `Session` `irb-fixture-session` | The in-progress participant's session (all participant screens) |
+| `Session` `irb-fixture-session-done` | The completed participant's session |
+| `Submission` `6a1f0000000000000000a001` (live) | In progress; 3 answers; persisted draw: `realisedRoundIndex` 1, `myDecisions` [true, **false**, true], `opponentDecisions` [false, **true**, true] → round 2 is 您 不給 / 搭檔 給 → **3 點** |
+| `Submission` `6a1f0000000000000000a002` (done) | Completed; registration code `A1B2C3` in `demographics.gender`, email `participant@example.com` in `demographics.education`; draw: round 1 both give → 2 點 (feeds the payment ledger and evidence E1) |
+
+`Submission._id` is an ObjectId in the schema, so its fixed IDs are 24-character hex strings. Documents are validated against the app's schemas and written through the raw collections, so the fixed `createdAt`/`updatedAt` survive.
+
+The fixture submissions are seeded **without** `realisedPoints`/`payoutNtd` (the "before" code has no such fields). In the "after" run the idempotent `drawRealisedRound` path backfills them, which exercises the legacy-migration branch of REQ-408.5. Before capturing, the tooling replays the completed participant's debrief visit (one idempotent `drawRealisedRound` call — a no-op on the old code), because every real finisher passes the debrief before the email step.
+
+#### How a screen is opened directly
+
+- Cookie `turnstile_verified=true` → `/api/turnstile/status` reports verified, so no Turnstile widget is needed.
+- `localStorage.survey_session_irb-fixture-session = { submissionId: 'irb-fixture-sub-live', path: <target URL> }` → `App.tsx` restores the fixture submission instead of calling `startSurvey` (scenario routes require the stored path to equal the URL; outro routes skip that check).
+- Admin screens: log in through `POST /api/admin/login` with the capture server's own `ADMIN_PASSWORD`, then store the returned JWT in `localStorage.token` (a real token, so the guarded queries of REQ-408.8 work in the "after" run).
+
+#### Determinism
+
+- **Randomness:** an init script replaces `Math.random` with a seeded PRNG (mulberry32, fixed seed) on every page load, so the shuffled node positions (`generateTrianglePositions`) and the randomized slider start (REQ-402.1) are identical in both runs. `d3-force` already uses its own fixed-seed generator. The Tailwind CDN runtime also calls `Math.random`, a varying number of times depending on which classes exist — enough to shift the app's values between runs — so calls from the app bundle (`/assets/index-*.js`, detected from the call stack) get their own stream and everything else gets a second one.
+- **Animation:** screenshots use Playwright's `animations: 'disabled'`; SVG `<animate>` elements are frozen with `svg.pauseAnimations(); svg.setCurrentTime(0)`; fonts are awaited with `document.fonts.ready`.
+- **Interaction:** "?" markers are clicked through their SVG text node; sliders are set through the native `value` setter plus an `input` event, which React treats exactly like a drag; buttons that pulse forever (e.g. 「開始決策」) are clicked with `force`. All selectors exist in both the old and the new markup.
+- **Viewports:** desktop 1440×900 and phone 390×844 (touch, Chrome-on-Android user agent), both at `deviceScaleFactor: 2`, full-page PNG.
+- **Network independence:** `index.html` loads Tailwind from `cdn.tailwindcss.com` at runtime. The capture downloads that runtime once (it resolves to 3.4.17), caches it in `docs/irb/screenshots/.cache/`, and serves the cached copy to every page, so a slow CDN cannot stall a run and both sets use the same Tailwind build.
+- **Timeouts:** each shot has a 120-second limit, page loads retry once, and the `document.fonts.ready` wait is capped at 5 seconds (`page.evaluate` has no timeout of its own). Long pauses with almost no CPU time mean the machine slept — keep it awake during a capture.
+
+#### Shot list
+
+| ID | Screen / state | Edit parts | IRB |
+|----|----------------|------------|-----|
+| S01 | `/survey/intro/0` roles & groups | B1 B2 | 1 |
+| S02 | `/survey/intro/2` interaction records | B1 B2 B3 | 1 |
+| S03 | `/survey/intro/3` tip 1, "?" not clicked | B2 B3 | 1 |
+| S04 | `/survey/intro/3` tip 1, revealed | B2 B3 | 1 |
+| S05 | `/survey/intro/4` tip 2, "?" not clicked | B1 B2 B3 | 1 |
+| S06 | `/survey/intro/5` tip 3, slider set to 70 | B1 B2 | 1 |
+| S07 | `/survey/intro/7` payment explanation | A1 A4 | 2 |
+| S08 | `/survey/scenarios/0` nothing revealed | B1 B3 | 1 |
+| S09 | `/survey/scenarios/0` all revealed | B1 B3 | 1 |
+| S10 | `/survey/scenarios/0` deciding, slider set to 70 | B1 B3 | 1 |
+| S11 | `/survey/outro/2` debrief with the fixed draw | A1 A2 A3 A4 | 2 |
+| S12 | `/survey/outro/2` while every debrief request fails (`page.route` abort) | A3 | 2 |
+| S13 | `/survey/outro/3` email step | A4 | 2 |
+| S14 | `/admin/view/batch/irb-fixture-group` (desktop only) | A5 | 2 |
+| E1 | Unauthenticated `recentSubmissions` query (text evidence, emails redacted) | A6 | 2 |
+| E2 | Payments CSV downloaded from S14 ("after" only) | A2 A5 | 2 |
+
+Packet-only screens (captured in the "after" run for REQ-409.4, not compared): welcome, intro 1 / 6 / 8, outro 1 / 4.
+
+#### Outputs
+
+```text
+docs/irb/screenshots/<before|after>/<desktop|phone>/<ID>.png   (gitignored)
+docs/irb/screenshots/<before|after>/meta.json                   (git SHA, dirty flag, appSourceMatchesBaseline, fee, timestamp)
+docs/irb/screenshots/<before|after>/evidence/E1.json, E2.csv
+docs/irb/report/irb-before-after-report.pdf                     (gitignored)
+docs/irb/figures.md                                             (committed caption index)
+```
+
+`appSourceMatchesBaseline` is `git diff --quiet 934e945 -- App.tsx components backend utils server.js constants.ts types.ts index.html index.tsx`. The report prints it on the cover, so a reader can verify the "before" set really is the old app.
+
+#### Report layout (A4 landscape, `page.pdf({ printBackground: true })`)
+
+The report is written in Traditional Chinese for the advisor/PI and is readable without the code: it shows no commit hashes, file paths, code identifiers, requirement IDs or raw system output. Edit parts are labelled by IRB comment (1-1…1-3 for comment 1, 2-1…2-6 for comment 2), shots are numbered as figures (圖 1, 圖 2, …) in report order, and the evidence appendices describe their results in plain language.
+
+The report shows participant-facing changes only. Items marked `internal` in `shots.mjs` — the admin-facing parts A5 (2-5, payment ledger) and A6 (2-6, admin-only email access), shot S14 (admin page) and evidence E1/E2 — are still captured for internal verification but left out of the report, together with their summary rows and appendices. The summary's open items list only the pending fee and payment timing.
+
+1. **Cover** — title, the two IRB comments, before/after SHAs, the baseline check, the payment settings used (`PARTICIPATION_FEE_NTD`, `PAYMENT_TIMELINE_TEXT`, flagged as pending), and how the shots were captured.
+2. **Summary** — IRB comment → edit part → change → REQ → shots, plus the open items this revision does not change. The build fails if any edit part has no shot or evidence, or if any screenshot is missing.
+3. **One section per IRB comment**; within it one page per shot and viewport, tagged with its edit parts, with a one-line change note and **Before | After** side by side. Shot pages have a fixed height, so each pair fills exactly one sheet.
+   - The IRB comment 2 section opens with a **報酬規則說明** page (zh-TW): the rate (`POINT_TO_NTD`), the participation fee (`PARTICIPATION_FEE_NTD`, flagged as provisional while it is 0), the total formula, how `drawRealisedRound` picks the paid round and decides each give/no-give, a payoff table (points and NT$ without a fee and with a NT$100 fee), the resulting range, how `realisedPoints`/`payoutNtd` are persisted, and the delivery method and timing. Values come from the "after" capture's `meta.json`, so the page always matches the screenshots.
+4. **Appendix A** — E1 before/after (emails redacted; the development server's stack traces are trimmed to `message` and `path`). **Appendix B** — E2 payment-ledger rows.
+
+Images in the PDF are JPEG copies (quality 82, made with macOS `sips`) to keep the file small (about 11 MB for 33 pages); the PNG masters stay in `docs/irb/screenshots/` for the IRB packet.
+
+---
+
+### Phase 41 — Points → Payment Conversion (REQ-408)
+
+#### Payment module — `utils/payment.js`
+
+Plain ES module with JSDoc types. The backend imports it as `../../utils/payment.js` (like `mathBackend.js`), and the frontend imports it directly (`allowJs` is enabled in `tsconfig.json`). For money, one shared module deliberately replaces the `math.ts` / `mathBackend.js` twin pattern: the rate must exist in exactly one place.
+
+```js
+export const POINT_TO_NTD = 100;
+export const PARTICIPATION_FEE_NTD = 0;          // Open Question #8 — set to 100 if the consent form promises a fee
+export const PAYMENT_METHOD_TEXT = '電子禮券';
+export const PAYMENT_TIMELINE_TEXT = '實驗結束後盡快'; // Open Question #9 — e.g. '實驗結束後 14 天內'
+export const MIN_POINTS = 0;
+export const MAX_POINTS = 3;
+
+export function payoffPoints(myGive, oppGive) { /* both 2 · me only 0 · partner only 3 · neither 1 */ }
+export function pointPayoutNtd(points) { return points * POINT_TO_NTD; }
+export function totalPayoutNtd(points, fee = PARTICIPATION_FEE_NTD) { return pointPayoutNtd(points) + fee; }
+export const MIN_TOTAL_NTD = totalPayoutNtd(MIN_POINTS);
+export const MAX_TOTAL_NTD = totalPayoutNtd(MAX_POINTS);
+```
+
+`PayoffMatrix` and the comprehension quiz stay in points only on purpose, so the decision screens do not gain a money framing mid-experiment.
+
+#### Data model and GraphQL
+
+```graphql
+type Submission {
+  ...
+  realisedPoints: Int      # payoffPoints() of the realised round
+  payoutNtd: Int           # totalPayoutNtd(realisedPoints) — the amount shown and paid
+}
+
+type DebriefResult {
+  ...
+  realisedPoints: Int!
+  payoutNtd: Int!
+}
+
+type Query {
+  ...
+  submissionsByGroup(groupId: ID!): [Submission!]!   # admin only
+}
+```
+
+`Submission.js` gains `realisedPoints` and `payoutNtd` (`Number`, default `null`), and `toSubmissionGraph` maps both.
+
+#### Resolvers
+
+```js
+function requireAdmin(context) {
+  if (!context?.isAdmin) throw new Error('Unauthorized');
+}
+
+recentSubmissions: async (_, { limit = 20 }, context) => { requireAdmin(context); ... }
+
+submissionsByGroup: async (_, { groupId }, context) => {
+  requireAdmin(context);
+  const sessions = await SessionModel.find({ groupId }, { _id: 1 }).lean();
+  const docs = await SubmissionModel.find({ sessionId: { $in: sessions.map(s => String(s._id)) } })
+    .sort({ createdAt: -1 }).lean();
+  return docs.map(toSubmissionGraph);
+}
+```
+
+`drawRealisedRound`:
+
+- **First draw:** after drawing `myDecisions` / `opponentDecisions`, compute `realisedPoints = payoffPoints(myDecisions[r], opponentDecisions[r])` and `payoutNtd = totalPayoutNtd(realisedPoints)`, and `$set` them together with the other draw fields.
+- **Idempotent path:** return the persisted values; if `realisedPoints` or `payoutNtd` is missing (a submission drawn before 2026-10-01, or the screenshot fixture), compute them from the persisted decisions, `$set` them once, and return them.
+- A persisted `payoutNtd` is never recomputed, so changing the fee later does not change what an earlier participant was shown.
+
+#### SurveyOutro load flow (steps 2 and 3)
+
+```text
+entryId available ─► fetchSubmission(entryId)
+    ├─ has realisedRoundIndex + myDecisions + opponentDecisions + payoutNtd ─► ready
+    └─ otherwise ─► drawRealisedRound(entryId)  (idempotent; also backfills payout) ─► ready
+any error ─► error
+```
+
+| State | Step 2 (debrief) | Step 3 (email) |
+|-------|------------------|----------------|
+| loading | 「載入中...」 | email form with the generic sentence (no amount) |
+| ready | round table + payment card | email form with the amount sentence |
+| error | 「讀取結果失敗」+「重試」button; **no amount, no table** | email form with the generic sentence (no amount) |
+
+The old fallback (a random draw computed in the browser and never saved) is removed, so no screen can show an amount the researcher has no record of.
+
+#### Participant copy (built from the module constants; PI to approve)
+
+Intro step 7 「點數兌換報酬說明」:
+
+- 「在實驗中，您將會參與數次的兩人遊戲。所有遊戲結束後，電腦會隨機抽出其中一次遊戲，依照您在該次遊戲中得到的點數換算成報酬。」
+- Rate badge: 「1 點 = 新台幣 100 元」
+- Outcome table (same row order as `PayoffMatrix`):
+
+| 您的決定 | 搭檔的決定 | 您得到的點數 | 點數報酬 | 合計（含參與費）— only when fee > 0 |
+|---------|-----------|-------------|---------|-----------------------------------|
+| 不給 | 不給 | 1 點 | 新台幣 100 元 | 新台幣 200 元 |
+| 給 | 不給 | 0 點 | 新台幣 0 元 | 新台幣 100 元 |
+| 不給 | 給 | 3 點 | 新台幣 300 元 | 新台幣 400 元 |
+| 給 | 給 | 2 點 | 新台幣 200 元 | 新台幣 300 元 |
+
+- Fee sentence (only when fee > 0): 「完成全部實驗的參與者，另可獲得參與費新台幣 100 元。」
+- Range: fee 0 → 「因此，您的報酬最少為新台幣 0 元，最多為新台幣 300 元。」; fee 100 → 「因此，您的總報酬最少為新台幣 100 元，最多為新台幣 400 元。」
+- Worked example: 「舉例：若抽中的那一次遊戲中，您選擇不給、搭檔選擇給，您會得到 3 點，報酬為 3 × 100 = 新台幣 300 元。」 (fee 100 appends 「，加上參與費 100 元，合計新台幣 400 元。」)
+- Payment: 「報酬將以電子禮券的形式，於實驗結束後盡快寄送到您在實驗最後填寫的 Email。」 (「實驗結束後盡快」 is `PAYMENT_TIMELINE_TEXT`)
+
+Debrief card (outro step 2):
+
+| Row | Value |
+|-----|-------|
+| 抽中回合 | 第 2 回合 |
+| 點數 | 3 點 |
+| 點數報酬 | 3 點 × 100 = 新台幣 300 元 |
+| 參與費 (only when fee > 0) | 新台幣 100 元 |
+| **合計** | **新台幣 {payoutNtd} 元** |
+
+Footnote: 「報酬將以電子禮券的形式，於實驗結束後盡快寄送到您下一步填寫的 Email。」
+
+Email step (outro step 3): 「謝謝您的參與！請在以下空格填上您的 Email，我們將於實驗結束後盡快，把新台幣 {payoutNtd} 元的電子禮券寄送到這個 Email。」 When the amount is not available, the sentence omits it: 「…把您的報酬以電子禮券寄送到這個 Email。」
+
+#### Payment ledger (GroupDetailView)
+
+- Data source: `fetchSubmissionsByGroup(groupId)` replaces both `fetchRecentSubmissions()` calls (initial load and the 5-second refresh), fixing BUG-007 for the table and the research CSV alike.
+- 「Export Payments」 button next to 「Export CSV」; disabled when the group has no completed, valid submission.
+- One row per submission with `isCompleted && !isInvalid`, columns: `Submission ID, Participant ID, Registration Code (demographics.gender), Email (demographics.education), Realised Round (realisedRoundIndex + 1), Points, Participation Fee (NTD), Point Payout (NTD), Total Payout (NTD) (= payoutNtd), Completed At`.
+- Fee and point payout columns are derived from the persisted values: `Point Payout = realisedPoints × POINT_TO_NTD`, `Participation Fee = payoutNtd − Point Payout`, so the ledger always matches what the participant saw even if the constants change later.
+- UTF-8 with BOM, filename `{group_name}_payments_{YYYYMMDD_HHmmss}.csv`. Rows without a persisted payout keep empty payout cells and trigger a warning toast with their count.
+
+---
+
+### Phase 42 — Figure Legibility (REQ-409)
+
+#### `GraphLegend` (in `SurveyShared.tsx`)
+
+```ts
+type LegendItem = 'you' | 'partner' | 'groups' | 'give' | 'notGive' | 'unrevealed' | 'decision';
+GraphLegend: React.FC<{ items: LegendItem[]; compact?: boolean; className?: string }>
+```
+
+Each row = a small inline-SVG swatch drawn with the same `COLORS` tokens as `NetworkGraph` + a bold label + a description (`text-sm`). `compact` switches to a two-column grid with less padding but the same text size.
+
+| Item | Swatch | Label | Description |
+|------|--------|-------|-------------|
+| you | amber ring (`COLORS.highlight`) | 您 | 您本人 |
+| partner | pink ring (`COLORS.rolePartnerHighlight`) | 搭檔 | 與您配對的參與者 |
+| groups | blue + green dots (`COLORS.kmt`, `COLORS.dpp`) | 國民黨／民進黨 | 頭像顏色代表所屬團體 |
+| give | dark label on an arrow (`COLORS.coop`) | 給予 | 箭頭起點的人把點數給了箭頭終點的人 |
+| notGive | light label on an arrow (`COLORS.defect`) | 不給予 | 箭頭起點的人把點數留給自己 |
+| unrevealed | gray dashed line + blue 「?」 | ？ | 尚未查看的互動紀錄，點擊即可顯示 |
+| decision | dashed line from 您 to 搭檔 | 您的決定 | 您這一回合的決定，會隨滑桿改變 |
+
+Placement: intro 0 → you, partner, groups; intro 2 → you, partner, groups, give, notGive; intro 4 → unrevealed, give, notGive; intro 5 → you, partner, decision; every scenario page → all seven, `compact`, directly under the graph and above the reveal prompt (same position every round).
+
+#### Captions (圖說, `text-sm text-gray-600`, directly under each figure; PI to approve)
+
+| Step | Caption |
+|------|---------|
+| intro 0 | 圖中的四個頭像代表四位參與者，頭像顏色代表所屬團體（藍色為國民黨、綠色為民進黨）。橘色外框、標示「您」的是您本人；粉紅色外框、標示「搭檔」的是與您配對進行遊戲的參與者。 |
+| intro 2 | 每一個箭頭代表一次過去的互動：箭頭從做決定的人指向接收的人。深色標籤「給予」表示這個人把點數給了對方；淺色標籤「不給予」表示這個人把點數留給自己。圖旁的清單以文字列出相同的互動紀錄。 |
+| intro 3 | 灰色虛線加上「?」代表一筆尚未查看的互動紀錄。點擊「?」後，虛線會變成實線，並顯示該次的決定（「給予」或「不給予」）。 |
+| intro 4 | 正式實驗的每一回合，您都需要先點開圖中所有的「?」，看完全部互動紀錄後，才能開始做決定。 |
+| intro 5 | 從「您」指向「搭檔」的動態虛線代表您這一回合的決定。滑桿數值代表您給予點數的機率；線上的標籤只顯示您目前的傾向（大於 50 顯示「給予」、小於 50 顯示「不給予」）。 |
+
+#### Size changes
+
+| Element | File | Before | After |
+|---------|------|--------|-------|
+| "?" marker circle / glow | `NetworkGraph.tsx` | r 9 / pulse 10–14 | r 13 / pulse 15–19 |
+| "?" glyph | `NetworkGraph.tsx` | class `text-[14px] md:text-[12px]` | `fontSize={18}` attribute |
+| "?" hit area | `NetworkGraph.tsx` | the 20px-wide edge path only | + transparent circle r 20 |
+| Graph max width | `NetworkGraph.tsx` | `lg:max-w-[440px]` | `lg:max-w-[520px]` |
+| Scenario grid | `SurveyView.tsx` | `xl:grid-cols-2` | `xl:grid-cols-[3fr_2fr]` |
+| Intro list text / avatars | `SurveyIntro.tsx` | `text-[10px]`–`text-xs` / 18px | `text-sm` (labels, names and 給予/不給予 badges) / 24px |
+| Intro list colors | `SurveyIntro.tsx` | invalid `bg-white-50`, `border-white-200`, `text-white-*` | `bg-white`, `border-gray-200`, `text-gray-*` |
+| Intro list avatar clip paths | `SurveyIntro.tsx` | `mini-avatar-<agent>` reused by every row (duplicate DOM ids) | unique per instance (`useId`) |
+| Tip-1 demo edge | `SurveyIntro.tsx` | `max-w-[240px]` | `max-w-[360px]` |
+| Intro graph containers | `SurveyIntro.tsx` | `h-[340px]`, `h-[350px] md:h-[400px]` | `h-[380px] md:h-[480px]` |
+
+All values are tuned by eye at 1440×900 and 390×844 using the Phase 40 tooling.
+
+---
+
+### Phase 43 — After Shots, Report and Packet Index (NFR-7, REQ-409.4)
+
+1. `npm run build && npm run irb:shots -- --label after`.
+2. `npm run irb:report` → `docs/irb/report/irb-before-after-report.pdf`.
+3. `docs/irb/figures.md` — figure number → screen → caption, for every participant-facing screen in the packet set.
+4. If the fee or timeline is confirmed later (Open Questions #8, #9): change the constant, then repeat steps 1–2 only (the "before" set never changes).
+
+---
+
+---
+
+## Phase 44 — Full-Flow E2E Test with Review Report (NFR-8)
+
+### Overview
+
+`npm run test:e2e` (`vite build && node scripts/e2e/full-flow.mjs`) runs one real study end to end in real Chrome against an in-memory MongoDB and writes a screenshot report for review. It proves the money trail: **debrief amount = `Submission.payoutNtd` = ledger「Total Payout (NTD)」**, and that the amount follows the persisted draw (`totalPayoutNtd(payoffPoints(myDecisions[r], opponentDecisions[r]))`). It is a plain Node script, not a vitest suite — like `scripts/irb-shots/capture.mjs`, it needs a built `dist/`, a spawned `server.js` and a browser.
+
+### Harness
+
+| Concern | How |
+|---|---|
+| Database | `MongoMemoryServer.create()`; the script reads it back through the app's own models (`backend/models/*.js`) on a separate mongoose connection |
+| Server | `spawn(node server.js)` with `PORT=3200` (`E2E_PORT`), `MONGODB_URI`, `ADMIN_PASSWORD`, `JWT_SECRET`, `NODE_ENV=development`, `CLIENT_ORIGIN=BASE_URL`; stdout/stderr → `server.log`; ready when `/api/turnstile/status` answers |
+| Browser | `chromium.launch({ channel: 'chrome' })` (`playwright-core`); 1440×900, `zh-TW` |
+| Tailwind | `index.html` loads the Tailwind CDN runtime; served from the cache shared with the IRB capture (`docs/irb/screenshots/.cache/tailwindcss-cdn.js`) |
+| Turnstile | `https://challenges.cloudflare.com/turnstile/**` is routed to a stub whose `render()` immediately calls `callback('e2e-token')`. The participant clicks「進入測驗」, so the real `/api/turnstile/verify` runs; in development it accepts any token and sets the `turnstile_verified` cookie |
+| Two participants | Participant ID is a FingerprintJS hash, so the second browser context uses a different `timezoneId` and `locale` (both fingerprint inputs). The test asserts the two `participantId`s differ |
+| Slider | Native value setter + `input`/`change` events (same as capture), so React sees a real drag and `hasInteracted` becomes true |
+| Admin sliders | `rc-slider` handles (`[role=slider]`) are set with the keyboard (`Home`), giving maxK = 1, scenarios/participant = 5 (the UI minimum), target = 1 |
+
+### Study
+
+Admin (UI): focal 國民黨 (`KMT1`), partner 民進黨 (`DPP4`), maxK 1, 5 scenarios/participant, target 1 → 9 edges × 2 states = **18 scenarios**.
+
+### Journey and checks
+
+| Step | Actions | Checks |
+|---|---|---|
+| 1 Admin launch | `/login` → password → `/admin/setup/mixed` → sliders, name → Launch Batch Sessions → Yes, Launch | lands on `/admin/view/batch/:groupId`; DB group `totalScenarios` 18; 18 scenarios with `responseCount` 0; Public URL = `${BASE_URL}/survey/welcome?groupId=<id>&mode=mixed` |
+| 2 Participant A | invite URL → 開始實驗 → intro 0–8 (step 3 click the demo edge, step 4 reveal every "?", step 6 answers 1/3/3/2 → 提交, step 7 payment page) → 開始實驗！ → 進入測驗 → 5 scenarios (reveal "?" → 開始決策 → slider → 確認並前往下一題 / 確認並送出) → code → debrief → reload → 繼續 → email → 送出 | payment page shows 新台幣 `MIN_TOTAL_NTD`/`MAX_TOTAL_NTD`; a session with 5 scenarios exists; debrief 合計 Z is unchanged after reload; email step repeats Z; done screen reached |
+| 3 Participant B | second context; intro → 2 of 5 scenarios → stops | its `participantId` ≠ A's; its submission is not completed |
+| 4 Database | — | A: `isCompleted`; 5 answers with the entered probabilities; code/email stored in `demographics.gender/education`; `realisedPoints` = `payoffPoints(...)` of the realised round; `payoutNtd` = `totalPayoutNtd(realisedPoints)` = Z; A's scenarios `responseCount` 1; session `submissionCount` 1 |
+| 5 Ledger | group page → Export Payments → download | filename `*_payments_YYYYMMDD_HHmmss.csv`; UTF-8 BOM; exactly 1 row; code, email, round (1-based), points, fee, total = Z |
+
+### Recording and report
+
+- `check(step, label, expected, actual)` records `{ pass }` instead of throwing, so one wrong value does not hide the rest. A broken journey (timeout, missing element) ends that step with a failure screenshot and its error; the later steps are marked "not run".
+- `shot(page, id, caption)` saves `shots/NN-<id>.png` (full page) after the page settles (`networkidle` + 700 ms for the Tailwind runtime).
+- Output: `test-results/e2e/<YYYYMMDD_HHmmss>/` — `shots/`, `report.html`, `report.pdf` (`page.pdf()` of the same HTML), `payments.csv`, `server.log`. Written in `finally`, whatever happened.
+- `report.html` sections: **Summary** (PASS/FAIL, duration, git sha + dirty, payment settings, study config, ids, Z) · **Money trail** (debrief → DB → ledger, and the recomputation) · **Steps** (screenshots + checks table) · **Ledger** (CSV as a table) · **Known issues** (BUG-008 with the `matched=…` line from `server.log`). English; screenshots stay zh-TW.
+- Exit code 1 if any check failed or a step broke.
+
+### Not covered
+
+Real partner pairing (BUG-008); visual layout (NFR-7); phone viewport.
+
+---
+
+## Phase 45 — Registration Code Survives a Refresh (REQ-403.1, BUG-009)
+
+**Problem.** `SurveyOutro` held the step-1 code only in component state. Outro steps are in the URL so a refresh resumes them (REQ-404), but the code was lost and `handleFinalSubmit` saved `codeValue || 'unknown'`, so the payment ledger could not be matched to the registered participant.
+
+**Change (`components/SurveyOutro.tsx` only).**
+
+| When | What |
+|---|---|
+| Code input changes (step 1) | `localStorage.setItem('survey_code_<entryId>', code)` (sanitised value) |
+| Mount / `entryId` becomes known | if state is empty, restore from `survey_code_<entryId>` |
+| Final submit (step 3), code empty | `onNavigateStep(1)`; no `completeSurvey` call |
+| `completeSurvey` succeeded | `localStorage.removeItem('survey_code_<entryId>')` |
+
+Keyed by the submission id (`entryId`) because that is what `SurveyOutro` receives and it is unique per participant and session. Storage access is wrapped in `try/catch`; without storage the behaviour is the old in-memory one, minus the `unknown` fallback. The payload shape (`demographics.gender` = code) is unchanged, so the ledger and research CSV need no change.
+
+**Tests.** `components/__tests__/SurveyOutro.test.tsx`: the code entered on step 1 is restored on a fresh mount of step 3 and submitted; an empty code on step 3 navigates to step 1 without calling `onComplete`. End to end: NFR-8's debrief reload now passes the registration-code checks.
+
+---
+
+## Phase 46 — E2E Edge Cases (NFR-8.1)
+
+### Approach
+
+The edge cases (requirements.md NFR-8.1, EC-1…EC-13) are added to `scripts/e2e/full-flow.mjs` as further steps of the same run, so they share the server, database and report. A browser **context** is one device: closing a page and opening a new one in the same context is "close the tab and come back" (cookies, `localStorage` and the fingerprint survive). A new context with a different `timezoneId`/`locale` is a different device. Cases that only need the server (another device, filling a group, API misuse) call GraphQL directly with the `turnstile_verified` cookie.
+
+### Step dependencies
+
+`step(id, title, fn, { needs })`: a step runs unless a step it needs did not pass its journey (broke or was not run). A broken step no longer stops unrelated steps. Failed checks never block later steps.
+
+### Steps
+
+| # | Step | Cases | How |
+|---|---|---|---|
+| 1 | Admin launch | EC-13 | as Phase 44, plus Export Payments disabled |
+| 2 | Participant A | EC-1, EC-2 | quiz 0/0/0/0 first → hint, 下一步 disabled → 重新作答 → 1/3/3/2; empty code, invalid email checked before the valid ones |
+| 3 | Participant B quits | — | as Phase 44 |
+| 4 | A's database record | — | as Phase 44 |
+| 5 | Participant C (device C) | EC-3…EC-6 | tab 1 leaves at intro 4 → session count unchanged; tab 2 restarts at welcome, answers 2, moves the slider on 3 and reloads → still scenario 3, 2 answers saved; tab 3 via the invite link → resumes at scenario 3, same ids; answers 3, Back, re-answers 3 → 3 answers, value updated, `responseCount` delta 0; finishes with code E2E003 |
+| 6 | C returns after completing | EC-7 | tab 4 via the invite link → expect 「無法參與實驗」. If the welcome page shows instead, it is recorded as a failure and the participant goes through the intro to 進入測驗 to show what happens; then no new session/submission, payout and code unchanged |
+| 7 | Same person, another device (API) | EC-8 | `startMixedSession` with participant ID `e2e-device-2` → answers → `drawRealisedRound` → `completeSurvey` with A's code |
+| 8 | Ledger | EC-8 | export → A, C, D (observation: A's code appears twice) → admin marks D invalid in the group page (Mark as invalid → Mark Invalid) → export again → A, C only; A's and C's totals equal their persisted payouts |
+| 9 | Full group | EC-9 | second group via GraphQL (max k 1, 18 scenarios/participant, target 1); an API participant answers all 18 and completes → every `responseCount` ≥ 1, group status `completed`; device E opens the invite → expect 「無法參與實驗」, otherwise continue to 進入測驗 and check that no session was created |
+| 10 | Other entry points | EC-10, EC-11 | Firefox user agent → 開始實驗 disabled + notice; `groupId=does-not-exist` → observation of what is shown on arrival and after the intro |
+| 11 | API guards | EC-12 | `saveSurveyAnswer` 1.5; `startMixedSession` without the cookie; `submissionsByGroup` without a token |
+
+### Report
+
+- Checks gain a third kind, **observation** (ℹ), for behaviour no requirement defines; observations never fail the run.
+- A new **Edge cases** table after the summary lists EC-1…EC-13 with the step and its result (pass / fail / observed).
+
+## Phase 47 — Test-case roadmap in the e2e report (NFR-8.2)
+
+### Data
+`ROADMAP` in `scripts/e2e/full-flow.mjs` lists the journey stages in order: `[stage, happyStepId | null, [EC ids]]`.
+
+| Stage | Happy path (step) | Edge cases |
+|---|---|---|
+| Admin sets up the study | `admin` | — |
+| Participant opens the invite link | `participantA` | EC-9, EC-10, EC-11 |
+| Intro, quiz, Turnstile | `participantA` | EC-1, EC-3 |
+| Scenarios | `participantA` | EC-4, EC-5, EC-6 |
+| Outro & debrief | `participantA` | EC-2 |
+| Coming back later | — | EC-7, EC-8 |
+| Payment ledger | `ledger` | EC-13 |
+| Behind the UI (direct API) | — | EC-12 |
+
+A startup guard throws if an `EDGE_CASES` id is missing from `ROADMAP` or placed twice, so the catalogue and the roadmap cannot drift apart.
+
+### Rendering
+- The `Roadmap` section sits directly under the PASS/FAIL banner, before Summary.
+- Vertical rail: numbered dot per stage joined by a line; the dot is green / red / grey from the happy-path step status (grey when there is none).
+- Per stage: the stage name, a happy-path badge, then one chip per edge case — `EC-n` + short title, coloured with the same pass / fail / observed / not-run palette as the tables. The chip's `title` is the expected behaviour; the chip links to `#step-<id>` of the first step that recorded it.
+- A legend and a count line (`n pass · n observed · n fail · n not run`) sit above the rail.
+- Plain HTML and CSS (no script), so it prints the same in `report.pdf`; rows use `break-inside: avoid`.
+
+## Phase 48 — Full group closes, confirmed answers are final, unknown invite link (BUG-010, REQ-309, REQ-402.4, REQ-405.1, REQ-405.2)
+
+### Data model
+- `SessionGroup.status: 'active' | 'completed'` (default `active`). Exposed on the GraphQL `SessionGroup` type as `status: String!` and fetched by `fetchSessionGroup`.
+
+### Server (`backend/graphql/resolvers.js`)
+- `refreshGroupStatus(groupId)`: for a Mixed group, `status = completed` when `Scenario.countDocuments({ groupId, responseCount: { $lt: targetSizePerScenario } }) === 0`, else `active`; writes only when it changes. Called at the end of `completeSurvey` (replaces the count-and-log block) and of `invalidateSubmission` (invalidating can drop a scenario below target and re-open the group).
+- `startMixedSession`: after the existing-session lookup (resume stays allowed), a `completed` group throws `GROUP_FULL: …`.
+- `saveSurveyAnswer`:
+  - completed submission → throw `ANSWER_LOCKED: …`
+  - scenario already answered with the same value → return the submission unchanged (idempotent retry)
+  - scenario already answered with a different value → throw `ANSWER_LOCKED: …`
+  - otherwise append and `$inc responseCount` as before.
+
+### Client
+- `App.tsx` gets `entryGate: 'full' | 'unknown' | null`, rendered in place of the survey routes:
+  - `full` → the existing 「無法參與實驗」 card.
+  - `unknown` → 「找不到此實驗」 + 「此邀請連結無效或實驗已結束，請向研究人員確認連結是否正確。」
+- Mixed arrival without an existing session: the group is fetched (already done for `scenariosPerSession`). `null` → `unknown`; `status === 'completed'` → `full`. A fetch error keeps today's behaviour (no gate).
+- `handleSurveyStart`: a `GROUP_FULL` error from `startMixedSession` (the group filled while the visitor was in the intro) sets `entryGate = 'full'`.
+- Back (REQ-402.4): `SurveyView` already traps Back by pushing a duplicate `'blocked'` history entry, so Back never leaves the page. Its `popstate` handler now also shows the toast 「已確認的答案無法修改。」 (`ANSWER_LOCKED_MSG` in `constants.ts`, toast id `answer-locked`) on `/survey/scenarios/*` and `/survey/outro/*`. Intro steps stay silent.
+- Earlier-scenario URL (REQ-402.4), in the `sessionId` hydrate branch: when the current path is `/survey/scenarios/<i>` and the stored resume path is a later scenario or the outro, navigate (replace) to the stored path with the same toast, instead of the old "path mismatch → ignore stored session" fallback. The Mixed-URL resume branch shows the toast when it redirects from an earlier scenario.
+
+### E2E (`scripts/e2e/full-flow.mjs`)
+- EC-6: Back → stays on scenario 4 (index 3), toast visible, answer + `responseCount` unchanged; API re-answer of that scenario with another value rejected, same value accepted.
+- EC-9: unchanged checks (they were the BUG-010 failures) plus `startMixedSession` via the API returns `GROUP_FULL`.
+- EC-11: on arrival 「找不到此實驗」 shown, 開始實驗 absent, no session for `does-not-exist`.
+- EC-12: the "edit a completed submission" observation becomes a check (rejected).
+

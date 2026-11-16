@@ -1,9 +1,9 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import SurveyIntro from '../SurveyIntro';
-import { GraphLegend } from '../SurveyShared';
+import { GraphLegend, FigureCaption } from '../SurveyShared';
 import { Session } from '../../types';
 import { MAX_TOTAL_NTD, MIN_TOTAL_NTD, PAYMENT_METHOD_TEXT } from '../../utils/payment.js';
 
@@ -61,5 +61,27 @@ describe('GraphLegend', () => {
     expect(screen.getByText('給予')).toBeInTheDocument();
     expect(screen.getByText('尚未查看')).toBeInTheDocument();
     expect(screen.queryByText('搭檔')).toBeNull();
+  });
+
+  it('is closed until the header is tapped (REQ-409.5)', () => {
+    render(<GraphLegend items={['give']} />);
+    const details = screen.getByText('圖例').closest('details')!;
+
+    expect(details).not.toHaveAttribute('open');
+    expect(screen.getByText('給予')).not.toBeVisible();
+    fireEvent.click(screen.getByText('圖例'));
+    expect(details).toHaveAttribute('open');
+  });
+});
+
+describe('FigureCaption', () => {
+  it('is closed until the header is tapped (REQ-409.5)', () => {
+    render(<FigureCaption>說明文字</FigureCaption>);
+    const details = screen.getByText('圖說').closest('details')!;
+
+    expect(details).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByText('圖說'));
+    expect(details).toHaveAttribute('open');
+    expect(screen.getByText('說明文字')).toBeVisible();
   });
 });

@@ -47,9 +47,18 @@ const DEVICES = {
   C: { timezoneId: 'Europe/Berlin', locale: 'de-DE' },
   E: { timezoneId: 'Australia/Sydney', locale: 'en-AU' },
   X: { timezoneId: 'Asia/Singapore', locale: 'en-SG' },
-  firefox: { timezoneId: 'Asia/Taipei', locale: 'zh-TW', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:128.0) Gecko/20100101 Firefox/128.0' },
+  // Own timezone: on a phone the fingerprint ignores the user agent, so sharing A's would make it "A again"
+  firefox: { timezoneId: 'Asia/Tokyo', locale: 'zh-TW', userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:128.0) Gecko/20100101 Firefox/128.0' },
 };
 const FULL_MSG = '無法參與實驗';
+
+// Phone run (NFR-8.3): E2E_DEVICE=mobile puts every participant on an emulated phone
+const MOBILE = process.env.E2E_DEVICE === 'mobile';
+const PHONE = {
+  viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true,
+  userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36',
+};
+if (MOBILE) DEVICES.firefox.userAgent = 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0';
 
 // The edge-case catalogue (requirements.md NFR-8.1)
 const EDGE_CASES = [
@@ -89,7 +98,7 @@ const stamp = (d = new Date()) => {
   const p = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
 };
-const OUT_DIR = path.join(ROOT, 'test-results/e2e', stamp());
+const OUT_DIR = process.env.E2E_OUT ? path.resolve(process.env.E2E_OUT) : path.join(ROOT, 'test-results/e2e', `${stamp()}${MOBILE ? '-mobile' : ''}`);
 const SHOTS_DIR = path.join(OUT_DIR, 'shots');
 
 // ── Recording ────────────────────────────────────────────────────────────────
@@ -116,7 +125,7 @@ function observe(label, actual) {
 async function shot(page, id, caption) {
   const file = `shots/${String(++shotCounter).padStart(2, '0')}-${id}.png`;
   await page.screenshot({ path: path.join(OUT_DIR, file), fullPage: true, animations: 'disabled', caret: 'hide' });
-  current.shots.push({ file, caption });
+  current.shots.push({ file, caption, phone: (page.viewportSize()?.width ?? 1440) < 600 });
 }
 
 const journeyOk = (id) => ['pass', 'fail'].includes(steps.find((s) => s.id === id)?.status);
@@ -159,8 +168,9 @@ async function loadTailwindRuntime() {
 
 let browser;
 let tailwind;
-async function newContext(device = DEVICES.A) {
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, ...device });
+async function newContext(device = DEVICES.A, { desktop = false } = {}) {
+  const phone = MOBILE && !desktop ? PHONE : {};
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, ...phone, ...device });
   await context.route(TAILWIND_CDN, (route) => route.fulfill({ contentType: 'application/javascript', body: tailwind }));
   await context.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }));
   return context;
@@ -197,7 +207,8 @@ const button = (page, name) => page.getByRole('button', { name }).first();
 
 // The graph legend also draws a sample "?" that never goes away, so stop once a click reveals nothing
 async function revealAll(page) {
-  const markers = page.locator('svg text').filter({ hasText: /^\?$/ });
+  // Skip the legend's sample "?" — it sits in a <details> that is closed by default (REQ-409.5)
+  const markers = page.locator('svg:not(details svg) text').filter({ hasText: /^\?$/ });
   for (let left = await markers.count(), guard = 0; left > 0 && guard < 30; guard++) {
     await markers.first().click({ force: true });
     await page.waitForTimeout(200);
@@ -248,6 +259,18 @@ async function intro(page, { record = false, stopAt = null, wrongQuizFirst = fal
       for (const [n, answer] of ['1', '3', '3', '2'].entries()) await inputs.nth(n).fill(answer);
       await click(button(page, '提交'));
       await page.getByText('正確。您已經準備好可以繼續了。').waitFor();
+    }
+    if (i === 4 && record) {
+      // REQ-409.5: legend and caption closed until tapped
+      const legend = page.locator('details', { has: page.getByText('圖例', { exact: true }) }).first();
+      const caption = page.locator('details', { has: page.getByText('圖說', { exact: true }) }).first();
+      check('圖例 closed by default (REQ-409.5)', false, await legend.evaluate((d) => d.open));
+      check('圖說 closed by default (REQ-409.5)', false, await caption.evaluate((d) => d.open));
+      await shot(page, 'intro-4-closed', 'Intro step 4 — 圖說 and 圖例 closed (點擊展開)');
+      await legend.locator('summary').click();
+      await caption.locator('summary').click();
+      check('Tapping opens 圖例 and 圖說', 'true / true', `${await legend.evaluate((d) => d.open)} / ${await caption.evaluate((d) => d.open)}`);
+      await page.waitForTimeout(300);
     }
     if (i === 7 && record) {
       const text = await bodyText(page);
@@ -417,7 +440,7 @@ async function waitForServer(url, timeoutMs = 30_000) {
 
 // ── Journey ──────────────────────────────────────────────────────────────────
 async function journey() {
-  const admin = await newContext();
+  const admin = await newContext(DEVICES.A, { desktop: true });
   const adminPage = await admin.newPage();
 
   await step('admin', '1. Admin launches the study', async () => {
@@ -636,6 +659,7 @@ async function journey() {
     check('Back keeps C on the next unanswered scenario (scenario 4)', '/survey/scenarios/3', pathOf(tab3));
     check('Toast 「已確認的答案無法修改」 shown', true, toastShown);
     await shot(tab3, 'c-after-back', 'C pressed Back after confirming scenario 3: stays on scenario 4, toast 「已確認的答案無法修改。」 (EC-6)');
+    await tab3.getByText('已確認的答案無法修改').waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {}); // on a phone it covers the graph
     await settle(tab3);
     const before = (await subC())?.results?.find((x) => x.scenarioId === reansweredId)?.cooperationProbability;
     const changed = await gqlRaw('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v) { _id } }',
@@ -848,13 +872,14 @@ async function writeReport() {
       <div class="chips">${chips || '<span class="muted">no edge cases at this stage</span>'}</div></div></div>`;
   }).join('');
 
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>E2E full-flow report</title><style>
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>E2E full-flow report${MOBILE ? ' — phone' : ''}</title><style>
   body{font:14px/1.5 -apple-system,"PingFang TC","Noto Sans TC",sans-serif;margin:0 auto;max-width:1100px;padding:24px;color:#111;background:#fff}
   h1{margin:0 0 4px} h2{margin-top:36px;border-bottom:2px solid #eee;padding-bottom:4px} h3{margin:24px 0 8px}
   table{border-collapse:collapse;width:100%;margin:8px 0} td,th{border:1px solid #ddd;padding:5px 8px;text-align:left;vertical-align:top} th{background:#f6f6f6}
   .banner{padding:14px 18px;border-radius:8px;font-size:20px;font-weight:700;color:#fff;margin:12px 0} .pass{background:#15803d} .failb{background:#b91c1c}
   .ok{color:#15803d;font-weight:700} .bad{color:#b91c1c;font-weight:700} .muted{color:#888} .info{color:#1d4ed8;font-weight:700}
   figure{margin:12px 0 20px;break-inside:avoid} figure img{width:100%;border:1px solid #ccc;border-radius:6px} figcaption{color:#444;font-size:13px;margin-top:4px}
+  figure.phone{display:inline-block;vertical-align:top;width:300px;margin-right:14px} figure.phone img{width:300px}
   pre{background:#f6f6f6;padding:8px;overflow-x:auto;white-space:pre-wrap;font-size:12px} code{font-size:12px}
   .step{break-before:page} .ledger td,.ledger th{font-size:11px;word-break:break-all}
   .roadmap{position:relative;margin:12px 0} .roadmap:before{content:"";position:absolute;left:15px;top:16px;bottom:16px;width:2px;background:#ddd}
@@ -868,7 +893,8 @@ async function writeReport() {
   .chip.r-observed{background:#eff6ff;border-color:#93c5fd} .chip.r-observed i{color:#1d4ed8}
   .chip.r-not-run{background:#f6f6f6;border-color:#ddd} .chip.r-not-run i{color:#888}
   </style></head><body>
-  <h1>E2E full-flow report</h1>
+  <h1>E2E full-flow report${MOBILE ? ' — phone (390×844)' : ''}</h1>
+  ${MOBILE ? '<div class="muted">Participants on an emulated phone: 390×844, touch, Android Chrome. The admin console stays on desktop (NFR-8.3).</div>' : ''}
   <div class="muted">Admin launch → invite link → participant survey → debrief → payment ledger, plus edge cases (NFR-8, NFR-8.1)</div>
   <div class="banner ${passed ? 'pass' : 'failb'}">${passed ? 'PASS' : 'FAIL'} — ${realChecks.filter((c) => c.pass).length}/${realChecks.length} checks passed · ${observations.length} observations</div>
 
@@ -909,7 +935,7 @@ async function writeReport() {
   ${steps.map((s) => `<section class="step" id="step-${esc(s.id)}"><h3>${badge[s.status]} ${esc(s.title)}</h3>
     ${s.error ? `<pre class="${s.status === 'broken' ? 'bad' : 'muted'}">${esc(s.error)}</pre>` : ''}
     ${s.checks.length ? `<table><tr><th>Case</th><th>Check</th><th>Expected</th><th>Actual</th><th></th></tr>${s.checks.map((c) => `<tr><td>${esc(c.ec ?? '')}</td><td>${esc(c.label)}</td><td>${c.kind === 'note' ? '<span class="muted">(observation)</span>' : esc(fmt(c.expected))}</td><td>${esc(c.kind === 'note' ? c.actual : fmt(c.actual))}</td><td>${mark(c)}</td></tr>`).join('')}</table>` : ''}
-    ${s.shots.map((sh) => `<figure><img src="${esc(sh.file)}" alt="${esc(sh.caption)}"><figcaption>${esc(sh.file.replace('shots/', ''))} — ${esc(sh.caption)}</figcaption></figure>`).join('')}
+    ${s.shots.map((sh) => `<figure${sh.phone ? ' class="phone"' : ''}><img src="${esc(sh.file)}" alt="${esc(sh.caption)}"><figcaption>${esc(sh.file.replace('shots/', ''))} — ${esc(sh.caption)}</figcaption></figure>`).join('')}
   </section>`).join('')}
 
   <h2 class="step">Payment ledger (final export)</h2>
@@ -923,6 +949,16 @@ async function writeReport() {
 
   const reportPath = path.join(OUT_DIR, 'report.html');
   await fs.writeFile(reportPath, html);
+  // Data for the combined PC + phone report (scripts/e2e/run-both.mjs, NFR-8.3)
+  await fs.writeFile(path.join(OUT_DIR, 'results.json'), JSON.stringify({
+    device: MOBILE ? 'phone' : 'pc', passed, startedAt: run.startedAt, durationS: Math.round((Date.now() - run.startedAt) / 1000),
+    steps: steps.map(({ id, title, status, error, checks, shots }) => ({ id, title, status, error, checks, shots })),
+    edgeCases: EDGE_CASES.map(([id, title, expected]) => ({ id, title, expected, ...edgeCaseResult(id) })),
+    roadmap: ROADMAP, trail, debriefZ: z, draw: run.draw ?? null, recomputedPoints: run.recomputedPoints ?? null,
+    groupId: run.groupId, submissionIdA: run.submissionIdA,
+    ledger: run.ledger ? { file: run.ledger.file, header: run.ledger.header, rows: run.ledger.rows } : null,
+    pairingLine: pairingLine.trim(),
+  }, null, 1));
   if (browser) {
     const page = await browser.newPage();
     await page.goto(pathToFileURL(reportPath).href, { waitUntil: 'load' });

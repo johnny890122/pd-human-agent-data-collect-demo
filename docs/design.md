@@ -3442,3 +3442,37 @@ Nothing opens the manual layout once the history page is gone, so it is deleted 
 
 ### Tests
 - `components/__tests__/AdminView.test.tsx` rewritten (the old one targeted a「History」tab that no longer existed and was failing 3/3): nav items, Batch-only setup, `/admin/setup/manual` redirect.
+
+## Phase 49 — Phone run of the e2e test (NFR-8.3)
+
+- `E2E_DEVICE=mobile` (npm script `test:e2e:mobile`) switches `scripts/e2e/full-flow.mjs` to the phone profile. Unset = desktop, unchanged.
+- Phone profile, applied to every participant context: viewport 390×844, `deviceScaleFactor` 2, `isMobile`, `hasTouch`, user agent Android Chrome (`… Chrome/130.0.0.0 Mobile Safari/537.36`). Each device keeps its own timezone/locale so the fingerprint IDs stay distinct. The EC-10 device uses mobile Firefox (`… Firefox/128.0` on Android), which must still be refused.
+- The admin context (`newContext(DEVICES.A, { desktop: true })`) stays 1440×900: the admin console is a desktop tool.
+- Output folder `test-results/e2e/<timestamp>-mobile/`; the report title and banner say "phone (390×844)"; screenshots are full-page at phone width.
+
+## Phase 50 — One report for PC and phone (NFR-8.3)
+
+- `scripts/e2e/full-flow.mjs` gains `E2E_OUT` (output folder override) and writes `results.json` next to its own report: device, pass/fail, duration, steps (checks + screenshots), edge-case results, roadmap, money trail, ledger, pairing log line.
+- `scripts/e2e/run-both.mjs` (`npm run test:e2e`): runs `full-flow.mjs` for the PC into `<run>/pc/`, then with `E2E_DEVICE=mobile` into `<run>/phone/` (sequential: separate server, database and fingerprints), then writes `<run>/report.html` and `report.pdf` from the two `results.json` files. It exits 1 unless both runs passed.
+- Combined report:
+  - **Banner**: PASS only if both; `PC n/n · Phone n/n`.
+  - **Roadmap**: as Phase 47, but each chip carries a PC and a phone result; the chip colour is the worse of the two (fail > observed > not run > pass); the stage dot uses the worse happy-path status.
+  - **Summary**: one column per device.
+  - **Edge cases / Observations**: a PC and a Phone column / a device column.
+  - **Money trail**: both devices.
+  - **Steps**: one section per step with both status badges; checks paired by label (expected, PC actual ✓✗, phone actual ✓✗); screenshots paired by shot id, PC (wide) left and phone (narrow) right.
+  - **Ledger**: both final exports. **Known issues**: BUG-008.
+- `test:e2e:pc` and `test:e2e:mobile` still run one device and write that device's own report.
+
+## Phase 51 — Legend and captions open on tap (REQ-409.5); admin pages PC-only in the combined report (NFR-8.3)
+
+### Survey (`components/SurveyShared.tsx`)
+- `GraphLegend` and `FigureCaption` each render a native `<details>` (closed) with a `<summary>` header: label (圖例 / 圖說, its own `<span>` so tests can find it), a hint 「點擊展開」 / 「收合」 switched with Tailwind `group-open:`, and a ▸ chevron that rotates when open. The default disclosure marker is hidden (`list-none`, `[&::-webkit-details-marker]:hidden`).
+- No React state: the browser keeps open/closed and handles keyboard and screen readers. Call sites in `SurveyIntro.tsx` / `SurveyView.tsx` are unchanged.
+
+### E2E
+- Participant A, intro step 4: the legend and caption are closed; tapping the legend header opens it (screenshot), tapping again closes it.
+
+### Combined report (`scripts/e2e/run-both.mjs`)
+- A phone-run screenshot taken at desktop width (the admin context) is dropped; a step whose shots have no phone counterpart shows the PC screenshot at full width with no Phone column.
+

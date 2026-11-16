@@ -45,6 +45,9 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 | Phase 46 | ✅ Complete | 2026-11-15 | E2E edge cases: return, attend twice, full group, guards (NFR-8.1) |
 | Phase 47 | ✅ Complete | 2026-11-15 | Test-case roadmap at the top of the e2e report (NFR-8.2) |
 | Phase 48 | ✅ Complete | 2026-11-16 | Full group closes (BUG-010), confirmed answers final (EC-6), unknown invite link (EC-11) |
+| Phase 49 | ✅ Complete | 2026-11-16 | Phone version of the e2e run and report (NFR-8.3) |
+| Phase 50 | ✅ Complete | 2026-11-16 | One combined PC + phone e2e report (NFR-8.3) |
+| Phase 51 | ✅ Complete | 2026-11-16 | 圖例/圖說 open on tap (REQ-409.5); admin pages PC-only in the combined report |
 
 ---
 
@@ -3165,3 +3168,46 @@ saveSession(currentId, submission._id, path);
 - [x] **TASK-5206**: Rewrite `AdminView.test.tsx`; `tsc`; vitest; browser check; `npm run test:e2e` [REQ-207, REQ-208]
 
 **Notes**: `backend/__tests__/new-data-model.test.js` has 3 failures (`createBatchSessions` ×2, session full gate) that also fail on the previous commit `3286f31`; unrelated to this phase.
+
+## Phase 49: Phone Run of the E2E Test (NFR-8.3)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-4901**: Requirements NFR-8.3; design Phase 49
+- [x] **TASK-4902**: `E2E_DEVICE=mobile` profile for participant contexts; admin stays desktop; mobile Firefox for EC-10
+- [x] **TASK-4903**: `-mobile` output folder and report title; `test:e2e:mobile` npm script
+- [x] **TASK-4904**: Run it and fix anything that only fails on the phone
+
+
+**Implementation notes (2026-11-16)**:
+- **Result**: phone run PASS 91/91 checks, 3 observations, 42 screenshots (`test-results/e2e/20261116_214702-mobile/`); desktop re-run PASS.
+- **Two phone-only test fixes**: (1) the EC-6 toast covers the graph on a phone for 2 s, so the next tap hit the toast — the test now waits for it to fade (a real participant just taps again); (2) the EC-10 Firefox device shared A's timezone and locale, and on a phone that gives the same fingerprint as A, so it was treated as "A again" — it now has its own timezone. No app change was needed.
+
+## Phase 50: One Report for PC and Phone (NFR-8.3)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-5001**: Requirements NFR-8.3 (combined report); design Phase 50
+- [x] **TASK-5002**: `full-flow.mjs`: `E2E_OUT` override + `results.json`
+- [x] **TASK-5003**: `run-both.mjs`: run PC then phone, combined `report.html` + `report.pdf`, exit code
+- [x] **TASK-5004**: npm scripts `test:e2e` (both), `test:e2e:pc`, `test:e2e:mobile`; run and review
+
+
+**Implementation notes (2026-11-16)**:
+- **Result**: `npm run test:e2e` PASS — PC 91/91, phone 91/91, 13/13 edge cases pass on both, ~3 min in total. One combined report: `test-results/e2e/20261116_215351/report.pdf` (39 pages); each device's own report stays in `pc/` and `phone/`.
+
+## Phase 51: Legend and Captions Open on Tap (REQ-409.5); Admin Pages PC-Only in the Report
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-5101**: Requirements REQ-409.5 (+ IRB note), NFR-8.3 wording; design Phase 51
+- [x] **TASK-5102**: `GraphLegend` / `FigureCaption` as `<details>` closed by default [REQ-409.5]
+- [x] **TASK-5103**: Unit test: closed by default, opens on click [REQ-409.5]
+- [x] **TASK-5104**: E2E check on intro step 4 [REQ-409.5]
+- [x] **TASK-5105**: Combined report: drop desktop-width shots from the phone run; PC full width when unpaired [NFR-8.3]
+
+
+**Implementation notes (2026-11-16)**:
+- **Result**: `npm run test:e2e` PASS — PC 94/94, phone 94/94 (`test-results/e2e/20261116_220348/report.pdf`). On a phone the scenario screen now fits the graph, the closed 圖例 and the slider in one screen.
+- **E2E fix**: `revealAll` now ignores the legend's sample "?" (`svg:not(details svg) text`); inside the closed `<details>` it is hidden and can no longer be clicked.
+- **Not re-run**: the IRB screenshot set (`npm run irb:shots`) still shows the legend/captions open; re-capture if the IRB packet must show the new closed state.

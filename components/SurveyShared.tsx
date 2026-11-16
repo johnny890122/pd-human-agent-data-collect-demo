@@ -142,14 +142,25 @@ const LegendSwatch = ({ item }: { item: LegendItem }) => {
   );
 };
 
+/** Header of a tap-to-open block (REQ-409.5): label, open/close hint, chevron. Lives inside <details className="group">. */
+const DisclosureSummary: React.FC<{ label: string; labelClassName: string }> = ({ label, labelClassName }) => (
+  <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+    <span className="text-gray-400 text-xs transition-transform group-open:rotate-90">▸</span>
+    <span className={labelClassName}>{label}</span>
+    <span className="text-xs text-gray-400 group-open:hidden">點擊展開</span>
+    <span className="text-xs text-gray-400 hidden group-open:inline">收合</span>
+  </summary>
+);
+
+// REQ-409.1 + REQ-409.5: legend, closed until tapped
 export const GraphLegend: React.FC<{ items: LegendItem[]; compact?: boolean; className?: string }> = ({
   items,
   compact = false,
   className = '',
 }) => (
-  <div className={`rounded-xl border border-gray-200 bg-white text-left ${compact ? 'p-3' : 'p-4'} ${className}`}>
-    <p className="text-sm font-bold text-gray-700 mb-2">圖例</p>
-    <dl className={`grid gap-x-6 ${compact ? 'gap-y-2 sm:grid-cols-2' : 'gap-y-3 md:grid-cols-2'}`}>
+  <details className={`group rounded-xl border border-gray-200 bg-white text-left ${compact ? 'p-3' : 'p-4'} ${className}`}>
+    <DisclosureSummary label="圖例" labelClassName="text-sm font-bold text-gray-700" />
+    <dl className={`mt-2 grid gap-x-6 ${compact ? 'gap-y-2 sm:grid-cols-2' : 'gap-y-3 md:grid-cols-2'}`}>
       {items.map(item => (
         <div key={item} className="flex items-center gap-3">
           <LegendSwatch item={item} />
@@ -160,14 +171,15 @@ export const GraphLegend: React.FC<{ items: LegendItem[]; compact?: boolean; cla
         </div>
       ))}
     </dl>
-  </div>
+  </details>
 );
 
+// REQ-409.2 + REQ-409.5: caption, closed until tapped
 export const FigureCaption: React.FC<{ children: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <p className={`text-sm text-gray-700 leading-relaxed text-left bg-gray-50 border-l-4 border-indigo-300 rounded-r-lg px-4 py-3 ${className}`}>
-    <span className="font-bold text-indigo-700 mr-1">圖說</span>
-    {children}
-  </p>
+  <details className={`group text-sm text-gray-700 leading-relaxed text-left bg-gray-50 border-l-4 border-indigo-300 rounded-r-lg px-4 py-3 ${className}`}>
+    <DisclosureSummary label="圖說" labelClassName="font-bold text-indigo-700" />
+    <p className="mt-1">{children}</p>
+  </details>
 );
 
 export const DecisionSlider: React.FC<{

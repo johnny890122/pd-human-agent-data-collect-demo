@@ -16,7 +16,9 @@
     "test": "vitest",
     "test:run": "vitest run",
     "smoke:e2e": "node scripts/smoke-e2e.mjs",
-    "test:e2e": "vite build && node scripts/e2e/full-flow.mjs",
+    "test:e2e": "vite build && node scripts/e2e/run-both.mjs",
+    "test:e2e:pc": "vite build && node scripts/e2e/full-flow.mjs",
+    "test:e2e:mobile": "vite build && E2E_DEVICE=mobile node scripts/e2e/full-flow.mjs",
     "irb:shots": "vite build && node scripts/irb-shots/capture.mjs",
     "irb:report": "node scripts/irb-shots/build-report.mjs"
   },

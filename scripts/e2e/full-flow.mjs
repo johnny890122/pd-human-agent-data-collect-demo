@@ -397,6 +397,15 @@ async function exportPayments(page, saveAs) {
   return { file: download.suggestedFilename(), raw, header, rows, byId };
 }
 
+/** Σ Total Payout of an exported ledger vs the「Actual Payout」card on the open group page (REQ-408.9). */
+async function checkPayoutCard(page, ledger, label) {
+  const idx = ledger.header.indexOf('Total Payout (NTD)');
+  const sum = ledger.rows.reduce((t, r) => t + Number(r[idx] || 0), 0);
+  const card = page.locator('div', { has: page.getByText('Actual Payout', { exact: true }) }).last();
+  const shown = Number((await card.locator('span').nth(1).innerText()).replace(/[^\d]/g, ''));
+  check(`Actual Payout card = ledger total ${label} (REQ-408.9)`, sum, shown);
+}
+
 async function waitForServer(url, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -692,6 +701,7 @@ async function journey() {
     check('A: Participation Fee (NTD)', String(PARTICIPATION_FEE_NTD), a['Participation Fee (NTD)']);
     check('A: Total Payout = debrief amount', run.debriefZ, run.ledgerTotal);
     if (run.submissionIdC) check('C: Total Payout = amount C saw', run.debriefC, Number(first.byId[run.submissionIdC]?.['Total Payout (NTD)']));
+    await checkPayoutCard(adminPage, first, 'before invalidation');
 
     if (run.d) {
       ec('EC-8');
@@ -710,6 +720,7 @@ async function journey() {
       const second = await exportPayments(adminPage, 'payments.csv');
       check('After invalidation the duplicate is gone from the ledger', false, Boolean(second.byId[run.d.submissionId]));
       check('A is still listed with the same total', run.debriefZ, Number(second.byId[run.submissionIdA]?.['Total Payout (NTD)']));
+      await checkPayoutCard(adminPage, second, 'after invalidation, no reload');
       run.ledger = second;
     } else {
       run.ledger = first;

@@ -10,6 +10,7 @@ import { createManualSession, createMixedGroup } from '../utils/graphqlClient';
 import { getNodeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import MixedModeConfig from './MixedModeConfig';
 import { combinationCount } from '../utils/combinations';
+import { MIN_TOTAL_NTD, MAX_TOTAL_NTD } from '../utils/payment.js';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 
@@ -77,10 +78,15 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
       total += combinations * scenariosPerCombo;
     }
     const estimated = Math.ceil((total * targetSizePerScenario) / scenariosPerSession);
-    return { totalScenarios: total, estimatedParticipants: estimated };
+    return {
+      totalScenarios: total,
+      estimatedParticipants: estimated,
+      minCost: estimated * MIN_TOTAL_NTD,
+      maxCost: estimated * MAX_TOTAL_NTD,
+    };
   };
   
-  const mixedStats = launchMode === 'mixed' ? calculateMixedStats() : { totalScenarios: 0, estimatedParticipants: 0 };
+  const mixedStats = launchMode === 'mixed' ? calculateMixedStats() : { totalScenarios: 0, estimatedParticipants: 0, minCost: 0, maxCost: 0 };
   
 
   const handleFocalGroupChange = (group: string) => {
@@ -440,6 +446,27 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
               </div>
 
               <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm mt-3">
+                <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Est. Cost</span>
+                <span className="text-4xl font-black text-purple-600">≤ NT$ {mixedStats.maxCost.toLocaleString()}</span>
+                <span
+                  className="text-purple-600 mt-1"
+                  dangerouslySetInnerHTML={{
+                    __html: katex.renderToString(`= ${mixedStats.estimatedParticipants} \\times \\text{NT\\$}\\,${MAX_TOTAL_NTD}`, {
+                      throwOnError: false,
+                      displayMode: false,
+                      output: 'html'
+                    })
+                  }}
+                />
+                <span className="text-sm text-purple-700 mt-1">
+                  Range NT$ {mixedStats.minCost.toLocaleString()} – {mixedStats.maxCost.toLocaleString()} (NT$ {MIN_TOTAL_NTD}–{MAX_TOTAL_NTD} per participant)
+                </span>
+                <span className="text-xs text-purple-500 mt-1">
+                  Estimate only: participants still in progress when the group closes, and replacements for invalidated submissions, add to it.
+                </span>
+              </div>
+
+              <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm mt-3">
                 <span className="text-xs text-purple-800 font-semibold tracking-wider mb-2">Configuration</span>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -613,6 +640,7 @@ const SetupPanel: React.FC<SetupPanelProps> = ({
                       <li>Max k: <strong className="text-purple-700">{maxK}</strong></li>
                       <li>Scenarios per participant: <strong className="text-purple-700">{scenariosPerSession}</strong></li>
                       <li>Estimated participants: <strong className="text-purple-700">{mixedStats.estimatedParticipants}</strong></li>
+                      <li>Estimated cost: <strong className="text-purple-700">NT$ {mixedStats.minCost.toLocaleString()} – {mixedStats.maxCost.toLocaleString()}</strong></li>
                     </ul>
                     <div className="flex gap-3 justify-end">
                       <button

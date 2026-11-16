@@ -3122,3 +3122,23 @@ saveSession(currentId, submission._id, path);
 - **Back was already trapped**: `SurveyView` pushes a duplicate `'blocked'` history entry, so Back never left the page; the gap was only the missing explanation. The toast was added there; the `App.tsx` guard covers opening an earlier scenario's URL.
 - **E2E flake fixed**: `setSlider` now steps through a neighbouring value first — when the random start (REQ-402.1) equalled the target value, React saw no change and the confirm button stayed locked (1 in 101 per scenario).
 
+## Phase 49: Mixed Mode Cost Estimate (REQ-314)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-4901**: Requirements: REQ-314 + change log
+- [x] **TASK-4902**: Design: Phase 49
+- [x] **TASK-4903**: `SetupPanel.tsx`: `minCost`/`maxCost` in `mixedStats` from `MIN_TOTAL_NTD`/`MAX_TOTAL_NTD` [REQ-314]
+- [x] **TASK-4904**: 「Est. Cost」card in the Mixed Setting Preview + cost line in the confirm modal [REQ-314]
+- [x] **TASK-4905**: `tsc` + check the card on `/admin/setup/mixed` [REQ-314]
+
+
+## Phase 50: Actual Payout on the Group Page (REQ-408.9)
+
+**Status**: ✅ Complete (2026-11-16)
+
+- [x] **TASK-5001**: Requirements: REQ-408.9 + change log
+- [x] **TASK-5002**: Design: Phase 50
+- [x] **TASK-5003**: `GroupDetailView.tsx`: share the ledger's `payable` filter, compute total / avg / missing / budget [REQ-408.9]
+- [x] **TASK-5004**:「Actual Payout」card in the Statistics Cards grid [REQ-408.9]
+- [x] **TASK-5005**: `tsc` + check the card against the Export Payments CSV on a group with completed submissions [REQ-408.9]

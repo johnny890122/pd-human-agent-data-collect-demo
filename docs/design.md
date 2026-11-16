@@ -3373,3 +3373,35 @@ A startup guard throws if an `EDGE_CASES` id is missing from `ROADMAP` or placed
 - EC-11: on arrival 「找不到此實驗」 shown, 開始實驗 absent, no session for `does-not-exist`.
 - EC-12: the "edit a completed submission" observation becomes a check (rejected).
 
+## Phase 49 — Mixed Mode Cost Estimate (REQ-314)
+
+### Calculation (client only, no API change)
+- `estimatedParticipants = ceil(totalScenarios × targetSizePerScenario / scenariosPerSession)` (existing `calculateMixedStats` in `SetupPanel.tsx`).
+- `minCost = estimatedParticipants × MIN_TOTAL_NTD`, `maxCost = estimatedParticipants × MAX_TOTAL_NTD`, both imported from `utils/payment.js` (today 0 and 300: 0–3 points × NT$100 + fee 0).
+- Added to the `mixedStats` object, so it recomputes on every render like the other stats.
+
+### UI (`components/SetupPanel.tsx`, Mixed Setting Preview)
+- New full-width「Est. Cost」card below the Total Scenarios / Est. Participants grid, same purple card style:
+  - headline `≤ NT$ {maxCost}` (`toLocaleString()`)
+  - KaTeX formula `= ~{participants} × NT$ {MAX_TOTAL_NTD}`
+  - line「Range NT$ {minCost} – {maxCost} (NT$ {MIN_TOTAL_NTD}–{MAX_TOTAL_NTD} per participant)」
+  - small note: estimate only; in-progress participants at closing and replacements for invalidated submissions add to it.
+- 「Confirm Batch Sessions」modal: extra `<li>` 「Estimated cost: NT$ {minCost} – {maxCost}」.
+
+
+## Phase 50 — Actual Payout on the Group Page (REQ-408.9)
+
+### Calculation (client only, no API change)
+- `GroupDetailView` already loads every submission of the group with `payoutNtd` (`submissionsByGroup`, REQ-408.7) and filters `payable = completed && !isInvalid` for the ledger. The card reuses that `payable` list:
+  - `paid = payable.filter(s => s.payoutNtd != null)`
+  - `actualPayout = Σ paid.payoutNtd`, `avg = actualPayout / paid.length`
+  - `missingPayout = payable.length − paid.length`
+- Mixed only: `budget = estimatedParticipants × MAX_TOTAL_NTD` (same `estimatedParticipants` as the existing Est. Participants card).
+- `submissions` state is updated in place on invalidate/restore, so the card recomputes on the next render.
+
+### UI (`components/GroupDetailView.tsx`, Statistics Cards grid)
+- Third card「Actual Payout」, shown for every mode, same purple card style:
+  - headline `NT$ {actualPayout}` (`toLocaleString()`)
+  - `{paid} participants · avg NT$ {avg}`
+  - Mixed: `of budget ≤ NT$ {budget}`
+  - amber `{missingPayout} 筆無報酬紀錄` when > 0.

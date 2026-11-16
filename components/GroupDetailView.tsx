@@ -5,7 +5,7 @@ import { Session } from '../types';
 import { toast } from 'react-hot-toast';
 import { AGENTS, ALL_EDGES } from '../constants';
 import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
-import { pointPayoutNtd } from '../utils/payment.js';
+import { pointPayoutNtd, MAX_TOTAL_NTD } from '../utils/payment.js';
 import ConfirmationModal from './ConfirmationModal';
 
 // CSV helpers shared by the research export and the payment ledger
@@ -523,7 +523,15 @@ const GroupDetailView: React.FC = () => {
   // Filter submissions to only those belonging to this group's sessions
   const sessionIds = new Set(sessions.map(s => s._id));
   const groupSubmissions = submissions.filter(s => sessionIds.has(s.sessionId));
-  const payableCount = groupSubmissions.filter(s => s.isCompleted && !s.isInvalid).length;
+  // Same rows as the Export Payments ledger (REQ-408.7), so the card total equals the CSV total.
+  const payable = groupSubmissions.filter(s => s.isCompleted && !s.isInvalid);
+  const payableCount = payable.length;
+  const paid = payable.filter(s => s.payoutNtd != null);
+  const actualPayout = paid.reduce((sum, s) => sum + s.payoutNtd!, 0);
+  const missingPayoutCount = payableCount - paid.length;
+  const estimatedParticipants = isMixedMode
+    ? Math.ceil((group.totalScenarios * (group.config.targetSizePerScenario || 1)) / (group.config.scenariosPerSession || 1))
+    : 0;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -557,7 +565,7 @@ const GroupDetailView: React.FC = () => {
                 <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
                   <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Est. Participants</span>
                   <span className="text-4xl font-black text-purple-600">
-                    ~{Math.ceil((group.totalScenarios * (group.config.targetSizePerScenario || 1)) / (group.config.scenariosPerSession || 1))}
+                    ~{estimatedParticipants}
                   </span>
                 </div>
                 <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
@@ -580,6 +588,21 @@ const GroupDetailView: React.FC = () => {
                 </div>
               </>
             )}
+            <div className="flex flex-col bg-white/70 px-4 py-3 rounded-xl border border-purple-200/80 shadow-sm justify-center">
+              <span className="text-xs text-purple-800 font-semibold tracking-wider mb-1">Actual Payout</span>
+              <span className="text-4xl font-black text-purple-600">NT$ {actualPayout.toLocaleString()}</span>
+              <span className="text-xs text-purple-700 mt-1">
+                {paid.length} participants · avg NT$ {paid.length ? Math.round(actualPayout / paid.length).toLocaleString() : 0}
+              </span>
+              {isMixedMode && (
+                <span className="text-xs text-purple-500">
+                  of budget ≤ NT$ {(estimatedParticipants * MAX_TOTAL_NTD).toLocaleString()}
+                </span>
+              )}
+              {missingPayoutCount > 0 && (
+                <span className="text-xs font-semibold text-amber-600 mt-1">{missingPayoutCount} 筆無報酬紀錄</span>
+              )}
+            </div>
           </div>
 
           {/* Configuration Card */}

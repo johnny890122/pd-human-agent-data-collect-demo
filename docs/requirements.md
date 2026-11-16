@@ -44,6 +44,8 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-15 | **PROCESS** E2E edge cases EC-1…EC-13 (NFR-8.1); full group never closes (BUG-010) | Leave/refresh/return/Back, attend twice, another device, full group, non-Chrome, unknown link, API misuse. 12 of 13 cases pass or are recorded as observations; EC-9 fails (BUG-010). Open Questions #10–#13 list the observations that need a decision. |
 | 2026-11-15 | **PROCESS** Test-case roadmap at the top of the e2e report (NFR-8.2) | The report opens with the participant journey stage by stage, each stage's happy-path result and its edge cases coloured pass / fail / observed, so the reviewer sees coverage and failures at a glance. |
 | 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
+| 2026-11-16 | **ADMIN CAPABILITY** Mixed Mode cost estimate (REQ-314) | The Mixed setup page shows the estimated total payout (est. participants × per-participant payout range) in the Setting Preview and the launch confirmation, so the admin can budget before launching. Uses the payment constants from `utils/payment.js` (REQ-408.1). |
+| 2026-11-16 | **ADMIN CAPABILITY** Actual payout on the group page (REQ-408.9) | The group detail page (`/admin/view/batch/:groupId`) shows the total actually owed to participants so far — the sum of persisted `payoutNtd` over the same rows as the payment ledger — next to the Mixed Mode budget ceiling (REQ-314). |
 
 ---
 
@@ -183,6 +185,14 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - GraphQL `GroupConfigInput` type declares these fields as non-nullable (`Int!`) so callers get a schema-level error before the resolver even runs
     - TypeScript `SessionGroup.config` interface declares `maxK`, `scenariosPerSession`, `targetSizePerScenario` as `number` (not `number | null`)
   - *Breaking change note:* Any existing `SessionGroup` document of Batch Mode (`config.edgeCount` is set, `config.maxK` is null) will fail Mongoose validation under strict `required: true` unless the constraint is scoped only to Mixed Mode documents. See Open Question #7.
+
+- **REQ-314 — Mixed Mode Cost Estimate.** 📋 **NEW 2026-11-16** On `/admin/setup/mixed`, the admin MUST see the estimated total participant payout for the current configuration, updated live as `maxK`, `scenariosPerSession` and `targetSizePerScenario` change.
+  - *Rationale:* Each participant is paid for one randomly drawn round (REQ-408), so the total cost scales with the number of participants. The admin needs the budget before launching a group.
+  - *Acceptance:*
+    - The Setting Preview shows an「Est. Cost」card: the budget ceiling `Est. Participants × MAX_TOTAL_NTD` as the headline (NT$, thousands separators), the range `Est. Participants × MIN_TOTAL_NTD` – ceiling, and the per-participant range `MIN_TOTAL_NTD`–`MAX_TOTAL_NTD`.
+    - The「Confirm Batch Sessions」modal repeats the estimated cost range.
+    - All amounts come from `utils/payment.js` (REQ-408.1); changing `PARTICIPATION_FEE_NTD` or `POINT_TO_NTD` changes the estimate with no other edit.
+    - The card notes it is an estimate: participants already in progress when the group closes may still finish (REQ-405.1), and invalidated submissions are replaced by new participants (REQ-350), so the real count can exceed the estimate.
 
 - **REQ-310 — Scenario Completion Visualization.** ⏸️ **DEFERRED** Admin UI for Mixed Mode groups MUST display a scenario-level completion heatmap showing which scenarios are under-sampled, at-target, or over-sampled.
   - *Acceptance:* `GroupDetailView` for Mixed Mode groups queries all scenarios via `scenarios(groupId)` and renders a visual matrix (e.g., D3 heatmap) where color intensity represents `responseCount / targetSize`. Clicking a cell shows scenario details (edge configuration, current count).
@@ -490,6 +500,14 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 - **REQ-408.8 — Participant contact data requires admin authentication.** `recentSubmissions` and `submissionsByGroup` return participant email and MUST reject requests without a valid admin JWT (`context.isAdmin`). Participant-facing operations (`session`, `submission(id)`, `startSurvey`, `saveSurveyAnswer`, `drawRealisedRound`, `completeSurvey`) are unchanged.
   - *Acceptance:* An unauthenticated `recentSubmissions` query returns the error `Unauthorized`; the admin UI, which sends `Authorization: Bearer <token>`, keeps working. Admin mutations remain unguarded and are tracked as BUG-006.
+
+- **REQ-408.9 — Actual payout on the group page.** 📋 **NEW 2026-11-16** The group detail page MUST show an「Actual Payout」card with the total NT$ owed so far.
+  - *Acceptance:*
+    - Total = sum of `payoutNtd` over completed, valid submissions of the group — exactly the rows and amounts of the「Export Payments」CSV (REQ-408.7), so the card equals the ledger's「Total Payout (NTD)」column sum.
+    - The card also shows how many participants are paid and the average per participant.
+    - Completed, valid submissions without a persisted payout are not counted and are listed as「N 筆無報酬紀錄」(same case the ledger warns about).
+    - Mixed Mode groups also show the budget ceiling from REQ-314 (`Est. Participants × MAX_TOTAL_NTD`) for comparison.
+    - Invalidating or restoring a submission (REQ-350) updates the total without a reload.
 
 ### REQ-406 — Partner Node Peach-Pink Visual Highlight
 

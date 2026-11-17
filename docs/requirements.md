@@ -45,6 +45,9 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-15 | **PROCESS** Test-case roadmap at the top of the e2e report (NFR-8.2) | The report opens with the participant journey stage by stage, each stage's happy-path result and its edge cases coloured pass / fail / observed, so the reviewer sees coverage and failures at a glance. |
 | 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
 | 2026-11-16 | **PROCESS** One e2e report for PC and phone (NFR-8.3) | The full e2e journey and edge cases run on a PC and on an emulated phone, and one combined report shows both results for every case and the PC and phone screenshots side by side. |
+| 2026-11-17 | **PROCESS** Simulated pilot data check (NFR-9) | `npm run sim:data` fills a local study with simulated participants of known behaviour (personas), exports the research CSV and the payment ledger from the admin page, and checks every value against what was sent, so data problems are found before real participants are recruited. |
+| 2026-11-17 | **BUG FIX** Session kept in the URL after a quick first answer (BUG-014, REQ-404) | Found by the first production e2e run: a refresh after a fast first answer left the participant on 「載入中...」. |
+| 2026-11-17 | **DATA CAPTURE** Response time recorded (REQ-402.5); a failed answer save keeps the participant on the scenario (REQ-402.6, BUG-013); research CSV columns relabelled and email removed (REQ-362) | From the production data review: `responseTime` existed in the schema and the CSV but was never sent, so the column was always empty. A failed `saveSurveyAnswer` used to move the participant on and lose that answer. The research CSV labelled the registration code 「Gender」 and the email 「Education」 and put the email next to the Q1–Q8 opinions; it now has 「Registration Code」, no Age and no Email (the email stays in the payment ledger, joined by Submission ID). |
 | 2026-11-17 | **DATA SAFETY** Questionnaire data-capture review (BUG-011, BUG-012; REQ-402.4, REQ-403.2, REQ-408.8, REQ-416) | A failed final save no longer shows the done page or wipes the answers; it shows an error and keeps everything for a retry (BUG-011). A completed submission cannot be completed again (BUG-012). `completeSurvey` now requires all eight answers. The registration code and email are admin-only like the answers. Unsent answers are kept per tab (sessionStorage), not left on the device. |
 | 2026-11-17 | **NEW FEATURE** Post-survey questionnaire Q1–Q8 (REQ-416) | Eight required single-choice attitude questions on a new outro page between the debrief and the email; saved with the submission, admin-only, exported in the submissions CSV. The outro now has 5 steps. Reviewed: Q2 typo 「曆史」→「歷史」 fixed; every question ends with a full-width 「？」. |
 | 2026-11-16 | **UI CHANGE** 圖例 and 圖說 collapsed by default, open on tap (REQ-409.5) | The graph legend and figure captions took up most of a phone screen; they now open when tapped. Admin pages appear once (PC only) in the combined e2e report. |
@@ -346,15 +349,15 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     11. **Edge Count (k)** — `Scenario.activeEdgeIds.length`
     12. **Edge States (JSON)** — `JSON.stringify(Scenario.edgeStates)` (e.g., `{"KMT1→DPP3":"give","KMT2→DPP4":"not give"}`)
     13. **Cooperation Probability** — `SurveyResult.cooperationProbability` (0.0 to 1.0)
-    14. **Response Time (ms)** — `SurveyResult.responseTime` (optional, may be null)
+    14. **Response Time (ms)** — `SurveyResult.responseTime` (REQ-402.5)
     15. **Answered At** — `SurveyResult.answeredAt` (ISO timestamp)
-    16. **Age** — `Submission.demographics.age` (same value repeated for all rows of one submission)
-    17. **Gender** — `Submission.demographics.gender`
-    18. **Education** — `Submission.demographics.education`
-    19. **Submission Completed** — `Submission.isCompleted` (true/false)
-    20. **Submission Invalid** — `Submission.isInvalid` (true/false)
-    21. **Submission Created At** — `Submission.createdAt` (ISO timestamp)
-    22. **Submission Completed At** — `Submission.completedAt` (ISO timestamp, may be null)
+    16. **Registration Code** — `Submission.demographics.gender` (where the outro stores the code, REQ-408.5; same value repeated for all rows of one submission)
+    17. **Q1 … Q8** — `Submission.questionnaire` answer text (REQ-416)
+    18. **Submission Completed** — `Submission.isCompleted` (true/false)
+    19. **Valid** — `!Submission.isInvalid` (true/false)
+    20. **Submission Created At** — `Submission.createdAt` (ISO timestamp)
+    21. **Submission Completed At** — `Submission.completedAt` (ISO timestamp, may be null)
+  - *2026-11-17:* the former Age (a number parsed from the code), Gender (actually the code) and Education (actually the email) columns are replaced by 「Registration Code」. The email is NOT in the research CSV, so the political opinions (Q1–Q8) are not stored next to an email; the payment ledger (REQ-408.7) has the email, joined by Submission ID.
   - *Acceptance:*
     - Column headers MUST be in English for cross-tool compatibility (R, Python, SQL imports expect ASCII headers).
     - Each row represents **one answer to one scenario** (not one submission). A submission with 20 scenarios generates 20 rows.
@@ -453,6 +456,13 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - `saveSurveyAnswer` rejects a *different* value for a scenario the submission has already answered (`ANSWER_LOCKED`). Re-sending the *same* value succeeds without changes, so a network retry is harmless.
     - *2026-11-17 (BUG-012):* a completed submission is final too. `completeSurvey` on a submission that is already completed is rejected (`ALREADY_COMPLETED`) and changes nothing: not the code, email or questionnaire answers, not `completedAt`, and the session's `submissionCount` is not counted twice. The check is part of the database update itself, so two simultaneous calls cannot both succeed.
     - `saveSurveyAnswer` rejects any change to a completed submission (`ANSWER_LOCKED`).
+
+- **REQ-402.5 — Response time is recorded.** 📋 **NEW 2026-11-17** Every saved answer MUST carry `responseTime`: the milliseconds from the moment the scenario page is shown to the click on 確認並前往下一題 / 確認並送出 (edge reveals and the slider included).
+  - `saveSurveyAnswer` requires `responseTime` (a non-negative integer); anything else is rejected and nothing is saved. A same-value retry (REQ-402.4) keeps the first recorded time.
+  - A page reload restarts the clock for that scenario (the answer was not confirmed yet, EC-4).
+  - Exported in the research CSV column 「Response Time (ms)」 (REQ-362).
+
+- **REQ-402.6 — A failed answer save keeps the participant on the scenario.** 📋 **NEW 2026-11-17** (BUG-013) If `saveSurveyAnswer` fails, the participant MUST stay on the same scenario with their slider value and see 「儲存失敗，請再按一次。」; only a successful save moves on to the next scenario or the outro.
 
 - **REQ-403 — Demographics + completion.** ✅ **BUG FIXED 2026-05-04** On the final step the participant submits `{ age, gender, education }`. The system marks the `Submission.isCompleted = true` and shows the outro screen.
   - *Acceptance:* `completeSurvey` returns the updated submission. On success, the local survey-session cache for that session is cleared. In Mixed Mode, this triggers a check for group completion status (REQ-309). **Bug Fix**: SurveyOutro now properly calls `completeSurvey` mutation when user submits email and code.
@@ -644,6 +654,34 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   - *Roadmap (NFR-8.2, added 2026-11-15):* the report MUST open with a roadmap that shows every test case on the participant journey at a glance: one row per stage (admin setup → invite link → intro → scenarios → outro & debrief → coming back → payment ledger → direct API), the happy-path result for that stage, and each edge case as a chip coloured by its result (pass / fail / observed / not run). Each chip links to the step that ran it. A case added to the catalogue but not placed on the roadmap fails the run.
   - *PC + phone (NFR-8.3, added 2026-11-16):* `npm run test:e2e` runs the journey and every edge case twice — on a PC (1440×900) and with every participant on a phone (390×844, touch, mobile Chrome user agent; the admin stays on desktop) — and writes **one** report, `test-results/e2e/<timestamp>/report.html` + `report.pdf`, that compares the two: the roadmap and edge-case table show a PC and a phone result for every case, every check shows both results, and each participant screenshot is shown next to its phone counterpart (admin pages are desktop-only, so they are shown once, PC only). The run passes only if both pass. `npm run test:e2e:pc` / `npm run test:e2e:mobile` run one device on its own.
 
+- **NFR-9 — Simulated pilot data check:** 📋 **NEW 2026-11-17** Before real participants are recruited, one command (`npm run sim:data`) MUST fill a study with simulated participants and prove that the data the researcher will analyse is complete, correct and analysable. It runs locally against an isolated in-memory MongoDB, with no manual steps.
+  - *Study:* the admin launches a Mixed Mode group (defaults: max k 2, 10 scenarios per participant, target 2 per scenario, focal 國民黨 KMT1, partner 民進黨 DPP4; each settable by an env var). Simulated participants keep arriving, several at a time, until the server turns them away (group full, REQ-405.1), as a real recruitment would.
+  - *Participants:* each goes through the same API calls as the survey page (`startMixedSession` → `startSurvey` → `saveSurveyAnswer` per scenario with `responseTime` → `drawRealisedRound` → `completeSurvey` with a registration code, email and Q1–Q8). Each is given a **persona** with a known behaviour (seeded, so a run can be repeated):
+    | Persona | Share | Behaviour |
+    |---|---|---|
+    | Conditional | 55% | Cooperation rises with the share of 給予 edges in the scenario: p = 0.2 + 0.6 × share + noise; ~8 s per answer |
+    | Cooperator | 10% | p ≈ 0.9 regardless of the scenario |
+    | Defector | 10% | p ≈ 0.1 regardless of the scenario |
+    | Straight-liner | 5% | The same p (0.5) for every scenario, ~3 s per answer |
+    | Speeder | 5% | Random p, under 1.5 s per answer |
+    | Retrier | 5% | Conditional, but every answer is sent twice (a network retry) |
+    | Drop-out | 10% | Conditional, stops after some scenarios and never completes |
+  - *Data checks (each fails the run):*
+    - D1 — A completed submission has exactly one answer per assigned scenario, no duplicates, none outside its session.
+    - D2 — Every stored answer (probability, response time) equals what was sent and has `answeredAt`.
+    - D3 — `Scenario.responseCount` equals the number of stored answers to that scenario (a retry is not counted twice).
+    - D4 — The stored Q1–Q8 answers, registration code and email equal what was sent.
+    - D5 — Every payout follows the payment rule (REQ-408): the realised round's points from the stored decisions × NT$100 + fee, within the min–max range.
+    - D6 — The research CSV exported from the group page (REQ-362) has one row per stored answer (plus one row per submission without answers), every cell matches the database, required columns are never empty for a completed submission, and no email appears anywhere in the file.
+    - D7 — The payment ledger (REQ-408.7) has exactly one row per completed, valid submission, no drop-outs, and its total equals the sum of the stored payouts.
+    - D8 — Once recruitment stops, the group is completed (REQ-309) and every scenario has at least its target number of answers from completed submissions.
+  - *Analysis checks (each fails the run):*
+    - A1 — The planted effect is recoverable from the research CSV alone: the slope of cooperation probability on the 給予 share, over completed rows, is within ±0.1 of the slope the persona mix implies.
+    - A2 — Straight-liners (one value for every answer) and speeders (median response time under 2 s) found from the CSV alone are exactly the planted ones.
+  - *Observations (shown, never fail):* answers above a scenario's target (participants already in progress when it filled), answers per scenario (min / median / max), mean cooperation by 給予 share, response-time median, persona counts.
+  - *Output:* `test-results/sim/<timestamp>/` — `report.md` (every check with expected vs actual), `research.csv`, `payments.csv`, `ground-truth.json` (what each simulated participant sent, with its persona), `server.log`. Exit code 0 only if every check passes.
+  - *Scope:* the participants use the API, not the browser (NFR-8 covers the pages); the two CSVs are exported through the real admin page in Chrome.
+
 ---
 
 ## Known Issues
@@ -714,6 +752,18 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **Symptom**: Calling `completeSurvey` again on a completed submission overwrote the questionnaire answers and the email (redirecting the payment), reset `completedAt` and counted the session's `submissionCount` a second time. Only `saveSurveyAnswer` checked `isCompleted`.
 - **Fix (2026-11-17, REQ-402.4)**: the update only matches a submission that is not completed yet; otherwise `ALREADY_COMPLETED`.
 
+**BUG-013**: A failed answer save moved the participant on and lost the answer
+
+- **Symptom**: When `saveSurveyAnswer` failed (network drop, server error), the participant still went to the next scenario (or the outro); that answer was never stored, and the submission could be completed with fewer answers than scenarios. Found in the 2026-11-17 production data review.
+- **Root Cause**: `App.handleSaveAnswer` returns `false` on failure, but `SurveyView.handleNext` ignored the return value and navigated anyway.
+- **Fix (2026-11-17, REQ-402.6)**: `handleNext` stops on `false`, keeps the slider value and shows a toast.
+
+**BUG-014**: A quick first answer dropped the session from the URL; a later refresh hung on 「載入中...」
+
+- **Symptom**: On production, a participant who confirmed scenario 1 within ~1.7 s of it appearing continued with URLs that had no `?sessionId=` (`/survey/scenarios/2`, …, `/survey/outro/2`). Answers were still saved, but a refresh on any later page had nothing to restore from: the debrief stayed on 「載入中...」 forever (both devices of the 2026-11-17 production e2e run). Locally it never showed, because the app repairs the URL within milliseconds there.
+- **Root Cause**: `SurveyView.navigateWithSession` used the `sessionId` / `groupId` read at render time. 進入測驗 creates the session and puts `?sessionId=` in the URL while the click handler from the older render is still running; that handler then navigated to `/survey/scenarios/0?groupId=…&mode=mixed`, and the app needed a full restore round trip (fingerprint + 2 requests) to put the session back. A confirm in that window navigated from the broken URL and lost both parameters.
+- **Fix (2026-11-17, REQ-404)**: `navigateWithSession` and the resume path saved by `handleNext` read `window.location.search` when they run. The e2e checks that the first scenario URL already carries the session.
+
 ---
 
 ## Known Issues (Fixed)
@@ -729,6 +779,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | BUG-010 | A full Mixed group never closed; new visitors still got sessions of already-full scenarios | 2026-11-16 | ✅ Fixed |
 | BUG-011 | A failed final save showed the done page and wiped the code, email and questionnaire answers | 2026-11-17 | ✅ Fixed (REQ-403.2) |
 | BUG-012 | `completeSurvey` on a completed submission overwrote its answers and email and double-counted it | 2026-11-17 | ✅ Fixed (REQ-402.4) |
+| BUG-013 | A failed answer save moved the participant on and lost that answer | 2026-11-17 | ✅ Fixed (REQ-402.6) |
+| BUG-014 | A quick first answer dropped `?sessionId=` from the URL; a later refresh hung on 「載入中...」 (production only) | 2026-11-17 | ✅ Fixed (REQ-404) |
 | BUG-007 | Group detail view and research CSV only see the 100 most recent submissions across all sessions | 2026-10-01 | ✅ Fixed (REQ-408.7) |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.

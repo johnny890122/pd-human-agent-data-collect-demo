@@ -24,8 +24,14 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.E2E_PORT || 3200);
-const BASE_URL = `http://localhost:${PORT}`;
-const ADMIN_PASSWORD = 'e2e-admin';
+// Remote run (e.g. production): E2E_BASE_URL + E2E_MONGODB_URI + E2E_ADMIN_PASSWORD; no local server.
+// E2E_WIPE_DB=<database name> empties that database first — each run needs an empty one, like the
+// in-memory DB of a local run (some checks count across the whole database).
+const REMOTE = Boolean(process.env.E2E_BASE_URL);
+// E2E_LATENCY_MS: delay every GraphQL call locally, to reproduce production timing (see BUG-014)
+const LATENCY_MS = Number(process.env.E2E_LATENCY_MS || 0);
+const BASE_URL = REMOTE ? process.env.E2E_BASE_URL.replace(/\/$/, '') : `http://localhost:${PORT}`;
+const ADMIN_PASSWORD = REMOTE ? process.env.E2E_ADMIN_PASSWORD : 'e2e-admin';
 const TAILWIND_CDN = /^https:\/\/cdn\.tailwindcss\.com\//;
 // Shared with the IRB capture, so both tools use one pinned Tailwind build
 const TAILWIND_CACHE = path.join(ROOT, 'docs/irb/screenshots/.cache/tailwindcss-cdn.js');
@@ -176,6 +182,14 @@ async function newContext(device = DEVICES.A, { desktop = false } = {}) {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, ...phone, ...device });
   await context.route(TAILWIND_CDN, (route) => route.fulfill({ contentType: 'application/javascript', body: tailwind }));
   await context.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }));
+  if (LATENCY_MS) await context.route('**/graphql', async (route) => { await new Promise((r) => setTimeout(r, LATENCY_MS)); await route.fallback(); });
+  if (REMOTE || process.env.E2E_PRESET_TURNSTILE) {
+    // ponytail: the real server checks the stub's token with Cloudflare, so a remote run answers the
+    // verify call itself and sets the cookie the server trusts. Works only while that cookie is
+    // unsigned (server.js isTurnstileVerifiedFromRequest) — the real Turnstile check is NOT tested.
+    await context.route(`${BASE_URL}/api/turnstile/verify`, (route) => route.fulfill({ contentType: 'application/json', body: '{"success":true}' }));
+    await context.addCookies([{ name: 'turnstile_verified', value: 'true', url: BASE_URL }]);
+  }
   return context;
 }
 
@@ -414,7 +428,7 @@ async function apiParticipant(groupId, participantId, { code, email, probability
   const { startSurvey: sub } = await gql(
     'mutation($s: ID!, $p: String) { startSurvey(sessionId: $s, participantId: $p) { _id } }', { s: s.sessionId, p: participantId }, PARTICIPANT);
   for (const scenario of s.assignedScenarios) {
-    await gql('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v) { _id } }',
+    await gql('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v, responseTime: 3000) { _id } }',
       { id: sub._id, sc: scenario._id, v: probability }, PARTICIPANT);
   }
   const { drawRealisedRound: draw } = await gql('mutation($id: ID!) { drawRealisedRound(submissionId: $id) { payoutNtd } }', { id: sub._id }, PARTICIPANT);
@@ -524,13 +538,27 @@ async function journey() {
     ec(null);
     const outcome = await enterSurvey(page);
     if (outcome !== 'scenarios') throw new Error(`進入測驗 failed: ${outcome}`);
+    // BUG-014: the first scenario URL must already carry the new session, not the invite's groupId
+    const firstScenarioUrl = new URL(page.url()).searchParams;
 
     const sessionA = await col(SessionModel).findOne({ groupId: run.groupId });
     run.sessionIdA = sessionA?._id;
     run.participantIdA = sessionA?.metadata?.participantId;
     check(`Personal session created with ${STUDY.scenariosPerSession} scenarios after the intro`, STUDY.scenariosPerSession, sessionA?.scenarioIds?.length);
+    check('Scenario 1 URL carries the session right after 進入測驗 (BUG-014)', sessionA?._id, firstScenarioUrl.get('sessionId'));
 
-    for (const [idx, value] of A.sliders.entries()) await answerScenario(page, idx, value, A.sliders.length, true);
+    // BUG-013 / REQ-402.6: the first answer's save is lost — A must stay on scenario 1, then the retry saves it
+    let dropped = 0;
+    const dropAnswer = (route) => (dropped === 0 && (route.request().postData() ?? '').includes('saveSurveyAnswer') ? (dropped++, route.abort()) : route.fallback());
+    await page.route('**/graphql', dropAnswer);
+    await answerScenario(page, 0, A.sliders[0], A.sliders.length, true);
+    await page.getByText('儲存失敗，請再按一次。').first().waitFor({ timeout: 10_000 }).catch(() => {});
+    check('Failed answer save: 「儲存失敗，請再按一次。」 shown (REQ-402.6)', true, await page.getByText('儲存失敗，請再按一次。').first().isVisible());
+    check('Failed answer save: stays on scenario 1', '/survey/scenarios/0', pathOf(page));
+    check('Failed answer save: nothing stored yet', 0, (await col(SubmissionModel).findOne({ sessionId: run.sessionIdA }))?.results?.length ?? 0);
+    await page.unroute('**/graphql', dropAnswer);
+    await click(button(page, /^確認並(前往下一題|送出)$/)); // retry
+    for (const [idx, value] of A.sliders.entries()) if (idx > 0) await answerScenario(page, idx, value, A.sliders.length, true);
 
     await page.waitForURL(/\/survey\/outro\/1\b/);
     await settle(page);
@@ -544,6 +572,7 @@ async function journey() {
     await page.waitForURL(/\/survey\/outro\/2\b/);
     await page.getByText('合計').first().waitFor({ timeout: 30_000 });
     await settle(page);
+    check('Debrief URL keeps the session, so a reload can restore it (BUG-014)', run.sessionIdA, new URL(page.url()).searchParams.get('sessionId'));
     run.debriefZ = amountAfter(await bodyText(page), '合計');
     check('Debrief shows a total (合計 新台幣 Z 元)', true, Number.isFinite(run.debriefZ));
     await shot(page, 'debrief', `Outro 2: debrief — 合計 新台幣 ${run.debriefZ} 元`);
@@ -621,6 +650,8 @@ async function journey() {
     check('Submission completed', true, sub?.isCompleted);
     check('Answers recorded (cooperationProbability)', A.sliders.map((v) => v / 100).join(', '),
       (sub?.results ?? []).map((r) => r.cooperationProbability).join(', '));
+    check('Response time recorded for every answer, in ms (REQ-402.5)', true,
+      (sub?.results ?? []).length === A.sliders.length && sub.results.every((r) => Number.isInteger(r.responseTime) && r.responseTime > 0));
     check('Registration code stored (demographics.gender)', A.code, sub?.demographics?.gender);
     check('Email stored (demographics.education)', A.email, sub?.demographics?.education);
     check('Questionnaire Q1–Q8 stored as answered (REQ-416)', JSON.stringify(expectedAnswers(A.answers)), JSON.stringify(sub?.questionnaire));
@@ -716,10 +747,10 @@ async function journey() {
     await tab3.getByText('已確認的答案無法修改').waitFor({ state: 'hidden', timeout: 10_000 }).catch(() => {}); // on a phone it covers the graph
     await settle(tab3);
     const before = (await subC())?.results?.find((x) => x.scenarioId === reansweredId)?.cooperationProbability;
-    const changed = await gqlRaw('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v) { _id } }',
+    const changed = await gqlRaw('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v, responseTime: 3000) { _id } }',
       { id: run.submissionIdC, sc: reansweredId, v: C.reanswer / 100 }, PARTICIPANT);
     check('Changing the confirmed answer through the API rejected', true, /ANSWER_LOCKED/.test(changed.error ?? ''));
-    const retry = await gqlRaw('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v) { _id } }',
+    const retry = await gqlRaw('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v, responseTime: 3000) { _id } }',
       { id: run.submissionIdC, sc: reansweredId, v: before }, PARTICIPANT);
     check('Re-sending the same answer (network retry) accepted', null, retry.error);
     const afterBack = await subC();
@@ -815,6 +846,11 @@ async function journey() {
     const rowA = rows.find((r) => r[header.indexOf('Submission ID')] === run.submissionIdA);
     check('A\'s CSV row has the questionnaire answers', expectedAnswers(A.answers).map((x) => x.answer).join(','),
       rowA && QUESTIONNAIRE.map((x) => rowA[header.indexOf(x.id)]).join(','));
+    check('Submissions CSV: Registration Code column, no Age/Gender/Education (REQ-362)', 'true,false',
+      [header.includes('Registration Code'), ['Age', 'Gender', 'Education'].some((h) => header.includes(h))].join(','));
+    check('A\'s CSV row has the code and no email', `${A.code},false`, rowA && `${rowA[header.indexOf('Registration Code')]},${rowA.some((c) => c.includes('@'))}`);
+    check('A\'s CSV rows carry the response time (REQ-402.5)', true,
+      rows.filter((r) => r[header.indexOf('Submission ID')] === run.submissionIdA).every((r) => Number(r[header.indexOf('Response Time (ms)')]) > 0));
   }, { needs: ['participantA', 'database'] });
 
   await step('fullGroup', '9. A group whose scenarios all reached their target (EC-9)', async () => {
@@ -867,7 +903,7 @@ async function journey() {
   await step('apiGuards', '11. Direct API misuse (EC-12)', async () => {
     ec('EC-12');
     const scenarioId = (await col(SessionModel).findOne({ _id: run.sessionIdA }))?.scenarioIds?.[0];
-    const outOfRange = await gqlRaw('mutation($id: ID!, $sc: ID!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: 1.5) { _id } }',
+    const outOfRange = await gqlRaw('mutation($id: ID!, $sc: ID!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: 1.5, responseTime: 3000) { _id } }',
       { id: run.submissionIdA, sc: scenarioId }, PARTICIPANT);
     check('Answer 1.5 rejected (REQ-402)', 'cooperationProbability must be between 0 and 1', outOfRange.error);
     const noTurnstile = await gqlRaw('mutation($g: ID!) { startMixedSession(groupId: $g, participantId: "e2e-bot") { sessionId } }', { g: run.groupId });
@@ -875,7 +911,7 @@ async function journey() {
     const noAdmin = await gqlRaw('query($g: ID!) { submissionsByGroup(groupId: $g) { _id demographics { education } } }', { g: run.groupId });
     check('Participant emails without admin login rejected (REQ-408.8)', 'Unauthorized', noAdmin.error);
     if (run.d) {
-      const reanswer = await gqlRaw('mutation($id: ID!, $sc: ID!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: 0.9) { _id } }',
+      const reanswer = await gqlRaw('mutation($id: ID!, $sc: ID!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: 0.9, responseTime: 3000) { _id } }',
         { id: run.d.submissionId, sc: (await col(SubmissionModel).findOne({ participantId: D.participantId }))?.results?.[0]?.scenarioId }, PARTICIPANT);
       check('Changing an answer of a completed submission rejected (REQ-402.4)', true, /ANSWER_LOCKED/.test(reanswer.error ?? ''));
     }
@@ -916,7 +952,7 @@ async function writeReport() {
   const realChecks = steps.flatMap((s) => s.checks).filter((c) => c.kind === 'check');
   const passed = steps.length > 0 && steps.every((s) => s.status === 'pass');
   const serverLog = existsSync(path.join(OUT_DIR, 'server.log')) ? await fs.readFile(path.join(OUT_DIR, 'server.log'), 'utf8') : '';
-  const pairingLine = serverLog.split('\n').find((l) => l.includes('opponentProbs matched=')) ?? '(not found in server.log)';
+  const pairingLine = serverLog.split('\n').find((l) => l.includes('opponentProbs matched=')) ?? (REMOTE ? '(server log not collected on a remote run)' : '(not found in server.log)');
   const z = run.debriefZ;
   const trail = [
     ['Debrief 合計 (participant sees)', run.debriefZ],
@@ -1029,7 +1065,7 @@ async function writeReport() {
     steps: steps.map(({ id, title, status, error, checks, shots }) => ({ id, title, status, error, checks, shots })),
     edgeCases: EDGE_CASES.map(([id, title, expected]) => ({ id, title, expected, ...edgeCaseResult(id) })),
     roadmap: ROADMAP, trail, debriefZ: z, draw: run.draw ?? null, recomputedPoints: run.recomputedPoints ?? null,
-    groupId: run.groupId, submissionIdA: run.submissionIdA,
+    groupId: run.groupId, submissionIdA: run.submissionIdA, target: REMOTE ? BASE_URL : null,
     ledger: run.ledger ? { file: run.ledger.file, header: run.ledger.header, rows: run.ledger.rows } : null,
     pairingLine: pairingLine.trim(),
   }, null, 1));
@@ -1044,21 +1080,27 @@ async function writeReport() {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  if (!existsSync(path.join(ROOT, 'dist/index.html'))) throw new Error('dist/ is missing — run `npm run test:e2e` (it builds first)');
+  if (!REMOTE && !existsSync(path.join(ROOT, 'dist/index.html'))) throw new Error('dist/ is missing — run `npm run test:e2e` (it builds first)');
+  if (REMOTE && !(process.env.E2E_MONGODB_URI && ADMIN_PASSWORD)) throw new Error('A remote run needs E2E_MONGODB_URI and E2E_ADMIN_PASSWORD');
   await fs.mkdir(SHOTS_DIR, { recursive: true });
 
-  const mongo = await MongoMemoryServer.create();
-  const mongoUri = mongo.getUri('e2e');
+  const mongo = REMOTE ? null : await MongoMemoryServer.create();
+  const mongoUri = REMOTE ? process.env.E2E_MONGODB_URI : mongo.getUri('e2e');
   db = (await mongoose.createConnection(mongoUri).asPromise()).db;
+  if (REMOTE && process.env.E2E_WIPE_DB) {
+    if (process.env.E2E_WIPE_DB !== db.databaseName) throw new Error(`E2E_WIPE_DB=${process.env.E2E_WIPE_DB} does not name this database (${db.databaseName})`);
+    for (const Model of [SubmissionModel, SessionModel, ScenarioModel, SessionGroupModel]) await col(Model).deleteMany({});
+    console.log(`Emptied ${db.databaseName} for the run`);
+  }
 
-  const serverLog = createWriteStream(path.join(OUT_DIR, 'server.log'));
-  const server = spawn(process.execPath, ['server.js'], {
+  const serverLog = REMOTE ? null : createWriteStream(path.join(OUT_DIR, 'server.log'));
+  const server = REMOTE ? null : spawn(process.execPath, ['server.js'], {
     cwd: ROOT,
     env: { ...process.env, PORT: String(PORT), MONGODB_URI: mongoUri, ADMIN_PASSWORD, JWT_SECRET: 'e2e-secret', NODE_ENV: 'development', CLIENT_ORIGIN: BASE_URL },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  server.stdout.pipe(serverLog);
-  server.stderr.pipe(serverLog);
+  server?.stdout.pipe(serverLog);
+  server?.stderr.pipe(serverLog);
 
   let result;
   try {
@@ -1071,12 +1113,12 @@ async function main() {
     steps.push({ id: 'setup', title: 'Setup', shots: [], checks: [], status: 'broken', error: String(error?.stack || error) });
     console.error(error);
   } finally {
-    server.kill();
+    server?.kill();
     await new Promise((r) => setTimeout(r, 300)); // let the last log lines flush
     try { result = await writeReport(); } catch (error) { console.error('Report failed:', error); }
     await browser?.close();
     await mongoose.disconnect();
-    await mongo.stop();
+    await mongo?.stop();
   }
 
   console.log(`\n${result?.passed ? 'E2E PASSED' : 'E2E FAILED'} — report: ${result?.reportPath ?? '(not written)'}`);

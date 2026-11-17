@@ -399,7 +399,7 @@ const App: React.FC = () => {
     try {
       // Unified survey flow with Scenario UUID references
       console.log('[NEW API] Saving answer for scenario:', answer.scenarioId);
-      await saveSurveyAnswer(submissionId, answer.scenarioId, answer.cooperationProbability);
+      await saveSurveyAnswer(submissionId, answer.scenarioId, answer.cooperationProbability, answer.responseTime ?? 0);
       setBackendNotice(null);
       return true;
     } catch (error) {

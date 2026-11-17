@@ -158,11 +158,12 @@ async function testNewAPI() {
         headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
         body: JSON.stringify({
           query: `
-            mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!) {
+            mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!, $responseTime: Int!) {
               saveSurveyAnswer(
                 submissionId: $submissionId
                 scenarioId: $scenarioId
                 cooperationProbability: $cooperationProbability
+                responseTime: $responseTime
               ) {
                 _id
                 results {
@@ -175,7 +176,8 @@ async function testNewAPI() {
           variables: {
             submissionId: submission._id,
             scenarioId: scenario._id,  // UUID reference!
-            cooperationProbability: probability
+            cooperationProbability: probability,
+            responseTime: 3000, // REQ-402.5: required
           }
         })
       });

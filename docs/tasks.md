@@ -3251,3 +3251,37 @@ saveSession(currentId, submission._id, path);
 - **Caught by the e2e**: the first run failed because the client still declared `$questionnaire` nullable against the now-required argument — before BUG-011's fix this would have shown the done page with nothing saved. The `questionnaire` parameter is now required in the TypeScript signatures too.
 - **Decided 2026-11-17**: answers stay stored as the option text (wording fixed for the study); no 「不願回答」 option — the IRB approved the questionnaire as is.
 - [x] **TASK-5309**: Legacy scripts `scripts/test-new-api.mjs` and `scripts/test-manual-mode-e2e.mjs` send Q1–Q8 to `completeSurvey`. They were already broken before Phase 53 (`test-new-api.mjs` imported the removed `SessionSetup.js` model; both lacked the REQ-100 Turnstile cookie at `startSurvey`); fixed both, and `test-new-api.mjs` reads `VITE_GRAPHQL_ENDPOINT` like the other. Both pass against a throwaway server + in-memory MongoDB.
+
+## Phase 54: Response Time, Safe Answer Saves, Research CSV Columns (REQ-402.5, REQ-402.6, BUG-013, REQ-362)
+
+**Status**: 🚧 In progress (2026-11-17) — from the production data review; partner pairing (BUG-008) and exporting the per-round draw were reviewed and left as is
+
+- [x] **TASK-5401**: Requirements REQ-402.5, REQ-402.6, BUG-013, REQ-362 columns; design Phase 54
+- [x] **TASK-5402**: `saveSurveyAnswer` requires and stores `responseTime` [REQ-402.5]
+- [x] **TASK-5403**: SurveyView measures the time per scenario; client sends it [REQ-402.5]
+- [x] **TASK-5404**: SurveyView stays on the scenario when the save fails [REQ-402.6, BUG-013]
+- [x] **TASK-5405**: Research CSV: Registration Code instead of Age/Gender/Education; no email [REQ-362]
+- [x] **TASK-5406**: Backend + unit tests; e2e checks; legacy scripts send `responseTime`
+- [x] **TASK-5408**: BUG-014 — `navigateWithSession` / `handleNext` read the live URL; e2e checks the first scenario URL carries the session. Remote-run options in the e2e: `E2E_BASE_URL`, `E2E_MONGODB_URI`, `E2E_ADMIN_PASSWORD`, `E2E_WIPE_DB`; `E2E_LATENCY_MS` and `E2E_PRESET_TURNSTILE` for local reproduction
+- [ ] **TASK-5407**: Local `npm run test:e2e`; after the user redeploys, production run + data report
+
+**Implementation notes (2026-11-17)**:
+- **First production run** (v40, `test-results/e2e/20261117_185107/`): every step passed except participant A's debrief reload on both devices — BUG-014. Everything A-dependent (DB check, ledger, EC-12) did not run. Turnstile is bypassed in the test browsers (unsigned cookie), so the real Cloudflare check is not covered.
+- **Local verification**: `npm run test:e2e` PASS — PC 122/122, phone 122/122 (`test-results/e2e/20261117_191308/`); also PASS with `E2E_LATENCY_MS=400` (+ `E2E_PRESET_TURNSTILE=1`). Unit: 60 pass, the 3 known `new-data-model.test.js` failures.
+
+## Phase 55: Simulated Pilot Data Check (NFR-9)
+
+**Status**: ✅ Script complete (2026-11-17); D8 fails on purpose — open finding below
+
+- [x] **TASK-5501**: Requirements NFR-9; design Phase 55
+- [x] **TASK-5502**: `scripts/sim/simulate.mjs` — boot server + in-memory DB, admin login, launch Mixed group
+- [x] **TASK-5503**: Personas (fixed deck of 20, so every persona appears) + concurrent recruitment until `GROUP_FULL`; ground truth recorded
+- [x] **TASK-5504**: Export research CSV + payment ledger through the admin page (Chrome)
+- [x] **TASK-5505**: Checks D1–D8, A1–A2, observations; `report.md`; exit code
+- [x] **TASK-5506**: `npm run sim:data` script; run it and record the result here
+
+**Implementation notes (2026-11-17)**:
+- **Result** (default study: 162 scenarios × target 2 ≈ 33 participants estimated): D0–D7, A1, A2 pass — every answer, response time, Q1–Q8, code, payout and both CSVs match what was sent; retries are not double counted; no email in the research CSV; the planted 給予 effect (slope 0.41) and the planted straight-liners / speeders are recoverable from the CSV alone.
+- **Finding — D8 fails**: the group closes when `responseCount ≥ target`, but `responseCount` also counts answers from participants who never complete. 5–21 of 162 scenarios end with fewer than 2 completed answers (depends on the run).
+- **Finding — oversampling grows with concurrency**: 8 at a time → 51 participants, 165 answers above target; 1 at a time → 40 participants, 62 above target. Many participants who start at the same moment are given the same least-answered scenarios, because `responseCount` only rises when answers are saved. Real participants are in progress for minutes, not milliseconds, so the overlap in a live recruitment will be larger. This affects the REQ-314 cost estimate.
+- Both findings need a decision (count only completed answers? reserve scenarios at assignment?) before real recruitment.

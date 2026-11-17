@@ -654,13 +654,17 @@ export const resolvers = {
       return toSubmissionGraph(doc);
     },
     
-    saveSurveyAnswer: async (_, { submissionId, scenarioId, cooperationProbability }) => {
+    saveSurveyAnswer: async (_, { submissionId, scenarioId, cooperationProbability, responseTime }) => {
       requireDb();
       await connectToDatabase();
       
       // 驗證
       if (cooperationProbability < 0 || cooperationProbability > 1) {
         throw new Error('cooperationProbability must be between 0 and 1');
+      }
+      // REQ-402.5: ms from the scenario being shown to the confirm click (GraphQL Int: already an integer)
+      if (!(responseTime >= 0)) {
+        throw new Error('responseTime must be a non-negative integer');
       }
       
       // 更新 submission
@@ -682,6 +686,7 @@ export const resolvers = {
       submission.results.push({
         scenarioId,
         cooperationProbability,
+        responseTime,
         answeredAt: new Date(),
       });
 

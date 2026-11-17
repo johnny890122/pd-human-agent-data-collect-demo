@@ -41,19 +41,22 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const params = useParams();
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('sessionId');
-  const groupId = searchParams.get('groupId');
-  const mode = searchParams.get('mode');
   const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname);
   const turnstileSiteKey = isLocalHost
     ? '1x00000000000000000000AA'
     : (import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '0x4AAAAAAC2vj0xOA6Fpx2cd');
 
+  // BUG-014: read the URL when navigating, not at render. The session is created (and put in the
+  // URL) while an older render's handler is still running; its render-time values would drop it.
+  const liveSessionId = () => new URLSearchParams(window.location.search).get('sessionId');
   const navigateWithSession = (path: string) => {
-    // Mixed Mode during intro (before session creation): preserve groupId + mode
-    if (groupId && mode === 'mixed' && !sessionId) {
-      navigate(`${path}?groupId=${groupId}&mode=mixed`);
-    } else if (sessionId) {
-      navigate(`${path}?sessionId=${sessionId}`);
+    const live = new URLSearchParams(window.location.search);
+    const sid = live.get('sessionId');
+    if (sid) {
+      navigate(`${path}?sessionId=${sid}`);
+    } else if (live.get('groupId') && live.get('mode') === 'mixed') {
+      // Mixed Mode during intro (before session creation): preserve groupId + mode
+      navigate(`${path}?groupId=${live.get('groupId')}&mode=mixed`);
     } else {
       navigate(path);
     }
@@ -239,8 +242,14 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const activeEdgeIds = currentScenario?.activeEdgeIds || setup.activeEdgeIds || [];
   const allRevealed = revealedEdgeIds.size >= activeEdgeIds.length;
 
+  // REQ-402.5: response time runs from the moment the scenario is shown (a reload restarts it)
+  const shownAtRef = useRef(performance.now());
+  // BUG-013: the confirm button is disabled while the answer is being saved
+  const [isSavingAnswer, setIsSavingAnswer] = useState(false);
+
   // Reset reveal/decision state on each new scenario
   useEffect(() => {
+    shownAtRef.current = performance.now();
     setRevealedEdgeIds(new Set());
     setIsDecisionPhase(false);
     setHasInteracted(false);
@@ -286,26 +295,35 @@ const SurveyView: React.FC<SurveyViewProps> = ({
     const answer: SurveyResult = {
       scenarioId,
       cooperationProbability: sliderValue / 100,
+      responseTime: Math.round(performance.now() - shownAtRef.current),
     };
+
+    // Persist this answer to the backend immediately; only a saved answer moves on (REQ-402.6, BUG-013)
+    if (entryId) {
+      if (isSavingAnswer) return;
+      setIsSavingAnswer(true);
+      const saved = await onSaveAnswer(entryId, answer).finally(() => setIsSavingAnswer(false));
+      if (!saved) {
+        toast.error('儲存失敗，請再按一次。', { id: 'save-failed' });
+        return;
+      }
+    }
     const newResults = [...results];
     newResults[scenarioIdx] = answer;
     setResults(newResults);
 
-    // Persist this answer to the backend immediately
-    if (entryId) {
-      await onSaveAnswer(entryId, answer);
-    }
-
     if (scenarioIdx < scenarios.length - 1) {
-      const nextPath = `/survey/scenarios/${scenarioIdx + 1}${sessionId ? `?sessionId=${sessionId}` : ''}`;
+      const sid = liveSessionId();
+      const nextPath = `/survey/scenarios/${scenarioIdx + 1}${sid ? `?sessionId=${sid}` : ''}`;
       if (entryId) {
-        saveSession(sessionId || setup._id || '', entryId, nextPath);
+        saveSession(sid || setup._id || '', entryId, nextPath);
       }
       navigateWithSession(`/survey/scenarios/${scenarioIdx + 1}`);
     } else {
-      const nextPath = `/survey/outro/1${sessionId ? `?sessionId=${sessionId}` : ''}`;
+      const sid = liveSessionId();
+      const nextPath = `/survey/outro/1${sid ? `?sessionId=${sid}` : ''}`;
       if (entryId) {
-        saveSession(sessionId || setup._id || '', entryId, nextPath);
+        saveSession(sid || setup._id || '', entryId, nextPath);
       }
       navigateWithSession('/survey/outro/1');
     }
@@ -623,8 +641,8 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
             <button
               onClick={!isDecisionPhase && allRevealed ? () => { setIsDecisionPhase(true); setHasInteracted(false); } : handleNext}
-              disabled={!allRevealed || (isDecisionPhase && !hasInteracted)}
-              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed || (isDecisionPhase && !hasInteracted)
+              disabled={!allRevealed || (isDecisionPhase && !hasInteracted) || isSavingAnswer}
+              className={`w-full py-4 text-lg font-bold rounded-xl shadow-xl transition-all transform ${!allRevealed || (isDecisionPhase && !hasInteracted) || isSavingAnswer
                 ? 'bg-gray-300 text-gray-400 cursor-not-allowed shadow-none'
                 : 'bg-gray-900 text-white hover:bg-black hover:-translate-y-1 active:translate-y-0 animate-glow-indigo'
                 }`}

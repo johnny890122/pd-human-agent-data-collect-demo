@@ -113,11 +113,12 @@ async function testManualMode() {
   console.log('-'.repeat(60));
   
   const saveMutation = `
-    mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!) {
+    mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!, $responseTime: Int!) {
       saveSurveyAnswer(
         submissionId: $submissionId
         scenarioId: $scenarioId
         cooperationProbability: $cooperationProbability
+        responseTime: $responseTime
       ) {
         _id
         results {
@@ -136,6 +137,7 @@ async function testManualMode() {
       submissionId,
       scenarioId: scenario._id,
       cooperationProbability: probability,
+      responseTime: 3000, // REQ-402.5: required
     });
     
     console.log(`✅ Scenario ${i + 1}/${session.scenarios.length} answered`);

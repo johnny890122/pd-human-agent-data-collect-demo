@@ -3523,3 +3523,46 @@ Supersedes the Phase 52 points 「Omitted = unchanged」 and 「Answers live in 
 - Unit: `onComplete` rejecting → stays on step 4, alert, stored code and answers kept; answers read from `sessionStorage`.
 - E2E: API participants send Q1–Q8; EC-12 adds 「completing a completed submission rejected」 and 「completing without the questionnaire rejected」, and 「email hidden from `submission(id)` without admin」.
 
+## Phase 54 — Response time, safe answer saves, research CSV columns (REQ-402.5, REQ-402.6, BUG-013, REQ-362)
+
+### Response time (REQ-402.5)
+- `SurveyView`: `shownAtRef = performance.now()` in the effect that resets each scenario (keyed on `scenarioIdx`, so a reload restarts it); `handleNext` sends `responseTime: Math.round(performance.now() - shownAtRef.current)` in the `SurveyResult`.
+- `App.handleSaveAnswer` → `saveSurveyAnswer(submissionId, scenarioId, cooperationProbability, responseTime)`.
+- GraphQL: `saveSurveyAnswer(submissionId, scenarioId, cooperationProbability: Float!, responseTime: Int!)`. Resolver rejects a negative value (`responseTime must be a non-negative integer`) before any write and pushes `{ scenarioId, cooperationProbability, responseTime, answeredAt }`. The schema field `results[].responseTime` already exists.
+
+### Failed answer save (REQ-402.6, BUG-013)
+- `handleNext`: `if (!(await onSaveAnswer(entryId, answer))) { toast.error('儲存失敗，請再按一次。', { id: 'save-failed' }); return; }` before updating local results or navigating. A `saving` flag disables the confirm button while the request is in flight (no double submit).
+
+### Session in the URL (BUG-014, REQ-404)
+- `SurveyView.navigateWithSession(path)` reads `new URLSearchParams(window.location.search)` when called: `?sessionId=` if present, else the intro's `?groupId=&mode=mixed`, else the bare path. `handleNext` builds the saved resume path from the same live `sessionId`. The render-time `groupId` / `mode` constants are removed.
+
+### Research CSV (REQ-362, `GroupDetailView.handleExportCsv`)
+- Columns 16–18 (Age, Gender, Education) → one column 「Registration Code」 (`demographics.gender`). No email in this file; the payment ledger keeps Registration Code + Email per Submission ID.
+
+### Tests
+- Backend: `saveSurveyAnswer` stores `responseTime`, rejects a negative one.
+- SurveyView has no unit harness (router, graph, session setup); its behaviour is covered by the e2e below.
+- E2E: A's stored `responseTime` is present and ≥ 0 for every answer; the CSV row has the code and no email; one blocked `saveSurveyAnswer` keeps the participant on the scenario and the retry saves it.
+
+
+## Phase 55 — Simulated pilot data check (NFR-9)
+
+One script, `scripts/sim/simulate.mjs` (`npm run sim:data` = `vite build && node scripts/sim/simulate.mjs`). Boots the app like the e2e (`server.js` on `SIM_PORT`, default 3300, against `MongoMemoryServer`, `NODE_ENV=development`, admin password `sim-admin`).
+
+### Flow
+1. `POST /api/admin/login` → admin JWT. `createMixedGroup` with `SIM_MAX_K` (2), `SIM_PER_SESSION` (10), `SIM_TARGET` (2), KMT1 vs DPP4.
+2. Recruitment loop: a pool of `SIM_CONCURRENCY` (8) workers; each worker takes the next participant `sim-0001…`, draws its persona from a seeded RNG (`SIM_SEED`, mulberry32) and runs it through the participant API with the REQ-100 cookie `turnstile_verified=true`. The loop stops when `startMixedSession` answers `GROUP_FULL` (or `SIM_MAX_PARTICIPANTS`, 2000, as a safety cap). A participant's ground truth — persona, sent `{ scenarioId, p, responseTime }`, code, email, Q1–Q8 — is recorded as it is sent.
+3. Persona answer model: `share = #edgeStates values 'give' / #edgeStates`. Probabilities rounded to 0.01 (the slider's step), clamped to [0, 1]; response time log-normal around the persona's median. Retrier sends every `saveSurveyAnswer` twice with the same value (the second is the REQ-402.4 no-op). Drop-out stops after `1 … n−1` answers and never calls `drawRealisedRound` / `completeSurvey`.
+4. Export: Chrome (playwright-core) with the admin token put in `localStorage.token` by an init script, opens `/admin/view/batch/<groupId>`, clicks 「Export CSV」 and 「Export Payments」 and saves both (Tailwind / Cloudflare requests aborted — styling is irrelevant).
+5. Checks read the DB (`submissions`, `sessions`, `scenarios`, `sessiongroups` collections via the same connection) and the two CSVs (`parseCsv` as in the e2e).
+
+### Check details
+- D1–D5 compare DB documents with the ground truth; D5 recomputes `totalPayoutNtd(payoffPoints(myDecisions[r], opponentDecisions[r]))` from `utils/payment.js`.
+- D6 joins CSV rows to DB answers on (Submission ID, Scenario ID); compares probability, response time, registration code, Q1–Q8, completed flag; scans every cell for each sent email.
+- D7 compares the ledger's Submission IDs to the completed, valid submissions, and Σ `Total Payout (NTD)` to Σ `payoutNtd`.
+- D8: `SessionGroup.status === 'completed'`; per scenario, answers from completed submissions ≥ target.
+- A1: OLS slope of `Cooperation Probability` on the 給予 share parsed from `Edge States (JSON)`, completed rows only; expected = 0.6 × (completed rows from Conditional + Retrier) / (completed rows).
+- A2: per completed Submission ID in the CSV, flag `sd(p) = 0` (≥ 3 answers) and `median(RT) < 2000`; compare to the planted Straight-liner / Speeder sets.
+
+### Output
+`test-results/sim/<timestamp>/report.md`, `research.csv`, `payments.csv`, `ground-truth.json`, `server.log`; one console line per check; `process.exitCode = 1` on any failed check.

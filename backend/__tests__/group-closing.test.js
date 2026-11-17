@@ -49,10 +49,10 @@ async function makeGroup() {
   return groupId;
 }
 
-async function participant(groupId, participantId, { finish = true } = {}) {
+async function participant(groupId, participantId, { finish = true, answer = true } = {}) {
   const { sessionId, assignedScenarios } = await M.startMixedSession(null, { groupId, participantId }, ctx);
   const sub = await M.startSurvey(null, { sessionId, participantId }, ctx);
-  for (const s of assignedScenarios) await M.saveSurveyAnswer(null, { submissionId: sub._id, scenarioId: s._id, cooperationProbability: 0.5 });
+  if (answer) for (const s of assignedScenarios) await M.saveSurveyAnswer(null, { submissionId: sub._id, scenarioId: s._id, cooperationProbability: 0.5, responseTime: 4200 });
   if (finish) await M.completeSurvey(null, { submissionId: sub._id, demographics: { age: 0, gender: 'CODE', education: 'a@b.c' }, questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })) });
   return { submissionId: sub._id, scenarioIds: assignedScenarios.map((s) => s._id) };
 }
@@ -86,12 +86,28 @@ describe('Mixed group closes when every scenario reached its target (REQ-309, RE
   });
 });
 
+describe('Response time is recorded (REQ-402.5)', () => {
+  it('stores responseTime with the answer and rejects a missing or negative one', async () => {
+    const groupId = await makeGroup();
+    const { submissionId } = await participant(groupId, 'p1', { finish: false });
+    const saved = await SubmissionModel.findById(submissionId).lean();
+    expect(saved.results.map((r) => r.responseTime)).toEqual(saved.results.map(() => 4200));
+
+    const fresh = await participant(groupId, 'p2', { finish: false, answer: false });
+    for (const responseTime of [-1, undefined]) {
+      await expect(M.saveSurveyAnswer(null, { submissionId: fresh.submissionId, scenarioId: fresh.scenarioIds[0], cooperationProbability: 0.5, responseTime }))
+        .rejects.toThrow(/responseTime/);
+    }
+    expect((await SubmissionModel.findById(fresh.submissionId).lean()).results).toHaveLength(0);
+  });
+});
+
 describe('Confirmed answers are final (REQ-402.4)', () => {
   it('rejects a different value for an answered scenario and accepts a same-value retry', async () => {
     const groupId = await makeGroup();
     const { submissionId, scenarioIds: [first] } = await participant(groupId, 'p1', { finish: false });
-    await expect(M.saveSurveyAnswer(null, { submissionId, scenarioId: first, cooperationProbability: 0.5 })).resolves.toBeTruthy();
-    await expect(M.saveSurveyAnswer(null, { submissionId, scenarioId: first, cooperationProbability: 0.9 })).rejects.toThrow(/ANSWER_LOCKED/);
+    await expect(M.saveSurveyAnswer(null, { submissionId, scenarioId: first, cooperationProbability: 0.5, responseTime: 4200 })).resolves.toBeTruthy();
+    await expect(M.saveSurveyAnswer(null, { submissionId, scenarioId: first, cooperationProbability: 0.9, responseTime: 4200 })).rejects.toThrow(/ANSWER_LOCKED/);
     const saved = await SubmissionModel.findById(submissionId).lean();
     expect(saved.results.find((r) => r.scenarioId === first).cooperationProbability).toBe(0.5);
     expect((await ScenarioModel.findById(first).lean()).responseCount).toBe(1);
@@ -100,6 +116,6 @@ describe('Confirmed answers are final (REQ-402.4)', () => {
   it('rejects any answer on a completed submission', async () => {
     const groupId = await makeGroup();
     const { submissionId, scenarioIds: [first] } = await participant(groupId, 'p1');
-    await expect(M.saveSurveyAnswer(null, { submissionId, scenarioId: first, cooperationProbability: 0.5 })).rejects.toThrow(/ANSWER_LOCKED/);
+    await expect(M.saveSurveyAnswer(null, { submissionId, scenarioId: first, cooperationProbability: 0.5, responseTime: 4200 })).rejects.toThrow(/ANSWER_LOCKED/);
   });
 });

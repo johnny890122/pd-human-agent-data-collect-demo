@@ -334,9 +334,7 @@ const GroupDetailView: React.FC = () => {
             '', // Cooperation Probability
             '', // Response Time
             '', // Answered At
-            submission.demographics?.age?.toString() || '',
-            submission.demographics?.gender || '',
-            submission.demographics?.education || '',
+            submission.demographics?.gender || '', // Registration Code (REQ-362); no email here
             ...questionnaireCells(submission),
             submission.isCompleted ? 'true' : 'false',
             !submission.isInvalid ? 'true' : 'false',
@@ -369,9 +367,7 @@ const GroupDetailView: React.FC = () => {
               result.cooperationProbability?.toString() || '',
               result.responseTime?.toString() || '',
               result.answeredAt || '',
-              submission.demographics?.age?.toString() || '',
-              submission.demographics?.gender || '',
-              submission.demographics?.education || '',
+              submission.demographics?.gender || '', // Registration Code (REQ-362); no email here
               ...questionnaireCells(submission),
               submission.isCompleted ? 'true' : 'false',
               !submission.isInvalid ? 'true' : 'false',
@@ -398,9 +394,7 @@ const GroupDetailView: React.FC = () => {
             result.cooperationProbability?.toString() || '',
             result.responseTime?.toString() || '',
             result.answeredAt || '',
-            submission.demographics?.age?.toString() || '',
-            submission.demographics?.gender || '',
-            submission.demographics?.education || '',
+            submission.demographics?.gender || '', // Registration Code (REQ-362); no email here
             ...questionnaireCells(submission),
             submission.isCompleted ? 'true' : 'false',
             !submission.isInvalid ? 'true' : 'false',
@@ -427,9 +421,7 @@ const GroupDetailView: React.FC = () => {
         'Cooperation Probability',
         'Response Time (ms)',
         'Answered At',
-        'Age',
-        'Gender',
-        'Education',
+        'Registration Code', // demographics.gender; the email is only in the payment ledger (REQ-362)
         ...QUESTIONNAIRE.map((q) => q.id), // REQ-416 answers (admin export only)
         'Submission Completed',
         'Valid',

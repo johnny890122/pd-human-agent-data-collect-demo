@@ -443,14 +443,16 @@ export async function startSurvey(sessionId: string, participantId?: string): Pr
 export async function saveSurveyAnswer(
   submissionId: string,
   scenarioId: string,
-  cooperationProbability: number
+  cooperationProbability: number,
+  responseTime: number
 ): Promise<SubmissionType> {
   const mutation = `
-    mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!) {
+    mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!, $responseTime: Int!) {
       saveSurveyAnswer(
         submissionId: $submissionId
         scenarioId: $scenarioId
         cooperationProbability: $cooperationProbability
+        responseTime: $responseTime
       ) {
         _id
         results {
@@ -466,6 +468,7 @@ export async function saveSurveyAnswer(
     submissionId,
     scenarioId,
     cooperationProbability,
+    responseTime,
   });
 
   return data.saveSurveyAnswer;

@@ -3232,3 +3232,22 @@ saveSession(currentId, submission._id, path);
 - **Verification run** (before review): `npm run test:e2e` PASS on PC and phone (`test-results/e2e/20261117_160239/`); new checks: Q1–Q8 rendered, required gate, answers survive a reload, stored answers = clicked answers, hidden from `submission(id)` without admin, Q1–Q8 columns in Export CSV. Unit: `questionnaire.test.ts` 3/3, `backend/__tests__/questionnaire.test.js` 4/4, `SurveyOutro.test.tsx` 10/10.
 - **Copy to review**: page title 「問卷」 and intro 「請依照您的看法回答以下問題，答案沒有對錯。」 are new wording; the debrief note now says the payment goes to the email 「稍後填寫」 (was 「下一步填寫」).
 - **Not updated**: `scripts/irb-shots/shots.mjs` routes `/survey/outro/3` (email) and `/survey/outro/4` (done) now point at the questionnaire and the email page.
+
+## Phase 53: Questionnaire Data-Capture Fixes (BUG-011, BUG-012; REQ-402.4, REQ-403.2, REQ-408.8, REQ-416)
+
+**Status**: ✅ Complete (2026-11-17)
+
+- [x] **TASK-5301**: Requirements (BUG-011, BUG-012, REQ-403.2, amended REQ-402.4 / REQ-408.8 / REQ-416); design Phase 53
+- [x] **TASK-5302**: `completeSurvey` requires the questionnaire (schema `!` + always validate) [REQ-416]
+- [x] **TASK-5303**: `completeSurvey` atomic not-completed guard → `ALREADY_COMPLETED` [BUG-012, REQ-402.4]
+- [x] **TASK-5304**: `Submission.demographics` admin-only field resolver [REQ-408.8]
+- [x] **TASK-5305**: `App.handleSurveyComplete` rethrows, navigates only on success, `ALREADY_COMPLETED` = success [BUG-011, REQ-403.2]
+- [x] **TASK-5306**: Questionnaire answers in `sessionStorage` [REQ-416]
+- [x] **TASK-5307**: Backend + unit regression tests; `group-closing.test.js` sends Q1–Q8
+- [x] **TASK-5308**: E2E API participants send Q1–Q8; EC-12 checks; re-run `npm run test:e2e` (PC + phone)
+
+**Implementation notes (2026-11-17)**:
+- **Verification**: `npm run test:e2e` PASS — PC 113/113, phone 113/113 (`test-results/e2e/20261117_183207/`). New checks: the first 送出 with its request blocked shows 「提交失敗，請稍後再試」, stays on step 4, keeps the answers, leaves the submission incomplete, and the retry completes; code/email hidden from `submission(id)` without admin; re-completing and completing without the questionnaire rejected, A's data unchanged. Unit + backend: 26/26 in the four touched files; `tsc` clean. Full vitest: the 3 known `new-data-model.test.js` failures only.
+- **Caught by the e2e**: the first run failed because the client still declared `$questionnaire` nullable against the now-required argument — before BUG-011's fix this would have shown the done page with nothing saved. The `questionnaire` parameter is now required in the TypeScript signatures too.
+- **Decided 2026-11-17**: answers stay stored as the option text (wording fixed for the study); no 「不願回答」 option — the IRB approved the questionnaire as is.
+- [x] **TASK-5309**: Legacy scripts `scripts/test-new-api.mjs` and `scripts/test-manual-mode-e2e.mjs` send Q1–Q8 to `completeSurvey`. They were already broken before Phase 53 (`test-new-api.mjs` imported the removed `SessionSetup.js` model; both lacked the REQ-100 Turnstile cookie at `startSurvey`); fixed both, and `test-new-api.mjs` reads `VITE_GRAPHQL_ENDPOINT` like the other. Both pass against a throwaway server + in-memory MongoDB.

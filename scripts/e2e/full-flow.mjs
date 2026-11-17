@@ -76,7 +76,7 @@ const EDGE_CASES = [
   ['EC-9', 'Every scenario reached its target', `Group completed (REQ-309); new visitor sees 「${FULL_MSG}」 on arrival, no session; API start refused (REQ-405.1)`],
   ['EC-10', 'Non-Chrome browser', '開始實驗 disabled with the Chrome notice (REQ-415)'],
   ['EC-11', 'Invite link to an unknown group', '「找不到此實驗」 on arrival, no 開始實驗, no session (REQ-405.2)'],
-  ['EC-12', 'Direct API misuse', 'Out-of-range answer, no Turnstile, no admin login, editing a completed submission all rejected (REQ-402, REQ-100, REQ-408.8, REQ-402.4)'],
+  ['EC-12', 'Direct API misuse', 'Out-of-range answer, no Turnstile, no admin login, editing or re-completing a completed submission, completing without the questionnaire all rejected (REQ-402, REQ-100, REQ-408.8, REQ-402.4, REQ-416)'],
   ['EC-13', 'No participant completed yet', 'Export Payments disabled (REQ-408.7)'],
 ];
 
@@ -419,8 +419,8 @@ async function apiParticipant(groupId, participantId, { code, email, probability
   }
   const { drawRealisedRound: draw } = await gql('mutation($id: ID!) { drawRealisedRound(submissionId: $id) { payoutNtd } }', { id: sub._id }, PARTICIPANT);
   const { completeSurvey: done } = await gql(
-    'mutation($id: ID!, $d: DemographicsInput!) { completeSurvey(submissionId: $id, demographics: $d) { isCompleted } }',
-    { id: sub._id, d: { age: 0, gender: code, education: email } }, PARTICIPANT);
+    'mutation($id: ID!, $d: DemographicsInput!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, demographics: $d, questionnaire: $q) { isCompleted } }',
+    { id: sub._id, d: { age: 0, gender: code, education: email }, q: expectedAnswers(QUESTIONNAIRE.map(() => 0)) }, PARTICIPANT);
   return { sessionId: s.sessionId, submissionId: sub._id, scenarios: s.assignedScenarios.length, payoutNtd: draw.payoutNtd, isCompleted: done.isCompleted };
 }
 
@@ -568,7 +568,24 @@ async function journey() {
     ec(null);
     await page.locator('input[type="email"]').fill(A.email);
     await shot(page, 'outro-email', `Outro 4: email ${A.email}`);
+
+    // BUG-011 / REQ-403.2: the first 送出 loses its network request — nothing may be lost or "done"
+    const dropSave = (route) => (route.request().postData() ?? '').includes('completeSurvey') ? route.abort() : route.continue();
+    await page.route('**/graphql', dropSave);
+    const dialog = page.waitForEvent('dialog');
     await click(button(page, '送出'));
+    const failAlert = await dialog;
+    check('Failed save: 「提交失敗，請稍後再試」 shown (REQ-403.2)', '提交失敗，請稍後再試', failAlert.message());
+    await failAlert.accept();
+    await page.unroute('**/graphql', dropSave);
+    check('Failed save: stays on the email step', '/survey/outro/4', pathOf(page));
+    check('Failed save: answers still kept in the tab', 8,
+      Object.keys(JSON.parse(await page.evaluate(() => Object.entries(sessionStorage).find(([k]) => k.startsWith('survey_questionnaire_'))?.[1] ?? '{}'))).length);
+    check('Failed save: submission not completed', false, Boolean((await col(SubmissionModel).findOne({ sessionId: run.sessionIdA }))?.isCompleted));
+    check('Failed save: answers never left in localStorage', false,
+      await page.evaluate(() => Object.keys(localStorage).some((k) => k.startsWith('survey_questionnaire_'))));
+
+    await click(button(page, '送出')); // retry
 
     await page.waitForURL(/\/survey\/outro\/5\b/);
     await settle(page);
@@ -610,6 +627,9 @@ async function journey() {
     const q = 'query($id: ID!) { submission(id: $id) { questionnaire { questionId answer } } }';
     check('Questionnaire hidden from submission(id) without an admin login', null, (await gql(q, { id: run.submissionIdA })).submission?.questionnaire);
     check('Questionnaire readable with an admin login', 8, (await gql(q, { id: run.submissionIdA }, { token: run.adminToken })).submission?.questionnaire?.length);
+    const d = 'query($id: ID!) { submission(id: $id) { demographics { gender education } } }';
+    check('Code and email hidden from submission(id) without an admin login (REQ-408.8)', null, (await gql(d, { id: run.submissionIdA })).submission?.demographics);
+    check('Email readable with an admin login', A.email, (await gql(d, { id: run.submissionIdA }, { token: run.adminToken })).submission?.demographics?.education);
 
     const r = sub?.realisedRoundIndex;
     run.draw = { round: r, my: sub?.myDecisions?.[r], opp: sub?.opponentDecisions?.[r], realisedPoints: sub?.realisedPoints, payoutNtd: sub?.payoutNtd };
@@ -859,6 +879,17 @@ async function journey() {
         { id: run.d.submissionId, sc: (await col(SubmissionModel).findOne({ participantId: D.participantId }))?.results?.[0]?.scenarioId }, PARTICIPANT);
       check('Changing an answer of a completed submission rejected (REQ-402.4)', true, /ANSWER_LOCKED/.test(reanswer.error ?? ''));
     }
+    // BUG-012: a completed submission cannot be completed again (would redirect the payment email)
+    const complete = 'mutation($id: ID!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, demographics: { age: 0, gender: "X", education: "attacker@example.com" }, questionnaire: $q) { _id } }';
+    const before = await col(SubmissionModel).findOne({ sessionId: run.sessionIdA });
+    const again = await gqlRaw(complete, { id: run.submissionIdA, q: expectedAnswers(QUESTIONNAIRE.map(() => 1)) }, PARTICIPANT);
+    check('Completing a completed submission rejected (REQ-402.4, BUG-012)', true, /ALREADY_COMPLETED/.test(again.error ?? ''));
+    const after = await col(SubmissionModel).findOne({ sessionId: run.sessionIdA });
+    check('A\'s email, answers and completedAt unchanged', JSON.stringify([before?.demographics?.education, before?.questionnaire, before?.completedAt]),
+      JSON.stringify([after?.demographics?.education, after?.questionnaire, after?.completedAt]));
+    const noAnswers = await gqlRaw('mutation($id: ID!) { completeSurvey(submissionId: $id, demographics: { age: 0, gender: "X", education: "x@example.com" }) { _id } }',
+      { id: run.submissionIdA }, PARTICIPANT);
+    check('Completing without the questionnaire rejected (REQ-416)', true, Boolean(noAnswers.error));
   }, { needs: ['participantA'] });
 
   await deviceC.close();

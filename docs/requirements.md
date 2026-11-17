@@ -45,6 +45,7 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-15 | **PROCESS** Test-case roadmap at the top of the e2e report (NFR-8.2) | The report opens with the participant journey stage by stage, each stage's happy-path result and its edge cases coloured pass / fail / observed, so the reviewer sees coverage and failures at a glance. |
 | 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
 | 2026-11-16 | **PROCESS** One e2e report for PC and phone (NFR-8.3) | The full e2e journey and edge cases run on a PC and on an emulated phone, and one combined report shows both results for every case and the PC and phone screenshots side by side. |
+| 2026-11-17 | **DATA SAFETY** Questionnaire data-capture review (BUG-011, BUG-012; REQ-402.4, REQ-403.2, REQ-408.8, REQ-416) | A failed final save no longer shows the done page or wipes the answers; it shows an error and keeps everything for a retry (BUG-011). A completed submission cannot be completed again (BUG-012). `completeSurvey` now requires all eight answers. The registration code and email are admin-only like the answers. Unsent answers are kept per tab (sessionStorage), not left on the device. |
 | 2026-11-17 | **NEW FEATURE** Post-survey questionnaire Q1–Q8 (REQ-416) | Eight required single-choice attitude questions on a new outro page between the debrief and the email; saved with the submission, admin-only, exported in the submissions CSV. The outro now has 5 steps. Reviewed: Q2 typo 「曆史」→「歷史」 fixed; every question ends with a full-width 「？」. |
 | 2026-11-16 | **UI CHANGE** 圖例 and 圖說 collapsed by default, open on tap (REQ-409.5) | The graph legend and figure captions took up most of a phone screen; they now open when tapped. Admin pages appear once (PC only) in the combined e2e report. |
 | 2026-11-16 | **ADMIN CAPABILITY** Mixed Mode cost estimate (REQ-314) | The Mixed setup page shows the estimated total payout (est. participants × per-participant payout range) in the Setting Preview and the launch confirmation, so the admin can budget before launching. Uses the payment constants from `utils/payment.js` (REQ-408.1). |
@@ -450,6 +451,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - Browser Back on the scenarios or outro keeps the participant on the current page (the existing Back trap in `SurveyView`) and now shows the toast 「已確認的答案無法修改。」
     - Opening an earlier scenario's URL returns the participant to where they were, with the same toast.
     - `saveSurveyAnswer` rejects a *different* value for a scenario the submission has already answered (`ANSWER_LOCKED`). Re-sending the *same* value succeeds without changes, so a network retry is harmless.
+    - *2026-11-17 (BUG-012):* a completed submission is final too. `completeSurvey` on a submission that is already completed is rejected (`ALREADY_COMPLETED`) and changes nothing: not the code, email or questionnaire answers, not `completedAt`, and the session's `submissionCount` is not counted twice. The check is part of the database update itself, so two simultaneous calls cannot both succeed.
     - `saveSurveyAnswer` rejects any change to a completed submission (`ANSWER_LOCKED`).
 
 - **REQ-403 — Demographics + completion.** ✅ **BUG FIXED 2026-05-04** On the final step the participant submits `{ age, gender, education }`. The system marks the `Submission.isCompleted = true` and shows the outro screen.
@@ -457,6 +459,9 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
    
 - **REQ-403.1 — Registration code survives a refresh.** ✅ **IMPLEMENTED 2026-11-15** (BUG-009) The registration code entered on outro step 1 MUST be kept until `completeSurvey` succeeds, across page refreshes on outro steps 2 and 3, and MUST NOT be replaced by a placeholder.
   - *Acceptance:* The code is stored in `localStorage[survey_code_<submissionId>]` when entered and restored when the outro mounts; it is removed after `completeSurvey` succeeds. If the code is missing at the final submit, the participant is sent back to step 1 and nothing is saved — `demographics.gender` is never `unknown`. Verified by the NFR-8 e2e test, which reloads the debrief before submitting.
+
+- **REQ-403.2 — A failed final save keeps the data.** 📋 **NEW 2026-11-17** (BUG-011) If `completeSurvey` fails on 送出 (network error, server error), the participant MUST stay on the email step and see 「提交失敗，請稍後再試」; the registration code, the email and the questionnaire answers MUST be kept so that 送出 can be retried. The done page (step 5) is shown only after the save succeeded.
+  - *Retry after a lost response:* if the first 送出 was saved but its response never arrived, the retry gets `ALREADY_COMPLETED` (REQ-402.4). The client treats that as success and shows the done page.
 
 - **REQ-404 — Session persistence (resume).** Refreshing the browser or returning to the URL must restore `submissionId` and route from `localStorage[survey_session_<sessionId>]`.
   - *Acceptance:* If the stored `path` is meaningfully different from the current URL (e.g., user landed on `/survey/scenarios/0` but session was at `scenarios/2`), the app navigates back to the stored path; mismatch heuristic logs a warning and falls back to a fresh entry.
@@ -514,7 +519,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   - *Acceptance:* UTF-8 with BOM; filename `{group_name}_payments_{YYYYMMDD_HHmmss}.csv`. Completed submissions without a persisted draw are listed with empty payout fields and reported in a warning toast. The research CSV (REQ-362) is unchanged.
   - *Note:* The registration code and email are stored in `demographics.gender` and `demographics.education` (SurveyOutro reuses the demographics payload). The ledger maps them to explicit column names.
 
-- **REQ-408.8 — Participant contact data requires admin authentication.** `recentSubmissions` and `submissionsByGroup` return participant email and MUST reject requests without a valid admin JWT (`context.isAdmin`). Participant-facing operations (`session`, `submission(id)`, `startSurvey`, `saveSurveyAnswer`, `drawRealisedRound`, `completeSurvey`) are unchanged.
+- **REQ-408.8 — Participant contact data requires admin authentication.** `recentSubmissions` and `submissionsByGroup` return participant email and MUST reject requests without a valid admin JWT (`context.isAdmin`). Participant-facing operations (`session`, `submission(id)`, `startSurvey`, `saveSurveyAnswer`, `drawRealisedRound`, `completeSurvey`) are unchanged. *2026-11-17:* the `demographics` field (which holds the registration code and email, REQ-408.5) returns `null` without an admin login wherever a Submission is returned, including `submission(id)` and the `completeSurvey` result — the same rule as the questionnaire answers (REQ-416). No participant page reads it.
   - *Acceptance:* An unauthenticated `recentSubmissions` query returns the error `Unauthorized`; the admin UI, which sends `Authorization: Bearer <token>`, keeps working. Admin mutations remain unguarded and are tracked as BUG-006.
 
 - **REQ-408.9 — Actual payout on the group page.** 📋 **NEW 2026-11-16** The group detail page MUST show an「Actual Payout」card with the total NT$ owed so far.
@@ -578,8 +583,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
   - *Layout (2026-11-17):* the page uses the same design as the 理解測試 quiz (intro step 6): wide card, large title with the indigo underline bar, amber instruction panel with a white inner panel, bold numbered question rows. On screens ≥ 640px each question's options sit to the right of its text, on the same row; on a phone they sit below it.
   - *Required:* 下一步 stays disabled until all eight are answered; the page shows 「已回答 n / 8」. A participant who reaches the email step without all eight answers (e.g. a direct URL) is sent back to step 3 on 送出.
-  - *Refresh:* answers are kept in the browser per submission (like the registration code, REQ-403.1) and restored after a refresh until the survey is submitted.
-  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]` (answer = the option text). The server rejects unknown question IDs, duplicates and answers that are not one of that question's options.
+  - *Refresh:* answers are kept in the browser tab per submission (`sessionStorage`) and restored after a refresh until the survey is submitted. *2026-11-17:* not `localStorage`, so the political opinions of a participant who leaves without submitting do not stay on a shared device after the tab is closed; a participant who closes the tab and returns answers the eight questions again.
+  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]` (answer = the option text; the wording is fixed for the study). *2026-11-17:* `completeSurvey` requires the questionnaire — a completion without all eight valid answers is rejected and nothing is saved. The server rejects missing, unknown and duplicate question IDs and answers that are not one of that question's options.
   - *Privacy:* the answers are political opinions. They MUST be readable only with an admin login: the `questionnaire` field returns null for anyone else, including through the public `submission(id)` query.
   - *Export:* the submissions CSV (Export CSV) gets columns Q1–Q8 with the answer text.
   - *Wording:* as supplied, with two corrections confirmed 2026-11-17: 「曆史」 → 「歷史」 in Q2, and every question ends with a full-width 「？」. Page title 「問卷」 and intro line approved. A new instrument (political attitudes) likely needs IRB approval before deployment.
@@ -634,7 +639,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     | EC-9 | Every scenario of the group reached its target | Group marked completed (REQ-309); a new visitor sees 「無法參與實驗」 on arrival and gets no session; `startMixedSession` refuses (REQ-405.1) |
     | EC-10 | Non-Chrome browser | 開始實驗 disabled with the Chrome notice (REQ-415) |
     | EC-11 | Invite link with an unknown group | 「找不到此實驗」 on arrival, no 開始實驗, no session (REQ-405.2) |
-    | EC-12 | Direct API misuse | Probability outside [0, 1] rejected (REQ-402); starting without Turnstile rejected (REQ-100); participant data without admin login rejected (REQ-408.8); changing an answer of a completed submission rejected (REQ-402.4) |
+    | EC-12 | Direct API misuse | Probability outside [0, 1] rejected (REQ-402); starting without Turnstile rejected (REQ-100); participant data without admin login rejected (REQ-408.8); changing an answer of a completed submission, or completing it again, rejected (REQ-402.4, BUG-012); completing without the questionnaire rejected (REQ-416) |
     | EC-13 | No participant has completed yet | Export Payments disabled (REQ-408.7) |
   - *Roadmap (NFR-8.2, added 2026-11-15):* the report MUST open with a roadmap that shows every test case on the participant journey at a glance: one row per stage (admin setup → invite link → intro → scenarios → outro & debrief → coming back → payment ledger → direct API), the happy-path result for that stage, and each edge case as a chip coloured by its result (pass / fail / observed / not run). Each chip links to the step that ran it. A case added to the catalogue but not placed on the roadmap fails the run.
   - *PC + phone (NFR-8.3, added 2026-11-16):* `npm run test:e2e` runs the journey and every edge case twice — on a PC (1440×900) and with every participant on a phone (390×844, touch, mobile Chrome user agent; the admin stays on desktop) — and writes **one** report, `test-results/e2e/<timestamp>/report.html` + `report.pdf`, that compares the two: the roadmap and edge-case table show a PC and a phone result for every case, every check shows both results, and each participant screenshot is shown next to its phone counterpart (admin pages are desktop-only, so they are shown once, PC only). The run passes only if both pass. `npm run test:e2e:pc` / `npm run test:e2e:mobile` run one device on its own.
@@ -698,6 +703,17 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **Root Cause**: REQ-309 is marked completed but is not implemented: `SessionGroup` has no `status` field, and `completeSurvey` counts the scenarios below target and only logs the number. `startMixedSession` and the welcome page never check whether the group is full, so the REQ-405 gate for Mixed groups does not exist.
 - **Fix (2026-11-16)**: `SessionGroup.status` added and recomputed in `completeSurvey` and on invalidate/restore (REQ-309); `startMixedSession` refuses new sessions for a completed group (`GROUP_FULL`); the welcome page reads the group's status on arrival and shows 「無法參與實驗」 (REQ-405.1). Participants already in progress may finish.
 
+**BUG-011**: A failed final save showed the done page and wiped the answers
+
+- **Symptom**: If `completeSurvey` failed on 送出 (e.g. the network dropped), the participant still saw the done page; the submission stayed incomplete, so it had no questionnaire answers, no email and no payment-ledger row, and the copies kept in the browser were deleted. Found in the 2026-11-17 data-capture review.
+- **Root Cause**: `App.handleSurveyComplete` caught the error, set a notice and navigated to step 5 anyway. It never rethrew, so `SurveyOutro.handleFinalSubmit` treated the save as successful and cleared the stored code and answers; its 「提交失敗」 alert could never run.
+- **Fix (2026-11-17, REQ-403.2)**: `handleSurveyComplete` rethrows and navigates only on success; `ALREADY_COMPLETED` counts as success.
+
+**BUG-012**: A completed submission could be completed again
+
+- **Symptom**: Calling `completeSurvey` again on a completed submission overwrote the questionnaire answers and the email (redirecting the payment), reset `completedAt` and counted the session's `submissionCount` a second time. Only `saveSurveyAnswer` checked `isCompleted`.
+- **Fix (2026-11-17, REQ-402.4)**: the update only matches a submission that is not completed yet; otherwise `ALREADY_COMPLETED`.
+
 ---
 
 ## Known Issues (Fixed)
@@ -711,6 +727,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | BUG-003 | Admin history view: clicking session ID shows 0 active edges in read-only setup panel | 2026-05-04 | ✅ Fixed |
 | BUG-009 | A page refresh after outro step 1 lost the registration code; the ledger showed `unknown` | 2026-11-15 | ✅ Fixed |
 | BUG-010 | A full Mixed group never closed; new visitors still got sessions of already-full scenarios | 2026-11-16 | ✅ Fixed |
+| BUG-011 | A failed final save showed the done page and wiped the code, email and questionnaire answers | 2026-11-17 | ✅ Fixed (REQ-403.2) |
+| BUG-012 | `completeSurvey` on a completed submission overwrote its answers and email and double-counted it | 2026-11-17 | ✅ Fixed (REQ-402.4) |
 | BUG-007 | Group detail view and research CSV only see the 100 most recent submissions across all sessions | 2026-10-01 | ✅ Fixed (REQ-408.7) |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.

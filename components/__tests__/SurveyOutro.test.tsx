@@ -83,16 +83,21 @@ describe('SurveyOutro payment (REQ-408)', () => {
   });
 });
 
+// Newer Node versions shadow jsdom's localStorage with their own (undefined without a file)
+const fakeStorage = (map: Map<string, string>) => ({
+  getItem: (k: string) => map.get(k) ?? null,
+  setItem: (k: string, v: string) => void map.set(k, String(v)),
+  removeItem: (k: string) => void map.delete(k),
+});
+
 describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
-  // Newer Node versions shadow jsdom's localStorage with their own (undefined without a file)
-  let store: Map<string, string>;
+  let store: Map<string, string>; // localStorage
+  let session: Map<string, string>; // sessionStorage
   beforeEach(() => {
     store = new Map();
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, String(v)),
-      removeItem: (k: string) => void store.delete(k),
-    });
+    session = new Map();
+    vi.stubGlobal('localStorage', fakeStorage(store));
+    vi.stubGlobal('sessionStorage', fakeStorage(session));
   });
   afterEach(() => {
     vi.resetAllMocks();
@@ -109,7 +114,7 @@ describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
     const first = render(<SurveyOutro {...props(1)} />);
     fireEvent.change(screen.getByPlaceholderText('請輸入代碼'), { target: { value: 'E2E001' } });
     first.unmount(); // the page reload
-    store.set('survey_questionnaire_submission-1', JSON.stringify(allAnswers));
+    session.set('survey_questionnaire_submission-1', JSON.stringify(allAnswers));
 
     const onComplete = vi.fn().mockResolvedValue(undefined);
     render(<SurveyOutro {...props(4, onComplete)} />);
@@ -137,14 +142,13 @@ describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
 });
 
 describe('SurveyOutro questionnaire (REQ-416)', () => {
-  let store: Map<string, string>;
+  let store: Map<string, string>; // localStorage
+  let session: Map<string, string>; // sessionStorage
   beforeEach(() => {
     store = new Map();
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, String(v)),
-      removeItem: (k: string) => void store.delete(k),
-    });
+    session = new Map();
+    vi.stubGlobal('localStorage', fakeStorage(store));
+    vi.stubGlobal('sessionStorage', fakeStorage(session));
     vi.mocked(fetchSubmission).mockResolvedValue(savedDebrief as any);
   });
   afterEach(() => {
@@ -183,6 +187,7 @@ describe('SurveyOutro questionnaire (REQ-416)', () => {
 
     render(<SurveyOutro {...props(3)} />);
     expect(screen.getByText('已回答 8 / 8')).toBeInTheDocument();
+    expect(store.has('survey_questionnaire_submission-1')).toBe(false); // never left on the device
     cleanup();
 
     const onComplete = vi.fn().mockResolvedValue(undefined);
@@ -193,7 +198,28 @@ describe('SurveyOutro questionnaire (REQ-416)', () => {
 
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
     expect(onComplete.mock.calls[0][3]).toEqual(QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[1] })));
-    await vi.waitFor(() => expect(store.has('survey_questionnaire_submission-1')).toBe(false));
+    await vi.waitFor(() => expect(session.has('survey_questionnaire_submission-1')).toBe(false));
+  });
+
+  it('keeps everything and stays on the email step when the save fails (BUG-011, REQ-403.2)', async () => {
+    store.set('survey_code_submission-1', 'E2E001');
+    session.set('survey_questionnaire_submission-1', JSON.stringify(allAnswers));
+    const alert = vi.fn();
+    vi.stubGlobal('alert', alert);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onComplete = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+    const onNavigateStep = vi.fn();
+    render(<SurveyOutro {...props(4, onComplete, onNavigateStep)} />);
+    await screen.findByText('新台幣 300 元');
+    fireEvent.change(screen.getByPlaceholderText('您的 Email'), { target: { value: 'a@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '送出' }));
+
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith('提交失敗，請稍後再試'));
+    expect(onNavigateStep).not.toHaveBeenCalledWith(5);
+    expect(store.get('survey_code_submission-1')).toBe('E2E001');
+    expect(session.has('survey_questionnaire_submission-1')).toBe(true);
+    expect(screen.getByPlaceholderText('您的 Email')).toHaveValue('a@example.com');
+    expect(screen.getByRole('button', { name: '送出' })).toBeEnabled(); // can retry
   });
 
   it('sends the participant back to the questionnaire when an answer is missing', async () => {

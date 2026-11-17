@@ -45,14 +45,15 @@ function writeStoredCode(entryId: string | undefined, code: string | null) {
   }
 }
 
-// Questionnaire answers (REQ-416) survive a refresh the same way, until the survey is submitted
+// Questionnaire answers (REQ-416) survive a refresh until the survey is submitted. sessionStorage, not
+// localStorage: political opinions of someone who leaves unsubmitted must not stay on a shared device.
 type Answers = Record<string, string>;
 const answersKey = (entryId: string) => `survey_questionnaire_${entryId}`;
 
 function readStoredAnswers(entryId?: string): Answers {
   if (!entryId) return {};
   try {
-    return JSON.parse(localStorage.getItem(answersKey(entryId)) ?? '{}') ?? {};
+    return JSON.parse(sessionStorage.getItem(answersKey(entryId)) ?? '{}') ?? {};
   } catch {
     return {};
   }
@@ -61,8 +62,8 @@ function readStoredAnswers(entryId?: string): Answers {
 function writeStoredAnswers(entryId: string | undefined, answers: Answers | null) {
   if (!entryId) return;
   try {
-    if (answers) localStorage.setItem(answersKey(entryId), JSON.stringify(answers));
-    else localStorage.removeItem(answersKey(entryId));
+    if (answers) sessionStorage.setItem(answersKey(entryId), JSON.stringify(answers));
+    else sessionStorage.removeItem(answersKey(entryId));
   } catch {
     // storage unavailable — keep the in-memory answers only
   }
@@ -71,7 +72,7 @@ function writeStoredAnswers(entryId: string | undefined, answers: Answers | null
 export interface SurveyOutroProps {
   results: SurveyResult[];
   onBack: () => void;
-  onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire?: QuestionnaireAnswer[]) => void;
+  onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire: QuestionnaireAnswer[]) => void;
   entryId?: string;
   /** Which of the 5 debrief sub-pages to render (1: code confirm, 2: debrief, 3: questionnaire, 4: email, 5: done). Sourced from the URL so refreshing stays on the same page. */
   currentStep: number;

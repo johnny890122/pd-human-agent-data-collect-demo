@@ -474,10 +474,10 @@ export async function saveSurveyAnswer(
 export async function completeSurvey(
   submissionId: string,
   demographics: { age?: number; gender?: string; education?: string },
-  questionnaire?: QuestionnaireAnswer[]
+  questionnaire: QuestionnaireAnswer[]
 ): Promise<SubmissionType> {
   const mutation = `
-    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]) {
+    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]!) {
       completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
         _id
         isCompleted

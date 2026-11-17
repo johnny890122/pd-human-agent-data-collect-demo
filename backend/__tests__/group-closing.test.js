@@ -12,6 +12,7 @@ import { SessionModel } from '../models/Session.js';
 import { SubmissionModel } from '../models/Submission.js';
 import { resolvers } from '../graphql/resolvers.js';
 import { connectToDatabase } from '../db.js';
+import { QUESTIONNAIRE } from '../../utils/questionnaire.js';
 
 const { Mutation: M } = resolvers;
 const ctx = { isTurnstileVerified: true };
@@ -52,7 +53,7 @@ async function participant(groupId, participantId, { finish = true } = {}) {
   const { sessionId, assignedScenarios } = await M.startMixedSession(null, { groupId, participantId }, ctx);
   const sub = await M.startSurvey(null, { sessionId, participantId }, ctx);
   for (const s of assignedScenarios) await M.saveSurveyAnswer(null, { submissionId: sub._id, scenarioId: s._id, cooperationProbability: 0.5 });
-  if (finish) await M.completeSurvey(null, { submissionId: sub._id, demographics: { age: 0, gender: 'CODE', education: 'a@b.c' } });
+  if (finish) await M.completeSurvey(null, { submissionId: sub._id, demographics: { age: 0, gender: 'CODE', education: 'a@b.c' }, questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })) });
   return { submissionId: sub._id, scenarioIds: assignedScenarios.map((s) => s._id) };
 }
 

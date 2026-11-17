@@ -160,9 +160,11 @@ function toSubmissionGraph(doc) {
 export const resolvers = {
   JSON: GraphQLJSON,
 
-  // REQ-416: questionnaire answers are political opinions — admins only, even via submission(id)
+  // REQ-416 / REQ-408.8: political opinions and the code + email (in demographics) — admins only,
+  // wherever a Submission is returned, even via submission(id) or the completeSurvey result
   Submission: {
     questionnaire: (submission, _, context) => (context?.isAdmin ? submission.questionnaire : null),
+    demographics: (submission, _, context) => (context?.isAdmin ? submission.demographics : null),
   },
 
   Query: {
@@ -691,21 +693,21 @@ export const resolvers = {
     },
     
     completeSurvey: async (_, { submissionId, demographics, questionnaire }) => {
-      // REQ-416: the UI always sends all eight; validate them at the boundary
-      if (questionnaire != null) {
-        const problem = questionnaireError(questionnaire);
-        if (problem) throw new Error(`INVALID_QUESTIONNAIRE: ${problem}`);
-      }
+      // REQ-416: all eight answers are required; validate them before any write
+      const problem = questionnaireError(questionnaire);
+      if (problem) throw new Error(`INVALID_QUESTIONNAIRE: ${problem}`);
 
       requireDb();
       await connectToDatabase();
       
-      const submission = await SubmissionModel.findByIdAndUpdate(
-        submissionId,
+      // REQ-402.4 / BUG-012: a completed submission is final. The not-completed condition is part of
+      // the update, so two simultaneous calls cannot both succeed (and count twice).
+      const submission = await SubmissionModel.findOneAndUpdate(
+        { _id: submissionId, isCompleted: { $ne: true } },
         {
           $set: {
             demographics,
-            ...(questionnaire != null && { questionnaire: questionnaire.map(({ questionId, answer }) => ({ questionId, answer })) }),
+            questionnaire: questionnaire.map(({ questionId, answer }) => ({ questionId, answer })),
             isCompleted: true,
             completedAt: new Date(),
           },
@@ -714,6 +716,9 @@ export const resolvers = {
       );
       
       if (!submission) {
+        if (await SubmissionModel.exists({ _id: submissionId })) {
+          throw new Error('ALREADY_COMPLETED: this submission is already completed');
+        }
         throw new Error('Submission not found');
       }
       

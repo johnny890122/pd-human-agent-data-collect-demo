@@ -223,7 +223,7 @@ export const typeDefs = `#graphql
     # Unified survey flow
     startSurvey(sessionId: ID!, participantId: String): Submission!
     saveSurveyAnswer(submissionId: ID!, scenarioId: ID!, cooperationProbability: Float!): Submission!
-    completeSurvey(submissionId: ID!, demographics: DemographicsInput!, questionnaire: [QuestionnaireAnswerInput!]): Submission!
+    completeSurvey(submissionId: ID!, demographics: DemographicsInput!, questionnaire: [QuestionnaireAnswerInput!]!): Submission!
     
     # Realised round draw (backend-authoritative random selection for payment)
     drawRealisedRound(submissionId: ID!): DebriefResult!

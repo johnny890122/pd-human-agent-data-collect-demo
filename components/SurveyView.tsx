@@ -15,7 +15,7 @@ interface SurveyViewProps {
   setup: Session;
   onStartSurvey: () => Promise<string | undefined>;
   onSaveAnswer: (entryId: string, answer: SurveyResult) => Promise<boolean>;
-  onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire?: QuestionnaireAnswer[]) => void;
+  onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire: QuestionnaireAnswer[]) => void;
   onBack: () => void;
   initialEntryId?: string;
   isTurnstileVerified: boolean;

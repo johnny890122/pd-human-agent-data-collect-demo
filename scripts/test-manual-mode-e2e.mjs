@@ -6,6 +6,7 @@
  */
 
 import dotenv from 'dotenv';
+import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 dotenv.config();
 
 const GRAPHQL_ENDPOINT = process.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:3001/graphql';
@@ -13,7 +14,7 @@ const GRAPHQL_ENDPOINT = process.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:
 async function runGraphQL(query, variables = {}) {
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
     body: JSON.stringify({ query, variables }),
   });
 
@@ -148,8 +149,8 @@ async function testManualMode() {
   console.log('-'.repeat(60));
   
   const completeMutation = `
-    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!) {
-      completeSurvey(submissionId: $submissionId, demographics: $demographics) {
+    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]!) {
+      completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
         _id
         isCompleted
         completedAt
@@ -169,6 +170,7 @@ async function testManualMode() {
       gender: 'male',
       education: 'bachelor',
     },
+    questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })), // REQ-416: required
   });
   
   const completedSubmission = completeResult.completeSurvey;
@@ -177,7 +179,7 @@ async function testManualMode() {
   console.log(`   - Submission ID: ${completedSubmission._id}`);
   console.log(`   - Completed: ${completedSubmission.isCompleted}`);
   console.log(`   - Completed at: ${completedSubmission.completedAt}`);
-  console.log(`   - Demographics:`, completedSubmission.demographics);
+  console.log(`   - Demographics:`, completedSubmission.demographics, '(null without an admin login, REQ-408.8)');
 
   // Step 5: Verify session updated
   console.log('\n📝 Step 5: Verify Session Updated');

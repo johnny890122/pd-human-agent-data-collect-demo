@@ -409,7 +409,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire?: QuestionnaireAnswer[]) => {
+  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire: QuestionnaireAnswer[]) => {
     setIsSubmitting(true);
     console.log('Survey Completed');
 
@@ -418,16 +418,25 @@ const App: React.FC = () => {
       
       // Unified survey flow
       console.log('[NEW API] Completing survey with unified API');
-      await completeSurvey(submissionId, demographics, questionnaire);
+      try {
+        await completeSurvey(submissionId, demographics, questionnaire);
+      } catch (error) {
+        // An earlier 送出 was saved but its response was lost (REQ-403.2): that is success
+        if (!(error instanceof Error && error.message.includes('ALREADY_COMPLETED'))) throw error;
+      }
       
       setBackendNotice(null);
       clearSession(currentId);
     } catch (error) {
+      // BUG-011: never show the done page for an unsaved survey. Rethrow so SurveyOutro keeps the
+      // code, email and answers and lets the participant retry.
       const message = error instanceof Error ? error.message : 'Unknown error';
       setBackendNotice(`Could not persist survey results: ${message}`);
+      throw error;
+    } finally {
+      setIsSubmitting(false);
     }
 
-    setIsSubmitting(false);
     const urlSuffix = sessionIdFromUrl ? `?sessionId=${sessionIdFromUrl}` : '';
     navigate(`/survey/outro/5${urlSuffix}`, { replace: true });
   };

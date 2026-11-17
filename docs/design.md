@@ -3504,3 +3504,22 @@ Nothing opens the manual layout once the history page is gone, so it is deleted 
 - Backend: `completeSurvey` saves valid answers, rejects invalid ones; `submission(id)` hides them without admin, shows them with admin.
 - E2E (PC + phone): `finishOutro` answers Q1–Q8 (participant A with a fixed pattern), screenshots step 3; DB check that A's `questionnaire` equals what was clicked.
 
+## Phase 53 — Questionnaire data-capture fixes (BUG-011, BUG-012; REQ-402.4, REQ-403.2, REQ-408.8, REQ-416)
+
+Supersedes the Phase 52 points 「Omitted = unchanged」 and 「Answers live in … `localStorage`」.
+
+### Server (`backend/graphql/resolvers.js`, `typeDefs.js`)
+- `completeSurvey(submissionId, demographics, questionnaire: [QuestionnaireAnswerInput!]!)` — the argument is required; `questionnaireError` always runs first (`INVALID_QUESTIONNAIRE: missing Q1, …`), before any write.
+- One atomic write: `findOneAndUpdate({ _id: submissionId, isCompleted: { $ne: true } }, { $set: … })`. No match → `findById`: exists → `ALREADY_COMPLETED: this submission is already completed`, else `Submission not found`. The `submissionCount` `$inc` and the group-status refresh only run after a successful match, so they happen once per submission.
+- Field resolver `Submission.demographics`: `context.isAdmin ? submission.demographics : null` (same pattern as `questionnaire`). Admin queries already send the JWT; `recentSubmissions` / `submissionsByGroup` stay admin-only.
+
+### Client
+- `App.handleSurveyComplete`: `completeSurvey` → on success clear the session and navigate to step 5; on `ALREADY_COMPLETED` the same (an earlier 送出 was saved but its response was lost); any other error sets the notice and **rethrows**, without navigating.
+- `SurveyOutro.handleFinalSubmit` already keeps the stored code/answers and shows 「提交失敗，請稍後再試」 when `onComplete` throws — now reachable.
+- Answers: `sessionStorage[survey_questionnaire_<submissionId>]` instead of `localStorage` (per tab; survives a refresh; gone when the tab closes). The registration code stays in `localStorage` (REQ-403.1).
+
+### Tests
+- Backend: questionnaire omitted → rejected and nothing saved; second `completeSurvey` → `ALREADY_COMPLETED`, answers/email/`submissionCount` unchanged; `Submission.demographics` null without admin. `group-closing.test.js` sends a questionnaire.
+- Unit: `onComplete` rejecting → stays on step 4, alert, stored code and answers kept; answers read from `sessionStorage`.
+- E2E: API participants send Q1–Q8; EC-12 adds 「completing a completed submission rejected」 and 「completing without the questionnaire rejected」, and 「email hidden from `submission(id)` without admin」.
+

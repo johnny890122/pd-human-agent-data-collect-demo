@@ -8,9 +8,12 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { ScenarioModel } from '../backend/models/Scenario.js';
 import { SessionModel } from '../backend/models/Session.js';
-import { SubmissionModel } from '../backend/models/SessionSetup.js';
+import { SubmissionModel } from '../backend/models/Submission.js';
+import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 
 dotenv.config();
+
+const GRAPHQL_ENDPOINT = process.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:3001/graphql';
 
 const TEST_CONFIG = {
   activeEdgeIds: ['KMT1-DPP3', 'DPP3-KMT1'],
@@ -29,9 +32,9 @@ async function testNewAPI() {
     // ============================================================================
     console.log('========== STEP 1: Creating Manual Session ==========');
     
-    const response = await fetch('http://localhost:3001/graphql', {
+    const response = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
       body: JSON.stringify({
         query: `
           mutation CreateManualSession($input: SessionInput!) {
@@ -108,9 +111,9 @@ async function testNewAPI() {
     // ============================================================================
     console.log('\n========== STEP 4: Starting Survey ==========');
     
-    const startResponse = await fetch('http://localhost:3001/graphql', {
+    const startResponse = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
       body: JSON.stringify({
         query: `
           mutation StartSurvey($sessionId: ID!) {
@@ -150,9 +153,9 @@ async function testNewAPI() {
       const scenario = scenarios[i];
       const probability = 0.5 + (i * 0.1);  // Varying probabilities
       
-      const saveResponse = await fetch('http://localhost:3001/graphql', {
+      const saveResponse = await fetch(GRAPHQL_ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
         body: JSON.stringify({
           query: `
             mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!) {
@@ -207,13 +210,13 @@ async function testNewAPI() {
     // ============================================================================
     console.log('\n========== STEP 7: Completing Survey ==========');
     
-    const completeResponse = await fetch('http://localhost:3001/graphql', {
+    const completeResponse = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
       body: JSON.stringify({
         query: `
-          mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!) {
-            completeSurvey(submissionId: $submissionId, demographics: $demographics) {
+          mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]!) {
+            completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
               _id
               isCompleted
               completedAt
@@ -231,7 +234,8 @@ async function testNewAPI() {
             age: 25,
             gender: 'other',
             education: 'university'
-          }
+          },
+          questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })), // REQ-416: required
         }
       })
     });

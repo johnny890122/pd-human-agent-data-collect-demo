@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Submission, SurveyResult } from '../types';
+import { Submission, SurveyResult, QuestionnaireAnswer } from '../types';
 import { DebriefResult, drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
 import { PAYMENT_METHOD_TEXT, PAYMENT_TIMELINE_TEXT, POINT_TO_NTD, payoffPoints, pointPayoutNtd } from '../utils/payment.js';
+import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 
 // The persisted debrief, if this submission already has a complete one (including its payout)
 function persistedDebrief(sub: Submission | null): DebriefResult | null {
@@ -44,12 +45,35 @@ function writeStoredCode(entryId: string | undefined, code: string | null) {
   }
 }
 
+// Questionnaire answers (REQ-416) survive a refresh the same way, until the survey is submitted
+type Answers = Record<string, string>;
+const answersKey = (entryId: string) => `survey_questionnaire_${entryId}`;
+
+function readStoredAnswers(entryId?: string): Answers {
+  if (!entryId) return {};
+  try {
+    return JSON.parse(localStorage.getItem(answersKey(entryId)) ?? '{}') ?? {};
+  } catch {
+    return {};
+  }
+}
+
+function writeStoredAnswers(entryId: string | undefined, answers: Answers | null) {
+  if (!entryId) return;
+  try {
+    if (answers) localStorage.setItem(answersKey(entryId), JSON.stringify(answers));
+    else localStorage.removeItem(answersKey(entryId));
+  } catch {
+    // storage unavailable — keep the in-memory answers only
+  }
+}
+
 export interface SurveyOutroProps {
   results: SurveyResult[];
   onBack: () => void;
-  onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
+  onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire?: QuestionnaireAnswer[]) => void;
   entryId?: string;
-  /** Which of the 4 debrief sub-pages to render (1: code confirm, 2: debrief, 3: email, 4: done). Sourced from the URL so refreshing stays on the same page. */
+  /** Which of the 5 debrief sub-pages to render (1: code confirm, 2: debrief, 3: questionnaire, 4: email, 5: done). Sourced from the URL so refreshing stays on the same page. */
   currentStep: number;
   /** Navigate to a different debrief sub-page (updates the URL via the parent). */
   onNavigateStep: (step: number) => void;
@@ -57,6 +81,7 @@ export interface SurveyOutroProps {
 
 const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack: _onBack, onComplete, entryId, currentStep: step, onNavigateStep }) => {
   const [codeValue, setCodeValue] = useState(() => readStoredCode(entryId));
+  const [answers, setAnswers] = useState<Answers>(() => readStoredAnswers(entryId));
   const [emailValue, setEmailValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [results, setResults] = useState<SurveyResult[]>(resultsProp);
@@ -67,17 +92,26 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
   // entryId can arrive after mount (restored asynchronously on a refresh)
   useEffect(() => {
     if (!codeValue) setCodeValue(readStoredCode(entryId));
+    if (!Object.keys(answers).length) setAnswers(readStoredAnswers(entryId));
   }, [entryId]);
+
+  const answer = (questionId: string, value: string) => {
+    const next = { ...answers, [questionId]: value };
+    setAnswers(next);
+    writeStoredAnswers(entryId, next);
+  };
+  const answeredCount = QUESTIONNAIRE.filter((q) => answers[q.id]).length;
+  const allAnswered = answeredCount === QUESTIONNAIRE.length;
 
   const updateCode = (value: string) => {
     setCodeValue(value);
     writeStoredCode(entryId, value);
   };
 
-  // Steps 2 (debrief) and 3 (email) both show the saved result, so both load it
+  // Steps 2 (debrief) and 4 (email) both show the saved result, so both load it
   useEffect(() => {
-    if (step !== 2 && step !== 3) return;
-    // Already loaded on the previous step (2 → 3): keep showing the same result
+    if (step !== 2 && step !== 4) return;
+    // Already loaded on an earlier step (2 → 4): keep showing the same result
     if (!entryId || debrief) return;
     let cancelled = false;
 
@@ -125,6 +159,11 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
       onNavigateStep(1);
       return;
     }
+    // The questionnaire is required (REQ-416): e.g. reached step 4 by URL
+    if (!allAnswered) {
+      onNavigateStep(3);
+      return;
+    }
 
     setIsSubmitting(true);
 
@@ -135,12 +174,14 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
         education: trimmedEmail
       };
 
+      const questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: answers[q.id] }));
       if (onComplete && entryId) {
-        await onComplete(entryId, results, demographics);
+        await onComplete(entryId, results, demographics, questionnaire);
         writeStoredCode(entryId, null);
+        writeStoredAnswers(entryId, null);
       }
 
-      onNavigateStep(4);
+      onNavigateStep(5);
     } catch (error) {
       console.error('Failed to complete survey:', error);
       alert('提交失敗，請稍後再試');
@@ -297,7 +338,7 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
               </div>
             </div>
             <p className="text-xs text-indigo-700 leading-relaxed">
-              報酬將以{PAYMENT_METHOD_TEXT}的形式，於{PAYMENT_TIMELINE_TEXT}寄送到您下一步填寫的 Email。
+              報酬將以{PAYMENT_METHOD_TEXT}的形式，於{PAYMENT_TIMELINE_TEXT}寄送到您稍後填寫的 Email。
             </p>
           </div>
 
@@ -312,7 +353,81 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
     );
   }
 
+  // REQ-416: post-survey questionnaire, all eight required — styled like the 理解測試 quiz (intro step 6)
   if (step === 3) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-0 md:p-4">
+        <div className="max-w-2xl md:max-w-5xl w-full bg-white md:rounded-[2rem] shadow-none md:shadow-2xl p-4 sm:p-6 md:p-12 flex flex-col min-h-screen md:min-h-[600px] border-none md:border border-gray-100">
+          <div className="text-center space-y-3 mb-10">
+            <h1 className="text-3xl md:text-4xl font-black text-gray-900 tracking-tight">問卷</h1>
+            <div className="w-20 h-1.5 bg-indigo-500 mx-auto rounded-full" />
+          </div>
+
+          <div className="flex-1 flex flex-col justify-center max-w-lg md:max-w-4xl mx-auto w-full">
+            <div className="space-y-6 text-gray-600 leading-relaxed text-base animate-in fade-in slide-in-from-bottom-2 duration-500 w-full max-w-3xl mx-auto">
+              <div className="bg-amber-50/50 md:bg-amber-50 border-none md:border border-amber-200 p-2 sm:p-4 md:p-8 rounded-2xl md:rounded-3xl shadow-none md:shadow-sm">
+                <p className="text-center text-amber-800 mb-8">請依照您的看法回答以下問題，答案沒有對錯。</p>
+
+                <div className="bg-white rounded-xl md:rounded-2xl p-4 md:p-5 border-none md:border border-amber-100 shadow-none md:shadow-sm divide-y divide-amber-100">
+                  {QUESTIONNAIRE.map((q) => (
+                    // Options right of the text on ≥ 640px, below it on a phone
+                    <div
+                      key={q.id}
+                      role="radiogroup"
+                      aria-labelledby={`${q.id}-text`}
+                      className="py-4 first:pt-0 last:pb-0 sm:flex sm:items-center sm:gap-6"
+                    >
+                      <p id={`${q.id}-text`} className="text-sm font-bold text-gray-800 leading-loose sm:flex-1">
+                        {q.id.slice(1)}. {q.text}
+                      </p>
+                      <div className="mt-2 sm:mt-0 grid grid-cols-2 gap-2 sm:w-48 sm:shrink-0">
+                        {q.options.map((option) => {
+                          const checked = answers[q.id] === option;
+                          return (
+                            <label
+                              key={option}
+                              className={`flex items-center justify-center gap-1.5 px-2 py-1.5 text-sm font-bold border rounded cursor-pointer transition-colors focus-within:ring-2 focus-within:ring-amber-500 ${
+                                checked ? 'border-amber-500 bg-amber-50 text-amber-800' : 'border-gray-300 bg-gray-50 text-gray-700 hover:bg-white'
+                              }`}
+                            >
+                              <input
+                                type="radio"
+                                name={q.id}
+                                value={option}
+                                checked={checked}
+                                onChange={() => answer(q.id, option)}
+                                className="accent-amber-500"
+                              />
+                              {option}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-12 space-y-4 max-w-lg md:max-w-4xl mx-auto w-full">
+            <p className="text-sm text-gray-500 text-center">已回答 {answeredCount} / {QUESTIONNAIRE.length}</p>
+            <button
+              onClick={() => onNavigateStep(4)}
+              disabled={!allAnswered}
+              className={`w-full py-4 text-base font-bold rounded-2xl shadow-lg transition-all active:scale-95 ${
+                !allAnswered ? 'bg-gray-200 text-gray-400 cursor-not-allowed shadow-none transform-none' : 'bg-indigo-600 text-white hover:bg-indigo-700'
+              }`}
+            >
+              下一步<span aria-hidden="true"> →</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === 4) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-6 md:p-8 text-center space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">

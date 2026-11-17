@@ -7,7 +7,7 @@ import Login from './components/Login';
 import NotFound from './components/NotFound';
 import ProtectedRoute from './components/ProtectedRoute';
 import SurveyWelcome from './components/SurveyWelcome';
-import { Session, SurveyResult } from './types';
+import { Session, SurveyResult, QuestionnaireAnswer } from './types';
 import {
   completeSurvey,
   fetchSession,
@@ -232,7 +232,7 @@ const App: React.FC = () => {
               setRestoredSubmissionId(storedSession.submissionId);
               const fullSessionPath = storedSession.path;
               const currentFullPath = location.pathname + location.search;
-              // The outro flow has its own per-step routes (/survey/outro/1..4) that the
+              // The outro flow has its own per-step routes (/survey/outro/1..5) that the
               // participant navigates freely once scenarios are done. The cached path here
               // is only ever set once (to step 1) when the last scenario finishes, so forcing
               // a navigate back to it on every subsequent outro step change would trap the
@@ -409,7 +409,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => {
+  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire?: QuestionnaireAnswer[]) => {
     setIsSubmitting(true);
     console.log('Survey Completed');
 
@@ -418,7 +418,7 @@ const App: React.FC = () => {
       
       // Unified survey flow
       console.log('[NEW API] Completing survey with unified API');
-      await completeSurvey(submissionId, demographics);
+      await completeSurvey(submissionId, demographics, questionnaire);
       
       setBackendNotice(null);
       clearSession(currentId);
@@ -429,7 +429,7 @@ const App: React.FC = () => {
 
     setIsSubmitting(false);
     const urlSuffix = sessionIdFromUrl ? `?sessionId=${sessionIdFromUrl}` : '';
-    navigate(`/survey/outro/4${urlSuffix}`, { replace: true });
+    navigate(`/survey/outro/5${urlSuffix}`, { replace: true });
   };
 
   const handleBackToAdmin = () => {

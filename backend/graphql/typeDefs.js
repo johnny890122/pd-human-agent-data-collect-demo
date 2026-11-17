@@ -71,8 +71,20 @@ export const typeDefs = `#graphql
     opponentDecisions: [Boolean!]
     realisedPoints: Int
     payoutNtd: Int
+    """REQ-416 — admin only; null for everyone else"""
+    questionnaire: [QuestionnaireAnswer!]
     createdAt: String!
     updatedAt: String!
+  }
+
+  type QuestionnaireAnswer {
+    questionId: String!
+    answer: String!
+  }
+
+  input QuestionnaireAnswerInput {
+    questionId: String!
+    answer: String!
   }
 
   type DebriefResult {
@@ -211,7 +223,7 @@ export const typeDefs = `#graphql
     # Unified survey flow
     startSurvey(sessionId: ID!, participantId: String): Submission!
     saveSurveyAnswer(submissionId: ID!, scenarioId: ID!, cooperationProbability: Float!): Submission!
-    completeSurvey(submissionId: ID!, demographics: DemographicsInput!): Submission!
+    completeSurvey(submissionId: ID!, demographics: DemographicsInput!, questionnaire: [QuestionnaireAnswerInput!]): Submission!
     
     # Realised round draw (backend-authoritative random selection for payment)
     drawRealisedRound(submissionId: ID!): DebriefResult!

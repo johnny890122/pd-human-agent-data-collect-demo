@@ -48,6 +48,7 @@ Format: `- [x/] TASK-NNN: [Verb] [action] — [context] [REQ-XXX]`
 | Phase 49 | ✅ Complete | 2026-11-16 | Phone version of the e2e run and report (NFR-8.3) |
 | Phase 50 | ✅ Complete | 2026-11-16 | One combined PC + phone e2e report (NFR-8.3) |
 | Phase 51 | ✅ Complete | 2026-11-16 | 圖例/圖說 open on tap (REQ-409.5); admin pages PC-only in the combined report |
+| Phase 52 | ✅ Complete | 2026-11-17 | Post-survey questionnaire Q1–Q8 (REQ-416) |
 
 ---
 
@@ -3211,3 +3212,23 @@ saveSession(currentId, submission._id, path);
 - **Result**: `npm run test:e2e` PASS — PC 94/94, phone 94/94 (`test-results/e2e/20261116_220348/report.pdf`). On a phone the scenario screen now fits the graph, the closed 圖例 and the slider in one screen.
 - **E2E fix**: `revealAll` now ignores the legend's sample "?" (`svg:not(details svg) text`); inside the closed `<details>` it is hidden and can no longer be clicked.
 - **Not re-run**: the IRB screenshot set (`npm run irb:shots`) still shows the legend/captions open; re-capture if the IRB packet must show the new closed state.
+
+## Phase 52: Post-Survey Questionnaire Q1–Q8 (REQ-416)
+
+**Status**: ✅ Complete (2026-11-17) — reviewed; Q2 typo and question marks fixed
+
+- [x] **TASK-5201**: Requirements REQ-416; design Phase 52
+- [x] **TASK-5202**: `utils/questionnaire.js` (questions + validation) with unit tests [REQ-416]
+- [x] **TASK-5203**: Submission model, GraphQL types, `completeSurvey` arg + validation, admin-only field resolver, backend tests [REQ-416]
+- [x] **TASK-5204**: Outro step 3 questionnaire page; steps renumbered 1–5; localStorage restore; required check on 送出 [REQ-416]
+- [x] **TASK-5205**: Client `completeSurvey` + `App.handleSurveyComplete` pass the answers; Export CSV columns Q1–Q8 [REQ-416]
+- [x] **TASK-5206**: E2E `finishOutro` answers Q1–Q8 + DB check; screenshots for review
+- [x] **TASK-5207**: User reviews the questionnaire page (Q2 「曆史」→「歷史」, full-width 「？」 throughout, copy approved); then re-run `npm run test:e2e` (PC + phone report)
+- [x] **TASK-5208**: Options to the right of the question text on screens ≥ 640px; below it on a phone [REQ-416]
+- [x] **TASK-5209**: Restyle the questionnaire with the 理解測試 quiz's design (frame, title bar, amber panel, rows, chips, 下一步 button) [REQ-416]
+
+
+**Implementation notes (2026-11-17)**:
+- **Verification run** (before review): `npm run test:e2e` PASS on PC and phone (`test-results/e2e/20261117_160239/`); new checks: Q1–Q8 rendered, required gate, answers survive a reload, stored answers = clicked answers, hidden from `submission(id)` without admin, Q1–Q8 columns in Export CSV. Unit: `questionnaire.test.ts` 3/3, `backend/__tests__/questionnaire.test.js` 4/4, `SurveyOutro.test.tsx` 10/10.
+- **Copy to review**: page title 「問卷」 and intro 「請依照您的看法回答以下問題，答案沒有對錯。」 are new wording; the debrief note now says the payment goes to the email 「稍後填寫」 (was 「下一步填寫」).
+- **Not updated**: `scripts/irb-shots/shots.mjs` routes `/survey/outro/3` (email) and `/survey/outro/4` (done) now point at the questionnaire and the email page.

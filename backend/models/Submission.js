@@ -37,6 +37,12 @@ const submissionSchema = new mongoose.Schema(
     // Payout of the realised round (REQ-408.5) — the amount shown to and paid to the participant
     realisedPoints: { type: Number, required: false, default: null },
     payoutNtd: { type: Number, required: false, default: null },
+    // Post-survey questionnaire (REQ-416): political opinions — exposed to admins only
+    questionnaire: {
+      type: [{ _id: false, questionId: { type: String, required: true }, answer: { type: String, required: true } }],
+      required: false,
+      default: undefined,
+    },
   },
   { timestamps: true }
 );

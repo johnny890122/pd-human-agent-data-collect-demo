@@ -3476,3 +3476,31 @@ Nothing opens the manual layout once the history page is gone, so it is deleted 
 ### Combined report (`scripts/e2e/run-both.mjs`)
 - A phone-run screenshot taken at desktop width (the admin context) is dropped; a step whose shots have no phone counterpart shows the PC screenshot at full width with no Phone column.
 
+## Phase 52 — Post-survey questionnaire Q1–Q8 (REQ-416)
+
+### Shared definition — `utils/questionnaire.js`
+- `QUESTIONNAIRE = [{ id: 'Q1', text, options: ['同意', '不同意'] }, …]` (verbatim from REQ-416) — the only place the wording lives; imported by the outro page, the server and the CSV export (same pattern as `utils/payment.js`).
+- `questionnaireError(answers)` → `null` or a message: exactly one answer per question ID, each answer one of that question's options.
+
+### Data
+- `Submission.questionnaire: [{ questionId: String, answer: String }]` (default `null`).
+- GraphQL: `type QuestionnaireAnswer { questionId: String! answer: String! }`, `input QuestionnaireAnswerInput`, `Submission.questionnaire: [QuestionnaireAnswer!]`, and `completeSurvey(submissionId, demographics, questionnaire: [QuestionnaireAnswerInput!])`.
+- `completeSurvey`: when `questionnaire` is given, validate with `questionnaireError` (throw `INVALID_QUESTIONNAIRE: …`) and save it with the demographics. Omitted = unchanged (API callers and tests keep working; the UI always sends it).
+- Field resolver `Submission.questionnaire`: returns the answers only when `context.isAdmin`, else `null`.
+
+### Outro (`components/SurveyOutro.tsx`, `SurveyView.tsx`, `App.tsx`)
+- Steps: 1 code, 2 debrief, **3 questionnaire**, 4 email, 5 done. `SurveyView` accepts outro steps 1–5; debrief 繼續 → 3; questionnaire 下一步 → 4; `App.handleSurveyComplete` → 5. The debrief note says the payment goes to the email 「稍後填寫」.
+- Questionnaire page: title 「問卷」, one line 「請依照您的看法回答以下問題，答案沒有對錯。」, one card per question with its options as native radio inputs styled as two large tap targets; 「已回答 n / 8」; 下一步 disabled until complete.
+- Look: the same classes as the 理解測試 step in `SurveyIntro.tsx` — outer frame (`md:max-w-5xl md:rounded-[2rem] md:shadow-2xl md:p-12`), `text-3xl md:text-4xl font-black` title + `w-20 h-1.5 bg-indigo-500` bar, amber panel (`bg-amber-50 border-amber-200`, instruction `text-amber-800`) holding a white panel (`border-amber-100`); question rows `text-sm font-bold text-gray-800 leading-loose`, divided by `divide-amber-100`; options are compact chips in the quiz-input style (`border-gray-300 bg-gray-50 rounded`, amber when selected, `focus-within:ring-amber-500`); footer button = the intro's 下一步 (`rounded-2xl shadow-lg bg-indigo-600`, disabled `bg-gray-200`).
+- Row layout: `role="radiogroup"` labelled by the question text (`aria-labelledby`); `sm:flex` puts the text (`flex-1`) left and the two option chips (fixed `w-48`) right on screens ≥ 640px; below that the chips sit under the text.
+- Answers live in state and in `localStorage[survey_questionnaire_<submissionId>]` (try/catch, like the code); restored on mount; removed after a successful submit.
+- 送出 on step 4: if the code is missing → step 1 (as before); if any answer is missing → step 3; otherwise `onComplete(entryId, results, demographics, questionnaire)` → `completeSurvey(…, questionnaire)`.
+
+### Export (`GroupDetailView.tsx`)
+- `fetchSubmissionsByGroup` also selects `questionnaire { questionId answer }` (admin token). Export CSV adds columns Q1–Q8 after Education.
+
+### Tests
+- Unit: `questionnaireError` cases; SurveyOutro questionnaire page (下一步 disabled until 8 answers, survives a remount, sent on submit).
+- Backend: `completeSurvey` saves valid answers, rejects invalid ones; `submission(id)` hides them without admin, shows them with admin.
+- E2E (PC + phone): `finishOutro` answers Q1–Q8 (participant A with a fixed pattern), screenshots step 3; DB check that A's `questionnaire` equals what was clicked.
+

@@ -1,4 +1,4 @@
-import { Session, Scenario, SessionGroup as SessionGroupType, Submission as SubmissionType } from '../types';
+import { Session, Scenario, SessionGroup as SessionGroupType, Submission as SubmissionType, QuestionnaireAnswer } from '../types';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -473,11 +473,12 @@ export async function saveSurveyAnswer(
 
 export async function completeSurvey(
   submissionId: string,
-  demographics: { age?: number; gender?: string; education?: string }
+  demographics: { age?: number; gender?: string; education?: string },
+  questionnaire?: QuestionnaireAnswer[]
 ): Promise<SubmissionType> {
   const mutation = `
-    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!) {
-      completeSurvey(submissionId: $submissionId, demographics: $demographics) {
+    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]) {
+      completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
         _id
         isCompleted
         completedAt
@@ -493,6 +494,7 @@ export async function completeSurvey(
   const data = await runGraphQL<{ completeSurvey: SubmissionType }>(mutation, {
     submissionId,
     demographics,
+    questionnaire,
   });
 
   return data.completeSurvey;
@@ -609,6 +611,10 @@ export async function fetchSubmissionsByGroup(groupId: string): Promise<Submissi
         realisedRoundIndex
         realisedPoints
         payoutNtd
+        questionnaire {
+          questionId
+          answer
+        }
         createdAt
         updatedAt
       }

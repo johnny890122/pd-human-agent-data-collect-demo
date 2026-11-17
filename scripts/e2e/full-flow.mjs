@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { chromium } from 'playwright-core';
 import { SessionGroupModel } from '../../backend/models/SessionGroup.js';
+import { QUESTIONNAIRE } from '../../utils/questionnaire.js';
 import { SessionModel } from '../../backend/models/Session.js';
 import { ScenarioModel } from '../../backend/models/Scenario.js';
 import { SubmissionModel } from '../../backend/models/Submission.js';
@@ -36,9 +37,11 @@ const TURNSTILE_STUB = `window.turnstile = {
 };`;
 const STUDY = { maxK: 1, scenariosPerSession: 5, targetSizePerScenario: 1, focalNode: 'KMT1', opponentNode: 'DPP4', expectedScenarios: 18 };
 const GROUP_NAME = 'E2E full flow';
-const A = { code: 'E2E001', email: 'e2e-a@example.com', sliders: [70, 30, 90, 10, 50] };
+// `answers`: index of the option picked for Q1–Q8 (REQ-416)
+const A = { code: 'E2E001', email: 'e2e-a@example.com', sliders: [70, 30, 90, 10, 50], answers: [0, 1, 0, 1, 1, 0, 1, 0] };
 const B = { sliders: [60, 40] };
-const C = { code: 'E2E003', email: 'e2e-c@example.com', sliders: [60, 40, 80, 25, 55], reanswer: 20 };
+const C = { code: 'E2E003', email: 'e2e-c@example.com', sliders: [60, 40, 80, 25, 55], reanswer: 20, answers: [1, 1, 1, 1, 0, 0, 0, 0] };
+const expectedAnswers = (picks) => QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: q.options[picks[i]] }));
 const D = { participantId: 'e2e-device-2', email: 'e2e-a-phone@example.com' };
 // A browser context is one device; FingerprintJS hashes timezone and language among others
 const DEVICES = {
@@ -83,7 +86,7 @@ const ROADMAP = [
   ['Participant opens the invite link', 'participantA', ['EC-9', 'EC-10', 'EC-11']],
   ['Intro, quiz, Turnstile', 'participantA', ['EC-1', 'EC-3']],
   ['Scenarios', 'participantA', ['EC-4', 'EC-5', 'EC-6']],
-  ['Outro & debrief', 'participantA', ['EC-2']],
+  ['Outro: debrief, questionnaire, email', 'participantA', ['EC-2']],
   ['Coming back later', null, ['EC-7', 'EC-8']],
   ['Payment ledger', 'ledger', ['EC-13']],
   ['Behind the UI (direct API)', null, ['EC-12']],
@@ -312,8 +315,35 @@ async function answerScenario(page, idx, value, total, record) {
   await click(button(page, /^確認並(前往下一題|送出)$/));
 }
 
-/** Outro steps 1–4 with a code and email; returns the debrief total. */
-async function finishOutro(page, { code, email, prefix, record }) {
+/**
+ * Outro step 3, the questionnaire (REQ-416): pick option `picks[i]` for Q(i+1), then 下一步.
+ * `full` also checks the required gate and that answers survive a reload halfway through.
+ */
+async function answerQuestionnaire(page, picks, { prefix, record = false, full = false }) {
+  await page.waitForURL(/\/survey\/outro\/3\b/);
+  await settle(page);
+  const pick = (i) => page.locator(`input[name="${QUESTIONNAIRE[i].id}"][value="${QUESTIONNAIRE[i].options[picks[i]]}"]`).check();
+  if (full) {
+    check('Questionnaire shows Q1–Q8 with two options each', 16, await page.locator('input[type="radio"]').count());
+    check('下一步 disabled before any answer', true, await button(page, '下一步').isDisabled());
+    if (record) await shot(page, `${prefix}-questionnaire-empty`, 'Outro 3: questionnaire Q1–Q8, nothing answered — 下一步 disabled');
+    for (let i = 0; i < 4; i++) await pick(i);
+    await page.reload();
+    await settle(page);
+    check('Answers to Q1–Q4 survive a reload', '已回答 4 / 8', (await bodyText(page)).match(/已回答 \d+ \/ 8/)?.[0]);
+    for (let i = 4; i < 7; i++) await pick(i);
+    check('下一步 still disabled with 7 of 8 answered', true, await button(page, '下一步').isDisabled());
+    await pick(7);
+  } else {
+    for (let i = 0; i < QUESTIONNAIRE.length; i++) await pick(i);
+  }
+  if (record) await shot(page, `${prefix}-questionnaire`, `Outro 3: questionnaire answered — ${picks.map((p, i) => `Q${i + 1} ${QUESTIONNAIRE[i].options[p]}`).join('、')}`);
+  await click(button(page, '下一步'));
+  await page.waitForURL(/\/survey\/outro\/4\b/);
+}
+
+/** Outro steps 1–5 with a code, questionnaire answers and email; returns the debrief total. */
+async function finishOutro(page, { code, email, answers, prefix, record }) {
   await page.waitForURL(/\/survey\/outro\/1\b/);
   await settle(page);
   await page.locator('input[placeholder="請輸入代碼"]').fill(code);
@@ -325,11 +355,11 @@ async function finishOutro(page, { code, email, prefix, record }) {
   const z = amountAfter(await bodyText(page), '合計');
   if (record) await shot(page, `${prefix}-debrief`, `Outro 2: debrief — 合計 新台幣 ${z} 元`);
   await click(button(page, '繼續'));
-  await page.waitForURL(/\/survey\/outro\/3\b/);
+  await answerQuestionnaire(page, answers, { prefix, record });
   await settle(page);
   await page.locator('input[type="email"]').fill(email);
   await click(button(page, '送出'));
-  await page.waitForURL(/\/survey\/outro\/4\b/);
+  await page.waitForURL(/\/survey\/outro\/5\b/);
   await settle(page);
   return z;
 }
@@ -526,7 +556,7 @@ async function journey() {
     await shot(page, 'debrief-reload', `Outro 2 after a page reload — 合計 新台幣 ${run.debriefAfterReload} 元`);
     await click(button(page, '繼續'));
 
-    await page.waitForURL(/\/survey\/outro\/3\b/);
+    await answerQuestionnaire(page, A.answers, { prefix: 'a', record: true, full: true });
     await settle(page);
     run.emailZ = Number((await bodyText(page)).match(/把\s*新台幣\s*(\d+)\s*元/)?.[1] ?? NaN);
     check('Email step repeats the amount', run.debriefZ, run.emailZ);
@@ -534,16 +564,16 @@ async function journey() {
     await page.locator('input[type="email"]').fill('not-an-email');
     check('Malformed email shows the format error', true, await page.getByText('請輸入正確的 Email 格式').isVisible());
     check('送出 disabled for a malformed email', true, await button(page, '送出').isDisabled());
-    await shot(page, 'outro-email-invalid', 'Outro 3: malformed email — error shown, 送出 disabled (EC-2)');
+    await shot(page, 'outro-email-invalid', 'Outro 4: malformed email — error shown, 送出 disabled (EC-2)');
     ec(null);
     await page.locator('input[type="email"]').fill(A.email);
-    await shot(page, 'outro-email', `Outro 3: email ${A.email}`);
+    await shot(page, 'outro-email', `Outro 4: email ${A.email}`);
     await click(button(page, '送出'));
 
-    await page.waitForURL(/\/survey\/outro\/4\b/);
+    await page.waitForURL(/\/survey\/outro\/5\b/);
     await settle(page);
     check('Done screen shown', true, (await bodyText(page)).includes('表單已完成'));
-    await shot(page, 'outro-done', 'Outro 4: done');
+    await shot(page, 'outro-done', 'Outro 5: done');
     await context.close();
   }, { needs: ['admin'] });
 
@@ -576,6 +606,10 @@ async function journey() {
       (sub?.results ?? []).map((r) => r.cooperationProbability).join(', '));
     check('Registration code stored (demographics.gender)', A.code, sub?.demographics?.gender);
     check('Email stored (demographics.education)', A.email, sub?.demographics?.education);
+    check('Questionnaire Q1–Q8 stored as answered (REQ-416)', JSON.stringify(expectedAnswers(A.answers)), JSON.stringify(sub?.questionnaire));
+    const q = 'query($id: ID!) { submission(id: $id) { questionnaire { questionId answer } } }';
+    check('Questionnaire hidden from submission(id) without an admin login', null, (await gql(q, { id: run.submissionIdA })).submission?.questionnaire);
+    check('Questionnaire readable with an admin login', 8, (await gql(q, { id: run.submissionIdA }, { token: run.adminToken })).submission?.questionnaire?.length);
 
     const r = sub?.realisedRoundIndex;
     run.draw = { round: r, my: sub?.myDecisions?.[r], opp: sub?.opponentDecisions?.[r], realisedPoints: sub?.realisedPoints, payoutNtd: sub?.payoutNtd };
@@ -675,7 +709,7 @@ async function journey() {
 
     ec(null);
     for (let idx = 3; idx < STUDY.scenariosPerSession; idx++) await answerScenario(tab3, idx, C.sliders[idx], STUDY.scenariosPerSession, false);
-    run.debriefC = await finishOutro(tab3, { code: C.code, email: C.email, prefix: 'c', record: true });
+    run.debriefC = await finishOutro(tab3, { code: C.code, email: C.email, answers: C.answers, prefix: 'c', record: true });
     const sub = await subC();
     check('C completed with 5 answers', '5 / true', `${sub?.results?.length} / ${sub?.isCompleted}`);
     check('C payoutNtd = amount C saw', run.debriefC, sub?.payoutNtd);
@@ -752,6 +786,15 @@ async function journey() {
     }
     await settle(adminPage);
     await shot(adminPage, 'admin-after-export', `Export Payments downloaded ${run.ledger.file}`);
+
+    // Submissions CSV carries the questionnaire answers (REQ-416)
+    const [download] = await Promise.all([adminPage.waitForEvent('download'), click(button(adminPage, 'Export CSV'))]);
+    await download.saveAs(path.join(OUT_DIR, 'submissions.csv'));
+    const [header = [], ...rows] = parseCsv((await fs.readFile(path.join(OUT_DIR, 'submissions.csv'), 'utf8')).replace(/^\uFEFF/, '')).filter((r) => r.some(Boolean));
+    check('Submissions CSV has columns Q1–Q8', true, QUESTIONNAIRE.every((x) => header.includes(x.id)));
+    const rowA = rows.find((r) => r[header.indexOf('Submission ID')] === run.submissionIdA);
+    check('A\'s CSV row has the questionnaire answers', expectedAnswers(A.answers).map((x) => x.answer).join(','),
+      rowA && QUESTIONNAIRE.map((x) => rowA[header.indexOf(x.id)]).join(','));
   }, { needs: ['participantA', 'database'] });
 
   await step('fullGroup', '9. A group whose scenarios all reached their target (EC-9)', async () => {

@@ -78,8 +78,16 @@ export interface Submission {
   opponentDecisions?: boolean[] | null;
   realisedPoints?: number | null;
   payoutNtd?: number | null;
+  /** REQ-416 — returned to admins only */
+  questionnaire?: QuestionnaireAnswer[] | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** One answer of the post-survey questionnaire (REQ-416) */
+export interface QuestionnaireAnswer {
+  questionId: string;
+  answer: string;
 }
 
 // UPDATED: SurveyResult

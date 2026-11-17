@@ -6,6 +6,11 @@ import { toast } from 'react-hot-toast';
 import { AGENTS, ALL_EDGES } from '../constants';
 import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '../utils/nodeDisplay';
 import { pointPayoutNtd, MAX_TOTAL_NTD } from '../utils/payment.js';
+import { QUESTIONNAIRE } from '../utils/questionnaire.js';
+
+// REQ-416: one CSV cell per question, in Q1–Q8 order (blank if not answered)
+const questionnaireCells = (s: Submission) =>
+  QUESTIONNAIRE.map((q) => s.questionnaire?.find((a) => a.questionId === q.id)?.answer ?? '');
 import ConfirmationModal from './ConfirmationModal';
 
 // CSV helpers shared by the research export and the payment ledger
@@ -332,6 +337,7 @@ const GroupDetailView: React.FC = () => {
             submission.demographics?.age?.toString() || '',
             submission.demographics?.gender || '',
             submission.demographics?.education || '',
+            ...questionnaireCells(submission),
             submission.isCompleted ? 'true' : 'false',
             !submission.isInvalid ? 'true' : 'false',
             submission.createdAt || '',
@@ -366,6 +372,7 @@ const GroupDetailView: React.FC = () => {
               submission.demographics?.age?.toString() || '',
               submission.demographics?.gender || '',
               submission.demographics?.education || '',
+              ...questionnaireCells(submission),
               submission.isCompleted ? 'true' : 'false',
               !submission.isInvalid ? 'true' : 'false',
               submission.createdAt || '',
@@ -394,6 +401,7 @@ const GroupDetailView: React.FC = () => {
             submission.demographics?.age?.toString() || '',
             submission.demographics?.gender || '',
             submission.demographics?.education || '',
+            ...questionnaireCells(submission),
             submission.isCompleted ? 'true' : 'false',
             !submission.isInvalid ? 'true' : 'false',
             submission.createdAt || '',
@@ -422,6 +430,7 @@ const GroupDetailView: React.FC = () => {
         'Age',
         'Gender',
         'Education',
+        ...QUESTIONNAIRE.map((q) => q.id), // REQ-416 answers (admin export only)
         'Submission Completed',
         'Valid',
         'Submission Created At',

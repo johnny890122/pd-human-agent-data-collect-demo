@@ -9,6 +9,7 @@ import { generateEdgeCombinations } from '../../utils/combinations.js';
 import { generateDesignMatrix } from '../../utils/mathBackend.js';
 import { balancedSelect } from '../../utils/scenarioSelection.js';
 import { payoffPoints, totalPayoutNtd } from '../../utils/payment.js';
+import { questionnaireError } from '../../utils/questionnaire.js';
 
 function requireDb() {
   if (!isDbConfigured()) {
@@ -146,6 +147,7 @@ function toSubmissionGraph(doc) {
     opponentDecisions: doc.opponentDecisions ?? null,
     realisedPoints: doc.realisedPoints ?? null,
     payoutNtd: doc.payoutNtd ?? null,
+    questionnaire: doc.questionnaire ?? null,
     createdAt: (doc.createdAt instanceof Date) ? doc.createdAt.toISOString() : null,
     updatedAt: (doc.updatedAt instanceof Date) ? doc.updatedAt.toISOString() : null,
   };
@@ -157,6 +159,11 @@ function toSubmissionGraph(doc) {
 
 export const resolvers = {
   JSON: GraphQLJSON,
+
+  // REQ-416: questionnaire answers are political opinions — admins only, even via submission(id)
+  Submission: {
+    questionnaire: (submission, _, context) => (context?.isAdmin ? submission.questionnaire : null),
+  },
 
   Query: {
     health: () => 'ok',
@@ -683,7 +690,13 @@ export const resolvers = {
       return toSubmissionGraph(submission);
     },
     
-    completeSurvey: async (_, { submissionId, demographics }) => {
+    completeSurvey: async (_, { submissionId, demographics, questionnaire }) => {
+      // REQ-416: the UI always sends all eight; validate them at the boundary
+      if (questionnaire != null) {
+        const problem = questionnaireError(questionnaire);
+        if (problem) throw new Error(`INVALID_QUESTIONNAIRE: ${problem}`);
+      }
+
       requireDb();
       await connectToDatabase();
       
@@ -692,6 +705,7 @@ export const resolvers = {
         {
           $set: {
             demographics,
+            ...(questionnaire != null && { questionnaire: questionnaire.map(({ questionId, answer }) => ({ questionId, answer })) }),
             isCompleted: true,
             completedAt: new Date(),
           },

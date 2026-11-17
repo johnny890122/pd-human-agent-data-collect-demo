@@ -45,6 +45,7 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-15 | **PROCESS** Test-case roadmap at the top of the e2e report (NFR-8.2) | The report opens with the participant journey stage by stage, each stage's happy-path result and its edge cases coloured pass / fail / observed, so the reviewer sees coverage and failures at a glance. |
 | 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
 | 2026-11-16 | **PROCESS** One e2e report for PC and phone (NFR-8.3) | The full e2e journey and edge cases run on a PC and on an emulated phone, and one combined report shows both results for every case and the PC and phone screenshots side by side. |
+| 2026-11-17 | **NEW FEATURE** Post-survey questionnaire Q1–Q8 (REQ-416) | Eight required single-choice attitude questions on a new outro page between the debrief and the email; saved with the submission, admin-only, exported in the submissions CSV. The outro now has 5 steps. Reviewed: Q2 typo 「曆史」→「歷史」 fixed; every question ends with a full-width 「？」. |
 | 2026-11-16 | **UI CHANGE** 圖例 and 圖說 collapsed by default, open on tap (REQ-409.5) | The graph legend and figure captions took up most of a phone screen; they now open when tapped. Admin pages appear once (PC only) in the combined e2e report. |
 | 2026-11-16 | **ADMIN CAPABILITY** Mixed Mode cost estimate (REQ-314) | The Mixed setup page shows the estimated total payout (est. participants × per-participant payout range) in the Setting Preview and the launch confirmation, so the admin can budget before launching. Uses the payment constants from `utils/payment.js` (REQ-408.1). |
 | 2026-11-16 | **ADMIN CAPABILITY** Actual payout on the group page (REQ-408.9) | The group detail page (`/admin/view/batch/:groupId`) shows the total actually owed to participants so far — the sum of persisted `payoutNtd` over the same rows as the payment ledger — next to the Mixed Mode budget ceiling (REQ-314). |
@@ -559,6 +560,29 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **REQ-409.4 — High-resolution screenshots for the IRB packet.** Every participant-facing screen MUST be available as a 2× DPR PNG (desktop 1440×900 and phone 390×844), with a caption index `docs/irb/figures.md` (figure number → screen → caption).
 
 ### REQ-415 — Chrome-Only Browser Enforcement
+
+- **REQ-416 — Post-survey questionnaire (Q1–Q8).** 📋 **NEW 2026-11-17** After the debrief and before the email step, the participant MUST answer eight single-choice attitude questions on their own page.
+  - *Placement:* the outro becomes 1 registration code → 2 debrief → **3 questionnaire** → 4 email → 5 done (`/survey/outro/1..5`).
+  - *Questions (verbatim, in this order; two options each, single choice):*
+
+    | ID | Question | Options |
+    |---|---|---|
+    | Q1 | 有人說金馬獎是「兩岸電影人開展交流的平台，應該開放中國電影人及電影報名參賽。」請問您同意不同意這樣的說法？ | 同意 / 不同意 |
+    | Q2 | 有人說我們應該在中小學課程中增加中國大陸歷史文化的教材，請問您同不同意這樣的說法？ | 同意 / 不同意 |
+    | Q3 | 整體來說，過去台灣政府處理新冠肺炎疫情表現好不好？ | 好 / 不好 |
+    | Q4 | 有人說高中的國文學科降低文言文比例，才有更多空間加入有台灣特色的文學作品。請問您同意不同意這樣的說法？ | 同意 / 不同意 |
+    | Q5 | 有人說開放中國人民來台觀光，帶動臺灣旅遊業的發展，有效促進臺灣經濟。請問您同意不同意這樣的說法？ | 同意 / 不同意 |
+    | Q6 | 中國歌唱綜藝節目讓台灣觀眾有全新的視覺體驗，應該多多引進播放。請問您同意不同意這樣的說法？ | 同意 / 不同意 |
+    | Q7 | 中國的電影、音樂、和書籍對我們的本土文化會有一定程度的傷害。請問您同意不同意這樣的說法？ | 同意 / 不同意 |
+    | Q8 | 台灣目前大約有超過59萬人的中國大陸及東南亞籍外籍配偶，其中大陸、港澳配偶占64.67%。請問您認為政府未來應該管制，還是開放大陸、港澳配偶移民來台灣？ | 管制 / 開放 |
+
+  - *Layout (2026-11-17):* the page uses the same design as the 理解測試 quiz (intro step 6): wide card, large title with the indigo underline bar, amber instruction panel with a white inner panel, bold numbered question rows. On screens ≥ 640px each question's options sit to the right of its text, on the same row; on a phone they sit below it.
+  - *Required:* 下一步 stays disabled until all eight are answered; the page shows 「已回答 n / 8」. A participant who reaches the email step without all eight answers (e.g. a direct URL) is sent back to step 3 on 送出.
+  - *Refresh:* answers are kept in the browser per submission (like the registration code, REQ-403.1) and restored after a refresh until the survey is submitted.
+  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]` (answer = the option text). The server rejects unknown question IDs, duplicates and answers that are not one of that question's options.
+  - *Privacy:* the answers are political opinions. They MUST be readable only with an admin login: the `questionnaire` field returns null for anyone else, including through the public `submission(id)` query.
+  - *Export:* the submissions CSV (Export CSV) gets columns Q1–Q8 with the answer text.
+  - *Wording:* as supplied, with two corrections confirmed 2026-11-17: 「曆史」 → 「歷史」 in Q2, and every question ends with a full-width 「？」. Page title 「問卷」 and intro line approved. A new instrument (political attitudes) likely needs IRB approval before deployment.
 
 - **REQ-415 — Chrome browser required for participants.** The survey welcome page (`SurveyWelcome.tsx`) MUST detect the participant's browser on page load. If the browser is not Google Chrome (or a Chromium-based browser that identifies as Chrome, such as Brave), the page MUST display a prominent blocking warning and prevent the participant from proceeding.
   - *Rationale:* The experiment relies on browser-specific APIs (canvas fingerprinting, WebGL, specific rendering behavior) that behave inconsistently across browsers. Requiring Chrome ensures reproducible experimental conditions and consistent device fingerprint quality (REQ-311).

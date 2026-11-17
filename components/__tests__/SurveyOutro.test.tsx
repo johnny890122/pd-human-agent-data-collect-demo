@@ -2,6 +2,7 @@ import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SurveyOutro from '../SurveyOutro';
+import { QUESTIONNAIRE } from '../../utils/questionnaire.js';
 import { drawRealisedRound, fetchSubmission } from '../../utils/graphqlClient';
 
 vi.mock('../../utils/graphqlClient', () => ({
@@ -19,6 +20,9 @@ const savedDebrief = {
   realisedPoints: 3,
   payoutNtd: 300,
 };
+
+// Q1–Q8 all answered with each question's first option
+const allAnswers = Object.fromEntries(QUESTIONNAIRE.map((q) => [q.id, q.options[0]]));
 
 const renderStep = (step: number) =>
   render(<SurveyOutro results={[]} onBack={vi.fn()} entryId="submission-1" currentStep={step} onNavigateStep={vi.fn()} />);
@@ -73,7 +77,7 @@ describe('SurveyOutro payment (REQ-408)', () => {
   it('repeats the amount on the email step', async () => {
     vi.mocked(fetchSubmission).mockResolvedValue(savedDebrief as any);
 
-    renderStep(3);
+    renderStep(4);
 
     expect(await screen.findByText('新台幣 300 元')).toBeInTheDocument();
   });
@@ -105,9 +109,10 @@ describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
     const first = render(<SurveyOutro {...props(1)} />);
     fireEvent.change(screen.getByPlaceholderText('請輸入代碼'), { target: { value: 'E2E001' } });
     first.unmount(); // the page reload
+    store.set('survey_questionnaire_submission-1', JSON.stringify(allAnswers));
 
     const onComplete = vi.fn().mockResolvedValue(undefined);
-    render(<SurveyOutro {...props(3, onComplete)} />);
+    render(<SurveyOutro {...props(4, onComplete)} />);
     await screen.findByText('新台幣 300 元');
     fireEvent.change(screen.getByPlaceholderText('您的 Email'), { target: { value: 'a@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
@@ -121,7 +126,7 @@ describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
     vi.mocked(fetchSubmission).mockResolvedValue(savedDebrief as any);
     const onComplete = vi.fn();
     const onNavigateStep = vi.fn();
-    render(<SurveyOutro {...props(3, onComplete, onNavigateStep)} />);
+    render(<SurveyOutro {...props(4, onComplete, onNavigateStep)} />);
     await screen.findByText('新台幣 300 元');
     fireEvent.change(screen.getByPlaceholderText('您的 Email'), { target: { value: 'a@example.com' } });
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
@@ -130,3 +135,78 @@ describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 });
+
+describe('SurveyOutro questionnaire (REQ-416)', () => {
+  let store: Map<string, string>;
+  beforeEach(() => {
+    store = new Map();
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, String(v)),
+      removeItem: (k: string) => void store.delete(k),
+    });
+    vi.mocked(fetchSubmission).mockResolvedValue(savedDebrief as any);
+  });
+  afterEach(() => {
+    vi.resetAllMocks();
+    vi.unstubAllGlobals();
+    cleanup();
+  });
+
+  const props = (step: number, onComplete = vi.fn(), onNavigateStep = vi.fn()) => ({
+    results: [], onBack: vi.fn(), entryId: 'submission-1', currentStep: step, onComplete, onNavigateStep,
+  });
+  const pick = (questionId: string, option: string) =>
+    fireEvent.click(document.querySelector(`input[name="${questionId}"][value="${option}"]`)!);
+
+  it('shows Q1–Q8 and keeps 下一步 disabled until all eight are answered', () => {
+    const onNavigateStep = vi.fn();
+    render(<SurveyOutro {...props(3, vi.fn(), onNavigateStep)} />);
+
+    expect(screen.getByText(/金馬獎/)).toBeInTheDocument();
+    expect(screen.getAllByRole('radio')).toHaveLength(16);
+    QUESTIONNAIRE.slice(0, 7).forEach((q) => pick(q.id, q.options[0]));
+    expect(screen.getByText('已回答 7 / 8')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '下一步' })).toBeDisabled();
+
+    pick('Q8', '開放');
+    expect(screen.getByRole('button', { name: '下一步' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '下一步' }));
+    expect(onNavigateStep).toHaveBeenCalledWith(4);
+  });
+
+  it('keeps the answers across a refresh and submits them with the code and email', async () => {
+    store.set('survey_code_submission-1', 'E2E001');
+    const first = render(<SurveyOutro {...props(3)} />);
+    QUESTIONNAIRE.forEach((q) => pick(q.id, q.options[1]));
+    first.unmount(); // the page reload
+
+    render(<SurveyOutro {...props(3)} />);
+    expect(screen.getByText('已回答 8 / 8')).toBeInTheDocument();
+    cleanup();
+
+    const onComplete = vi.fn().mockResolvedValue(undefined);
+    render(<SurveyOutro {...props(4, onComplete)} />);
+    await screen.findByText('新台幣 300 元');
+    fireEvent.change(screen.getByPlaceholderText('您的 Email'), { target: { value: 'a@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '送出' }));
+
+    await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
+    expect(onComplete.mock.calls[0][3]).toEqual(QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[1] })));
+    await vi.waitFor(() => expect(store.has('survey_questionnaire_submission-1')).toBe(false));
+  });
+
+  it('sends the participant back to the questionnaire when an answer is missing', async () => {
+    store.set('survey_code_submission-1', 'E2E001');
+    const onComplete = vi.fn();
+    const onNavigateStep = vi.fn();
+    render(<SurveyOutro {...props(4, onComplete, onNavigateStep)} />);
+    await screen.findByText('新台幣 300 元');
+    fireEvent.change(screen.getByPlaceholderText('您的 Email'), { target: { value: 'a@example.com' } });
+    fireEvent.click(screen.getByRole('button', { name: '送出' }));
+
+    expect(onNavigateStep).toHaveBeenCalledWith(3);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+});
+

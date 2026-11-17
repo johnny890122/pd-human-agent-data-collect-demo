@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Session, SurveyResult } from '../types';
+import { Session, SurveyResult, QuestionnaireAnswer } from '../types';
 import { AgentId } from '../types';
 import NetworkGraph from './NetworkGraph';
 import { generateDesignMatrix } from '../utils/math';
@@ -15,7 +15,7 @@ interface SurveyViewProps {
   setup: Session;
   onStartSurvey: () => Promise<string | undefined>;
   onSaveAnswer: (entryId: string, answer: SurveyResult) => Promise<boolean>;
-  onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }) => void;
+  onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire?: QuestionnaireAnswer[]) => void;
   onBack: () => void;
   initialEntryId?: string;
   isTurnstileVerified: boolean;
@@ -319,7 +319,7 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const isPostIntroStep = isScenariosStep || isOutroStep;
   // Which debrief sub-step within SurveyOutro (code confirm / debrief / email / done); defaults to 1.
   const outroStep = params.outroStep ? parseInt(params.outroStep, 10) : 1;
-  const validOutroStep = Number.isInteger(outroStep) && outroStep >= 1 && outroStep <= 4 ? outroStep : 1;
+  const validOutroStep = Number.isInteger(outroStep) && outroStep >= 1 && outroStep <= 5 ? outroStep : 1;
 
   useEffect(() => {
     if (!isPostIntroStep || isTurnstileVerified) {

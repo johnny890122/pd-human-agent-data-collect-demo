@@ -15,7 +15,6 @@
   th { background: #f9fafb; font-weight: 600; }
   code { font: 11.5px ui-monospace, Menlo, monospace; background: #f3f4f6; padding: 0 3px; border-radius: 3px; word-break: break-all; }
   .ok { color: #047857; font-weight: 600; }
-  .no { color: #b45309; font-weight: 600; }
   .new { color: #1d4ed8; font-weight: 600; font-size: 11px; }
   ol li, ul li { margin: 3px 0; }
   @media print { body { margin: 0; } h2 { break-after: avoid; } tr { break-inside: avoid; } }
@@ -24,47 +23,59 @@
 <body>
 
 <h1>Data capture report — production check</h1>
-<div class="muted">pd-human-agent-survey (Heroku release v42, commit <code>e5a5a8d</code>) · checked 2026-11-19 · for the research team · replaces the 2026-11-17 version</div>
+<div class="muted">pd-human-agent-survey (Heroku release v43, commit <code>2a2addb</code>) · checked 2026-11-19 · for the research team · replaces the earlier 2026-11-19 (v42) version</div>
 
 <div class="verdict">
-  <b>Verdict: every data item the study needs is captured, stored under its own name and exported, on PC and on phone.</b>
-  An end-to-end run on the production site (PC and phone, 130/130 checks each, all 13 edge cases passing) walked
-  test participants through the whole study; their records were then read straight from the production database and from both admin exports.
-  The production database was emptied afterwards (2026-11-19 02:41 UTC), so the study starts from zero.
+  <b>Verdict: every data item the study needs is captured, stored under its own name and exported, on PC and on phone; the bot check can no longer be skipped.</b>
+  An end-to-end run on the production site (PC and phone, 132/132 checks each, all 13 edge cases passing) walked test participants through the whole study,
+  and a person completed the study once in their own Chrome through the real Cloudflare check. Records were read straight from the production database and from both admin exports.
+  The production database was emptied afterwards (2026-11-19 03:54 UTC), so the study starts from zero.
 </div>
 
-<p><b>Changed since 2026-11-17:</b> registration code and email have their own fields (they used to sit in fields named “gender” and “education”);
-questionnaire answers are stored as true / false; consent and the participant's device are now recorded.</p>
+<p><b>Changed in v43:</b> the research CSV now includes the <b>email</b>; the bot-check cookie is signed by the server, so a hand-made cookie is rejected;
+the welcome footer reads 「本研究使用瀏覽器指紋技術防止重複提交」.</p>
 
 <h2>1. What one completed participant leaves behind</h2>
-<p>Values are participant A of the production run on the phone (a test participant). One record per participant (a <i>submission</i>), linked to their personal session and the scenarios they saw.</p>
+<p>Values are participant A of the automated production run on the phone (a test participant). One record per participant (a <i>submission</i>), linked to their personal session and the scenarios they saw.</p>
 <table>
   <tr><th style="width:19%">Data</th><th style="width:22%">Stored as</th><th style="width:27%">Production value (A)</th><th>Research CSV</th><th>Payment ledger</th></tr>
   <tr><td>Participant ID (device fingerprint)</td><td><code>participantId</code></td><td><code>fp-3820eab4…</code></td><td class="ok">Participant ID</td><td class="ok">Participant ID</td></tr>
-  <tr><td>Consent <span class="new">NEW</span></td><td><code>consentedAt</code>, <code>consentVersion</code></td><td>2026-11-19 02:37:04 UTC, <code>welcome-2026-11-18</code></td><td class="ok">Consented At, Consent Version</td><td>—</td></tr>
-  <tr><td>Device <span class="new">NEW</span></td><td><code>deviceType</code>, <code>userAgent</code></td><td>mobile; Chrome 130 on Android 14 (Pixel 8)</td><td class="ok">Device Type, User Agent</td><td>—</td></tr>
+  <tr><td>Consent</td><td><code>consentedAt</code>, <code>consentVersion</code></td><td>2026-11-19 03:32:28 UTC, <code>welcome-2026-11-18</code></td><td class="ok">Consented At, Consent Version</td><td>—</td></tr>
+  <tr><td>Device</td><td><code>deviceType</code>, <code>userAgent</code></td><td>mobile; Chrome 130 on Android 14 (Pixel 8)</td><td class="ok">Device Type, User Agent</td><td>—</td></tr>
   <tr><td>Registration code</td><td><code>registrationCode</code></td><td>E2E001</td><td class="ok">Registration Code</td><td class="ok">Registration Code</td></tr>
-  <tr><td>Email (for payment)</td><td><code>email</code></td><td>e2e-a@example.com</td><td class="no">not included ¹</td><td class="ok">Email</td></tr>
-  <tr><td>Scenarios shown (network, edge states, focal / partner node)</td><td><code>scenarios</code> collection, referenced by ID</td><td>e.g. edge DPP3→KMT2 = not give, KMT1 vs DPP4</td><td class="ok">Scenario ID, Index, Focal/Opponent Node, Active Edges, Edge Count, Edge States</td><td>—</td></tr>
+  <tr><td>Email (for payment) <span class="new">NOW IN CSV</span></td><td><code>email</code></td><td>e2e-a@example.com</td><td class="ok">Email ¹</td><td class="ok">Email</td></tr>
+  <tr><td>Scenarios shown (network, edge states, focal / partner node)</td><td><code>scenarios</code> collection, referenced by ID</td><td>5 scenarios, KMT1 vs DPP4</td><td class="ok">Scenario ID, Index, Focal/Opponent Node, Active Edges, Edge Count, Edge States</td><td>—</td></tr>
   <tr><td>Answer per scenario (0–100% give)</td><td><code>results[].cooperationProbability</code></td><td>0.7, 0.3, 0.9, 0.1, 0.5</td><td class="ok">Cooperation Probability</td><td>—</td></tr>
-  <tr><td>Response time per scenario</td><td><code>results[].responseTime</code> (ms)</td><td>13560 ², 1251, 1219, 1273, 1272</td><td class="ok">Response Time (ms)</td><td>—</td></tr>
-  <tr><td>Time of each answer</td><td><code>results[].answeredAt</code></td><td>02:37:20 … 02:37:28 UTC</td><td class="ok">Answered At ³</td><td>—</td></tr>
+  <tr><td>Response time per scenario</td><td><code>results[].responseTime</code> (ms)</td><td>13508 ², 1204, 1236, 1253, 1233</td><td class="ok">Response Time (ms)</td><td>—</td></tr>
+  <tr><td>Time of each answer</td><td><code>results[].answeredAt</code></td><td>03:32:42 … 03:32:50 UTC</td><td class="ok">Answered At ³</td><td>—</td></tr>
   <tr><td>Questionnaire Q1–Q8</td><td><code>questionnaire[].answer</code> — true / false ⁴</td><td>Q1 true, Q2 false, Q3 true, Q4 false, Q5 false, Q6 true, Q7 false, Q8 true</td><td class="ok">Q1 … Q8 (true / false)</td><td>—</td></tr>
-  <tr><td>Start and completion time</td><td><code>createdAt</code>, <code>completedAt</code></td><td>02:37:18 → 02:37:46 UTC</td><td class="ok">Submission Created / Completed At</td><td class="ok">Completed At</td></tr>
+  <tr><td>Start and completion time</td><td><code>createdAt</code>, <code>completedAt</code></td><td>03:32:40 → 03:33:18 UTC</td><td class="ok">Submission Created / Completed At</td><td class="ok">Completed At</td></tr>
   <tr><td>Completed / valid flags</td><td><code>isCompleted</code>, <code>isInvalid</code></td><td>true / false</td><td class="ok">Submission Completed, Valid</td><td>only completed + valid rows</td></tr>
-  <tr><td>Payment draw: chosen round, points, payout</td><td><code>realisedRoundIndex</code>, <code>realisedPoints</code>, <code>payoutNtd</code></td><td>round 1, 0 points, NT$0</td><td>—</td><td class="ok">Realised Round, Points, Fee, Point Payout, Total Payout</td></tr>
+  <tr><td>Payment draw: chosen round, points, payout</td><td><code>realisedRoundIndex</code>, <code>realisedPoints</code>, <code>payoutNtd</code></td><td>round 5, 3 points, NT$300</td><td>—</td><td class="ok">Realised Round, Points, Fee, Point Payout, Total Payout</td></tr>
   <tr><td>Per-round draw details (partner probability, both decisions)</td><td><code>opponentProbs</code>, <code>myDecisions</code>, <code>opponentDecisions</code></td><td>5 values each</td><td colspan="2">database only (decided 2026-11-17)</td></tr>
 </table>
 <div class="muted">
-  ¹ Kept out on purpose so the political-opinion answers are not stored next to an email; join the two files on <b>Submission ID</b> when needed.
+  ¹ Added 2026-11-19 by the research team's decision. The research CSV now puts the email next to the political-opinion answers (Q1–Q8), so it is an <b>identifying file</b>: store and share it like the payment ledger.
   ² Includes a deliberately failed save and the retry (the test simulates a network error on the first answer).
-  ³ See §4.
+  ³ See §5.
   ⁴ <b>true = the first option</b>: 同意 (Q1, Q2, Q4–Q7), 好 (Q3), 管制 (Q8); false = 不同意 / 不好 / 開放.
 </div>
 
-<h2>2. How the data is protected (verified on production)</h2>
+<h2>2. A real participant on production (manual check)</h2>
+<p>Automated browsers cannot pass Cloudflare's check (Cloudflare refuses them even after a human click), so one person completed the study in their own Chrome on 2026-11-19:</p>
+<table>
+  <tr><th style="width:38%">Step</th><th>Result</th></tr>
+  <tr><td>Cloudflare Turnstile check</td><td>Passed; the server confirmed it with Cloudflare (03:51:28 UTC) and issued the signed cookie. <span class="ok">pass</span></td></tr>
+  <tr><td>Consent</td><td>Recorded 03:51:06 UTC, version <code>welcome-2026-11-18</code>. <span class="ok">pass</span></td></tr>
+  <tr><td>All scenarios (20 in that group)</td><td>All 20 answers saved, each with a response time (4.2–30.3 s). <span class="ok">pass</span></td></tr>
+  <tr><td>Outro</td><td>Registration code MANUAL01, email, Q1–Q8 saved; payout NT$300; done page shown. <span class="ok">pass</span></td></tr>
+  <tr><td>Device</td><td><code>desktop</code>, Chrome on macOS. <span class="ok">pass</span></td></tr>
+</table>
+
+<h2>3. How the data is protected (verified on production)</h2>
 <table>
   <tr><th style="width:38%">Risk</th><th>Safeguard and production result</th></tr>
+  <tr><td>Bots skipping the bot check</td><td>The bot-check cookie is signed by the server and expires after 2 h; a hand-written <code>turnstile_verified=true</code> is rejected and cannot start a survey. <span class="ok">pass</span></td></tr>
   <tr><td>Starting without consent</td><td>開始實驗 stays disabled until 「我已閱讀並同意參與本研究」 is ticked; the server refuses to create a submission without a consent record. <span class="ok">pass</span></td></tr>
   <tr><td>Network error while saving an answer</td><td>The participant stays on the scenario with 「儲存失敗，請再按一次。」 and the retry saves it; nothing is skipped. <span class="ok">pass</span></td></tr>
   <tr><td>Network error on the final 送出</td><td>Stays on the email step with 「提交失敗，請稍後再試」; code, email and Q1–Q8 are kept for the retry. <span class="ok">pass</span></td></tr>
@@ -76,27 +87,27 @@ questionnaire answers are stored as true / false; consent and the participant's 
   <tr><td>Group over-filled</td><td>Once every scenario has its responses, new visitors see 「無法參與實驗」 and no session is created. <span class="ok">pass</span></td></tr>
 </table>
 
-<h2>3. Who can read what</h2>
+<h2>4. Who can read what</h2>
 <ul>
   <li>Registration code, email, Q1–Q8, consent and device are returned <b>only with an admin login</b>; anyone else gets nothing, including through the participant API. <span class="ok">verified</span></li>
-  <li>Both exports are admin-only. The research CSV contains no email (checked: no “@” anywhere in the file).</li>
+  <li>Both exports are admin-only. <b>Both now contain the email</b>, so both are identifying files.</li>
   <li>Unsent questionnaire answers and the consent tick live only in the participant's browser tab until they are sent.</li>
 </ul>
 
-<h2>4. Know before you analyse</h2>
+<h2>5. Know before you analyse</h2>
 <ol>
-  <li><b>Q1–Q8</b> are <code>true</code> / <code>false</code>, with true = the first option (同意 / 好 / 管制). Note that for Q8 true means 管制 (restrict).</li>
-  <li><b>Response time</b> = milliseconds from the scenario appearing to the confirm click that saved the answer, including revealing the edges and moving the slider. A page refresh restarts the clock for that scenario. The test robot answers in ~1.2 s; real participants will be much slower.</li>
+  <li><b>Q1–Q8</b> are <code>true</code> / <code>false</code>, with true = the first option (同意 / 好 / 管制). For Q8, true means 管制 (restrict).</li>
+  <li><b>Response time</b> = milliseconds from the scenario appearing to the confirm click that saved the answer, including revealing the edges and moving the slider. A page refresh restarts the clock for that scenario. The test robot answers in ~1.2 s; the manual participant took 4–30 s.</li>
   <li><b>Device type</b> is <code>mobile</code> when Chrome reports a mobile device or the user agent says Mobile / Android / iPhone / iPad, otherwise <code>desktop</code>; it describes the device that <i>started</i> the submission. The full user agent is kept for finer grouping.</li>
   <li><b>Consent Version</b> names the consent text the participant saw (currently <code>welcome-2026-11-18</code>); it changes whenever that text changes.</li>
-  <li><b>Presentation order</b>: participants see their five scenarios in the order of the answers array (also given by <i>Answered At</i>), not in the order the session lists them.</li>
-  <li><b>Answered At</b> in the research CSV is a raw epoch-milliseconds number (e.g. <code>1795055840410</code>), unlike the other time columns, which are ISO dates. It is exact; convert with <code>as.POSIXct(x/1000, origin="1970-01-01")</code> or <code>pd.to_datetime(x, unit="ms")</code>.</li>
-  <li><b>Partner decisions are random draws</b>: no real partner answer is used (BUG-008, left as is by decision).</li>
+  <li><b>Presentation order</b>: participants see their scenarios in the order of the answers array (also given by <i>Answered At</i>), not in the order the session lists them.</li>
+  <li><b>Answered At</b> in the research CSV is a raw epoch-milliseconds number (e.g. <code>1795059162125</code>), unlike the other time columns, which are ISO dates. It is exact; convert with <code>as.POSIXct(x/1000, origin="1970-01-01")</code> or <code>pd.to_datetime(x, unit="ms")</code>.</li>
+  <li><b>Partner decisions are random draws</b>: no real partner answer is used (BUG-008, left as is by decision; the manual run logged <code>matched=0/20</code>).</li>
   <li><b>Same person, two devices</b>: a second device with an already-used registration code is accepted and paid (EC-8; the ledger lists the code twice). Check the payment ledger for repeated registration codes and mark duplicates invalid before paying.</li>
   <li>Participants who stop part-way keep their saved answers (<i>Submission Completed = false</i>) and are in the research CSV but not in the payment ledger.</li>
 </ol>
 
-<h2>5. Not recorded</h2>
+<h2>6. Not recorded</h2>
 <p class="muted">Not needed for the current analysis plan; say so if any of these is.</p>
 <ul>
   <li>Intro quiz attempts (wrong answers before the correct one), and which edges were revealed in what order.</li>
@@ -105,16 +116,15 @@ questionnaire answers are stored as true / false; consent and the participant's 
 <div class="warn">
   <b>Open before launch</b>
   <ul style="margin:4px 0 0">
-    <li><b>IRB:</b> the consent checkbox is new participant-facing text (may need an amendment), and the welcome footer still says 「本研究使用瀏覽器指紋技術防止重複提交，不收集個資。」 although the study collects an email and the browser's user agent.</li>
-    <li><b>Bot check can be bypassed on v42.</b> The “passed Turnstile” cookie is not signed, so a script can skip the bot check by setting it; this is also how the automated test got through, so the real Cloudflare check was not tested. A signed-cookie fix is in progress locally and not yet deployed.</li>
+    <li><b>IRB:</b> the consent checkbox 「我已閱讀並同意參與本研究」 is new participant-facing text and may need an amendment.</li>
     <li><b>Database backups</b> were not checked. Confirm backups are enabled on the MongoDB cluster before real data arrives.</li>
   </ul>
 </div>
 
 <h2>Evidence</h2>
 <ul class="muted">
-  <li>Production e2e report (PC + phone): <code>test-results/e2e/20261119_103241/report.pdf</code>, with the exported <code>submissions.csv</code> and <code>payments.csv</code> under <code>pc/</code> and <code>phone/</code>.</li>
-  <li>Requirements: REQ-362 (research CSV), REQ-402.4–402.6, REQ-403 / BUG-015 (code and email), REQ-408 (payment), REQ-416 (questionnaire), REQ-417 (consent), REQ-418 (device) in <code>docs/requirements.md</code>.</li>
+  <li>Production e2e report (PC + phone): <code>test-results/e2e/20261119_112807/report.pdf</code>, with the exported <code>submissions.csv</code> and <code>payments.csv</code> under <code>pc/</code> and <code>phone/</code>. The test browsers carried a bot-check cookie signed with the server's secret; the Cloudflare widget itself was checked by hand (§2).</li>
+  <li>Requirements: REQ-102.1 / BUG-016 (signed cookie), REQ-362 (research CSV), REQ-402.4–402.6, REQ-403 / BUG-015 (code and email), REQ-408 (payment), REQ-416 (questionnaire), REQ-417 (consent), REQ-418 (device) in <code>docs/requirements.md</code>.</li>
 </ul>
 
 </body>

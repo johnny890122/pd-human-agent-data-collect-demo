@@ -11,6 +11,7 @@ import { existsSync, createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import mongoose from 'mongoose';
+import jwt from 'jsonwebtoken';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { chromium } from 'playwright-core';
 import { SessionGroupModel } from '../../backend/models/SessionGroup.js';
@@ -38,6 +39,11 @@ const TAILWIND_CACHE = path.join(ROOT, 'docs/irb/screenshots/.cache/tailwindcss-
 // Local runs: the Cloudflare widget can't be solved headless, so the stub hands back a token at once
 // and the real /api/turnstile/verify (which accepts any token in development) sets the signed cookie.
 // Remote runs (E2E_BASE_URL) load the real widget: the server checks the token with Cloudflare.
+// Cloudflare refuses automated browsers even after a human click (2026-11-19), so a remote run given
+// E2E_TURNSTILE_SECRET (the server's JWT_SECRET) signs its own bot-check cookie instead: the server's
+// signature check is exercised for real, only the Cloudflare round-trip is stubbed (checked by hand).
+const SIGNED_COOKIE = REMOTE && process.env.E2E_TURNSTILE_SECRET
+  ? jwt.sign({ tv: 1 }, process.env.E2E_TURNSTILE_SECRET, { expiresIn: '2h' }) : null;
 const TURNSTILE_STUB = `window.turnstile = {
   render(el, opts) { setTimeout(() => { opts.callback('e2e-token'); window.__e2eTurnstileToken = true; }, 50); return 'e2e-widget'; },
   reset() {}, remove() {},
@@ -184,7 +190,11 @@ async function newContext(device = DEVICES.A, { desktop = false } = {}) {
   const phone = MOBILE && !desktop ? PHONE : {};
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, ...phone, ...device });
   await context.route(TAILWIND_CDN, (route) => route.fulfill({ contentType: 'application/javascript', body: tailwind }));
-  if (!REMOTE) await context.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }));
+  if (!REMOTE || SIGNED_COOKIE) await context.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }));
+  if (SIGNED_COOKIE) {
+    await context.route(`${BASE_URL}/api/turnstile/verify`, (route) => route.fulfill({ contentType: 'application/json', body: '{"success":true}' }));
+    await context.addCookies([{ name: 'turnstile_verified', value: SIGNED_COOKIE, url: BASE_URL }]);
+  }
   if (LATENCY_MS) await context.route('**/graphql', async (route) => { await new Promise((r) => setTimeout(r, LATENCY_MS)); await route.fallback(); });
   return context;
 }
@@ -429,7 +439,7 @@ async function gql(query, variables, auth) {
   return data;
 }
 // Filled by enterSurvey from the first browser that passes Turnstile (REQ-102.1)
-const PARTICIPANT = { cookie: '' };
+const PARTICIPANT = { cookie: SIGNED_COOKIE ? `turnstile_verified=${SIGNED_COOKIE}` : '' };
 
 /** A participant driven through the API only (another device, or a filler). */
 async function apiParticipant(groupId, participantId, { code, email, probability = 0.5 }) {
@@ -1102,7 +1112,7 @@ async function writeReport() {
     steps: steps.map(({ id, title, status, error, checks, shots }) => ({ id, title, status, error, checks, shots })),
     edgeCases: EDGE_CASES.map(([id, title, expected]) => ({ id, title, expected, ...edgeCaseResult(id) })),
     roadmap: ROADMAP, trail, debriefZ: z, draw: run.draw ?? null, recomputedPoints: run.recomputedPoints ?? null,
-    groupId: run.groupId, submissionIdA: run.submissionIdA, target: REMOTE ? BASE_URL : null,
+    groupId: run.groupId, submissionIdA: run.submissionIdA, target: REMOTE ? BASE_URL : null, signedCookie: Boolean(SIGNED_COOKIE),
     ledger: run.ledger ? { file: run.ledger.file, header: run.ledger.header, rows: run.ledger.rows } : null,
     pairingLine: pairingLine.trim(),
   }, null, 1));

@@ -3311,13 +3311,13 @@ saveSession(currentId, submission._id, path);
 
 ## Phase 57: Signed Bot-Check Cookie (BUG-016, REQ-102.1, NFR-3)
 
-**Status**: 🚧 In progress (2026-11-19)
+**Status**: ✅ Complete (2026-11-19)
 
 - [x] **TASK-5701**: Requirements (BUG-016, REQ-102.1, NFR-3, EC-12); design Phase 57
 - [x] **TASK-5702**: `server.js`: sign the cookie with `JWT_SECRET` (2 h expiry, `tv` claim), verify on read; fail startup in production without `JWT_SECRET`; drop `'fallback_secret'` from admin login [REQ-102.1, NFR-3]
 - [x] **TASK-5703**: Test scripts get a real cookie from `POST /api/turnstile/verify` instead of `turnstile_verified=true` (e2e, sim, irb-shots, legacy scripts)
 - [x] **TASK-5704**: EC-12: forged `turnstile_verified=true` is rejected by `/api/turnstile/status` and `startSurvey` [REQ-102.1]
-- [ ] **TASK-5705**: Local `npm run test:e2e` + `npm run sim:data`; after redeploy, production e2e through the real Turnstile widget
+- [x] **TASK-5705**: Local `npm run test:e2e` + `npm run sim:data`; after redeploy, production e2e through the real Turnstile widget — v43 (`2a2addb`): forged `turnstile_verified=true` → `verified: false` and `startSurvey` refused; e2e PC 132/132, phone 132/132 with a server-signed cookie (`E2E_TURNSTILE_SECRET`; Cloudflare refuses automated browsers even after a human click); real Cloudflare check passed by hand (03:51:28 UTC, `POST /api/turnstile/verify` 200, MANUAL01 completed 20/20 answers, consent, desktop, Q1–Q8, NT$300)
 
 **Implementation notes (2026-11-19)**:
 - **Server**: cookie value = `jwt.sign({ tv: 1 }, JWT_SECRET, { expiresIn: '2h' })`; read with `jwt.verify` + `tv === 1`. Production throws at startup without `JWT_SECRET` (Heroku `pd-human-agent-survey` has a 64-char secret set, so no config change). Admin login uses the same constant instead of `'fallback_secret'`.
@@ -3328,13 +3328,13 @@ saveSession(currentId, submission._id, path);
 
 ## Phase 58: Email in the Research CSV, Welcome Footer Wording (REQ-362, REQ-417)
 
-**Status**: 🚧 In progress (2026-11-19)
+**Status**: ✅ Complete (2026-11-19)
 
 - [x] **TASK-5801**: Requirements (REQ-362 columns incl. Email, consent and device; REQ-417 footer; NFR-9 D6); design Phase 58
 - [x] **TASK-5802**: Research CSV 「Email」 column [REQ-362]
 - [x] **TASK-5803**: Welcome footer 「本研究使用瀏覽器指紋技術防止重複提交」 [REQ-417]
 - [x] **TASK-5804**: e2e + sim checks for the Email column
-- [ ] **TASK-5805**: Local e2e + sim; commit and push `main` (GitHub → Heroku auto-deploy, with Phase 57); production e2e through the real Turnstile widget; regenerate the data report; clear the production database
+- [x] **TASK-5805**: Local e2e + sim; commit and push `main` (GitHub → Heroku auto-deploy, with Phase 57); production e2e through the real Turnstile widget; regenerate the data report; clear the production database — `2a2addb` → v43; e2e `test-results/e2e/20261119_112807/` (Email column checked); data report regenerated; database cleared 2026-11-19 03:54 UTC
 
 **Implementation notes (2026-11-19)**:
 - **Local verification** (with Phase 57): `npm run test:e2e` PASS — PC 132/132, phone 132/132 (`test-results/e2e/20261119_110722/`); `npm run sim:data`: D0–D7 (incl. the new Email check) and A1–A2 pass, D8 fails as before (open Phase 55 finding, 6/162 short). Unit: 65 pass, the 3 known `new-data-model.test.js` failures.

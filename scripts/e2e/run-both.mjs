@@ -122,7 +122,7 @@ function html(pc, phone) {
   </style></head><body>
   <h1>E2E full-flow report — PC + phone</h1>
   <div class="muted">Admin launch → invite link → participant survey → debrief → payment ledger, plus edge cases EC-1…EC-13, run on a PC (1440×900) and with every participant on a phone (390×844, touch, Android Chrome; admin on desktop). NFR-8, NFR-8.1, NFR-8.3.</div>
-  ${(pc ?? phone)?.target ? `<div class="muted"><b>Target: ${esc((pc ?? phone).target)}</b> (remote run against the deployed app and its database). The Cloudflare Turnstile check itself is bypassed in the test browsers and is not tested by this run.</div>` : ''}
+  ${(pc ?? phone)?.target ? `<div class="muted"><b>Target: ${esc((pc ?? phone).target)}</b> (remote run against the deployed app and its database). ${(pc ?? phone).signedCookie ? 'The test browsers carry a bot-check cookie signed with the server&#39;s secret, so the server&#39;s signature check runs for real; the Cloudflare widget itself is stubbed (Cloudflare refuses automated browsers) and is checked by hand.' : 'The test browsers go through the real Cloudflare Turnstile widget.'}</div>` : ''}
   <div class="banner ${passed ? 'pass' : 'failb'}">${passed ? 'PASS' : 'FAIL'} — PC ${score(pc)} · Phone ${score(phone)} checks passed</div>
 
   <h2>Roadmap</h2>

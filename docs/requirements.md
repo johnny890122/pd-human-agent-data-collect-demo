@@ -48,6 +48,7 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-17 | **PROCESS** Simulated pilot data check (NFR-9) | `npm run sim:data` fills a local study with simulated participants of known behaviour (personas), exports the research CSV and the payment ledger from the admin page, and checks every value against what was sent, so data problems are found before real participants are recruited. |
 | 2026-11-18 | **DATA CAPTURE** Consent checkbox and consent record (REQ-417); device type and browser recorded (REQ-418) | From the data review's 「not recorded」 list. The welcome page gets 「我已閱讀並同意參與本研究」; the submission stores when the participant consented and to which text version, and the device type (mobile / desktop) and user agent of the device that started it. |
 | 2026-11-18 | **SCHEMA FIX** Registration code and email get their own fields (BUG-015); questionnaire answers stored as booleans (REQ-416) | `Submission.demographics` (`age` / `gender` / `education`) held the registration code in `gender`, the email in `education` and a number parsed from the code in `age`. It is replaced by `Submission.registrationCode` and `Submission.email`; `completeSurvey(submissionId, registrationCode, email, questionnaire)`. Each Q1–Q8 answer is now `answer: Boolean` (true = the first option: 同意 / 好 / 管制); the research CSV shows `true` / `false`. No data migration: the production database was empty. |
+| 2026-11-19 | **DATA FORMAT** Q1–Q8 stored as the option text again (REQ-416); 「Answered At」 is an ISO date (BUG-017, REQ-362) | Booleans (true = first option) were easy to misread — for Q8 true meant 管制 — so the database and the research CSV hold the option text (同意 / 不同意 / 好 / 不好 / 管制 / 開放) again. 「Answered At」 came out as epoch milliseconds while every other time column is ISO 8601; all time columns are now ISO. No data migration: the production database was empty. |
 | 2026-11-19 | **DATA EXPORT** Email added to the research CSV (REQ-362); welcome footer reworded (REQ-417) | By the research team's decision the research CSV gets an 「Email」 column after 「Registration Code」 (reverses the 2026-11-17 choice to keep it only in the payment ledger). The welcome footer drops 「，不收集個資」, which was untrue now that an email and the user agent are collected. |
 | 2026-11-19 | **SECURITY** Bot-check cookie is signed (BUG-016, REQ-102, NFR-3) | The `turnstile_verified` cookie held the plain value `true`, so any script could skip Turnstile by setting it (the production e2e did exactly this, so the real Cloudflare check was never exercised). The cookie now holds a server-signed token that expires after 2 h; a forged or expired cookie counts as not verified. The server refuses to start in production without `JWT_SECRET`. Test scripts obtain a real cookie from `POST /api/turnstile/verify`. |
 | 2026-11-17 | **BUG FIX** Session kept in the URL after a quick first answer (BUG-014, REQ-404) | Found by the first production e2e run: a refresh after a fast first answer left the participant on 「載入中...」. |
@@ -356,10 +357,10 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     12. **Edge States (JSON)** — `JSON.stringify(Scenario.edgeStates)` (e.g., `{"KMT1→DPP3":"give","KMT2→DPP4":"not give"}`)
     13. **Cooperation Probability** — `SurveyResult.cooperationProbability` (0.0 to 1.0)
     14. **Response Time (ms)** — `SurveyResult.responseTime` (REQ-402.5)
-    15. **Answered At** — `SurveyResult.answeredAt` (ISO timestamp)
+    15. **Answered At** — `SurveyResult.answeredAt` (ISO 8601 timestamp, like every time column; BUG-017)
     16. **Registration Code** — `Submission.registrationCode` (same value repeated for all rows of one submission)
     17. **Email** — `Submission.email` (2026-11-19)
-    18. **Q1 … Q8** — `Submission.questionnaire` answer as `true` / `false` (true = first option, REQ-416); empty when not answered
+    18. **Q1 … Q8** — `Submission.questionnaire` answer text (同意 / 不同意 / 好 / 不好 / 管制 / 開放, REQ-416); empty when not answered
     19. **Consented At**, **Consent Version** — `Submission.consentedAt` (ISO timestamp), `Submission.consentVersion` (REQ-417)
     20. **Device Type**, **User Agent** — `Submission.deviceType`, `Submission.userAgent` (REQ-418)
     21. **Submission Completed** — `Submission.isCompleted` (true/false)
@@ -614,9 +615,9 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   - *Layout (2026-11-17):* the page uses the same design as the 理解測試 quiz (intro step 6): wide card, large title with the indigo underline bar, amber instruction panel with a white inner panel, bold numbered question rows. On screens ≥ 640px each question's options sit to the right of its text, on the same row; on a phone they sit below it.
   - *Required:* 下一步 stays disabled until all eight are answered; the page shows 「已回答 n / 8」. A participant who reaches the email step without all eight answers (e.g. a direct URL) is sent back to step 3 on 送出.
   - *Refresh:* answers are kept in the browser tab per submission (`sessionStorage`) and restored after a refresh until the survey is submitted. *2026-11-17:* not `localStorage`, so the political opinions of a participant who leaves without submitting do not stay on a shared device after the tab is closed; a participant who closes the tab and returns answers the eight questions again.
-  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]`. *2026-11-18:* `answer` is a Boolean — `true` = the question's first option (同意 / 好 / 管制), `false` = the second (不同意 / 不好 / 開放); the mapping comes from the option order in `utils/questionnaire.js`. (Was the option text.) *2026-11-17:* `completeSurvey` requires the questionnaire — a completion without all eight valid answers is rejected and nothing is saved. The server rejects missing, unknown and duplicate question IDs and answers that are not a Boolean.
+  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]` with `answer` = the option text the participant chose (同意 / 不同意 / 好 / 不好 / 管制 / 開放). *History:* option text until 2026-11-18, a Boolean (true = first option) 2026-11-18 → 2026-11-19, the option text again since 2026-11-19 because the Boolean was easy to misread (for Q8 true meant 管制). No stored data ever used the Boolean. *2026-11-17:* `completeSurvey` requires the questionnaire — a completion without all eight valid answers is rejected and nothing is saved. The server rejects missing, unknown and duplicate question IDs and answers that are not one of that question's options.
   - *Privacy:* the answers are political opinions. They MUST be readable only with an admin login: the `questionnaire` field returns null for anyone else, including through the public `submission(id)` query.
-  - *Export:* the submissions CSV (Export CSV) gets columns Q1–Q8 with `true` / `false` (2026-11-18; was the answer text).
+  - *Export:* the submissions CSV (Export CSV) gets columns Q1–Q8 with the answer text (同意 / 不同意 / …).
   - *Wording:* as supplied, with two corrections confirmed 2026-11-17: 「曆史」 → 「歷史」 in Q2, and every question ends with a full-width 「？」. Page title 「問卷」 and intro line approved. A new instrument (political attitudes) likely needs IRB approval before deployment.
 
 - **REQ-415 — Chrome browser required for participants.** The survey welcome page (`SurveyWelcome.tsx`) MUST detect the participant's browser on page load. If the browser is not Google Chrome (or a Chromium-based browser that identifies as Chrome, such as Brave), the page MUST display a prominent blocking warning and prevent the participant from proceeding.
@@ -790,6 +791,12 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **Root Cause**: The outro reused the `completeSurvey(demographics)` payload of an earlier demographics form that is no longer shown.
 - **Fix (2026-11-18, REQ-403)**: `Submission.registrationCode` and `Submission.email` replace `demographics`; the GraphQL `Demographics` / `DemographicsInput` types are removed; `completeSurvey(submissionId, registrationCode, email, questionnaire)`.
 
+**BUG-017**: 「Answered At」 exported as epoch milliseconds
+
+- **Symptom**: The research CSV's 「Answered At」 held numbers like `1795059162125`, while 「Consented At」, 「Submission Created At」 and 「Submission Completed At」 are ISO 8601 dates. Found in the 2026-11-17 data review.
+- **Root Cause**: `results[].answeredAt` is a Date in MongoDB; GraphQL's `String` scalar serialised it as its epoch value. The submission-level dates were already converted with `toISOString()` in `toSubmissionGraph`; the per-answer date was not.
+- **Fix (2026-11-19, REQ-362)**: a `SurveyResult.answeredAt` field resolver returns the ISO string, so every query that returns answers (participant and admin) gives ISO 8601.
+
 ---
 
 ## Known Issues (Fixed)
@@ -809,6 +816,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | BUG-014 | A quick first answer dropped `?sessionId=` from the URL; a later refresh hung on 「載入中...」 (production only) | 2026-11-17 | ✅ Fixed (REQ-404) |
 | BUG-015 | Registration code and email stored as `demographics.gender` / `demographics.education` | 2026-11-18 | ✅ Fixed (REQ-403) |
 | BUG-016 | The bot-check cookie was the plain value `true`; any script could set it and skip Turnstile | 2026-11-19 | ✅ Fixed (REQ-102.1) |
+| BUG-017 | 「Answered At」 exported as epoch milliseconds instead of an ISO date | 2026-11-19 | ✅ Fixed (REQ-362) |
 | BUG-007 | Group detail view and research CSV only see the 100 most recent submissions across all sessions | 2026-10-01 | ✅ Fixed (REQ-408.7) |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.

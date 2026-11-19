@@ -54,8 +54,8 @@ const GROUP_NAME = 'E2E full flow';
 const A = { code: 'E2E001', email: 'e2e-a@example.com', sliders: [70, 30, 90, 10, 50], answers: [0, 1, 0, 1, 1, 0, 1, 0] };
 const B = { sliders: [60, 40] };
 const C = { code: 'E2E003', email: 'e2e-c@example.com', sliders: [60, 40, 80, 25, 55], reanswer: 20, answers: [1, 1, 1, 1, 0, 0, 0, 0] };
-// REQ-416: stored as a Boolean, true = the first option (picks[i] === 0)
-const expectedAnswers = (picks) => QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: picks[i] === 0 }));
+// REQ-416: stored as the option text the participant clicked
+const expectedAnswers = (picks) => QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: q.options[picks[i]] }));
 const CONSENT = { consentedAt: new Date().toISOString(), version: 'e2e-api' };
 const D = { participantId: 'e2e-device-2', email: 'e2e-a-phone@example.com' };
 // A browser context is one device; FingerprintJS hashes timezone and language among others
@@ -677,7 +677,7 @@ async function journey() {
     check('Registration code stored (registrationCode, BUG-015)', A.code, sub?.registrationCode);
     check('Email stored (email, BUG-015)', A.email, sub?.email);
     check('No demographics field any more (BUG-015)', undefined, sub?.demographics);
-    check('Questionnaire Q1–Q8 stored as Booleans, true = first option (REQ-416)', JSON.stringify(expectedAnswers(A.answers)), JSON.stringify(sub?.questionnaire));
+    check('Questionnaire Q1–Q8 stored as the option text clicked (REQ-416)', JSON.stringify(expectedAnswers(A.answers)), JSON.stringify(sub?.questionnaire));
     check('Consent recorded: time and text version (REQ-417)', true,
       sub?.consentedAt instanceof Date && sub.consentedAt <= sub.createdAt && /^welcome-/.test(sub?.consentVersion ?? ''));
     check(`Device type recorded: ${MOBILE ? 'mobile' : 'desktop'} (REQ-418)`, MOBILE ? 'mobile' : 'desktop', sub?.deviceType);
@@ -874,8 +874,11 @@ async function journey() {
     const [header = [], ...rows] = parseCsv((await fs.readFile(path.join(OUT_DIR, 'submissions.csv'), 'utf8')).replace(/^\uFEFF/, '')).filter((r) => r.some(Boolean));
     check('Submissions CSV has columns Q1–Q8', true, QUESTIONNAIRE.every((x) => header.includes(x.id)));
     const rowA = rows.find((r) => r[header.indexOf('Submission ID')] === run.submissionIdA);
-    check('A\'s CSV row has the questionnaire answers as true / false (REQ-416)', expectedAnswers(A.answers).map((x) => String(x.answer)).join(','),
+    check('A\'s CSV row has the questionnaire answers as the option text (REQ-416)', expectedAnswers(A.answers).map((x) => x.answer).join(','),
       rowA && QUESTIONNAIRE.map((x) => rowA[header.indexOf(x.id)]).join(','));
+    const subA = await col(SubmissionModel).findOne({ _id: new mongoose.Types.ObjectId(run.submissionIdA) });
+    check('A\'s 「Answered At」 cells are ISO 8601 and equal the DB times (BUG-017)', (subA?.results ?? []).map((r) => r.answeredAt?.toISOString()).join(','),
+      rows.filter((r) => r[header.indexOf('Submission ID')] === run.submissionIdA).map((r) => r[header.indexOf('Answered At')]).join(','));
     check('Submissions CSV has the consent and device columns (REQ-417, REQ-418)', true,
       ['Consented At', 'Consent Version', 'Device Type', 'User Agent'].every((h) => header.includes(h)));
     check('A\'s CSV row: device type and consent filled', `${MOBILE ? 'mobile' : 'desktop'},true`,

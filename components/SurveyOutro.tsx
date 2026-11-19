@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Submission, SurveyResult, QuestionnaireAnswer } from '../types';
 import { DebriefResult, drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
 import { PAYMENT_METHOD_TEXT, PAYMENT_TIMELINE_TEXT, POINT_TO_NTD, payoffPoints, pointPayoutNtd } from '../utils/payment.js';
-import { QUESTIONNAIRE, answerValue } from '../utils/questionnaire.js';
+import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 
 // The persisted debrief, if this submission already has a complete one (including its payout)
 function persistedDebrief(sub: Submission | null): DebriefResult | null {
@@ -170,8 +170,8 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
 
     try {
       const contact = { registrationCode: codeValue.trim(), email: trimmedEmail };
-      // REQ-416: stored as a Boolean, true = the first option (同意 / 好 / 管制)
-      const questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: answerValue(q, answers[q.id]) }));
+      // REQ-416: stored as the option text the participant chose
+      const questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: answers[q.id] }));
       if (onComplete && entryId) {
         await onComplete(entryId, results, contact, questionnaire);
         writeStoredCode(entryId, null);

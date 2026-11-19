@@ -8,16 +8,13 @@ import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '..
 import { pointPayoutNtd, MAX_TOTAL_NTD } from '../utils/payment.js';
 import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 
-// Research CSV, per-participant cells (REQ-362): registration code, Q1–Q8 as true / false (REQ-416; blank if
+// Research CSV, per-participant cells (REQ-362): registration code, Q1–Q8 as the option text (REQ-416; blank if
 // not answered), consent (REQ-417) and device (REQ-418). The email is included (2026-11-19), so the file is identifying.
 const PARTICIPANT_HEADERS = ['Registration Code', 'Email', ...QUESTIONNAIRE.map((q) => q.id), 'Consented At', 'Consent Version', 'Device Type', 'User Agent'];
 const participantCells = (s: Submission) => [
   s.registrationCode || '',
   s.email || '',
-  ...QUESTIONNAIRE.map((q) => {
-    const answer = s.questionnaire?.find((a) => a.questionId === q.id)?.answer;
-    return answer === undefined ? '' : String(answer);
-  }),
+  ...QUESTIONNAIRE.map((q) => s.questionnaire?.find((a) => a.questionId === q.id)?.answer ?? ''),
   s.consentedAt || '',
   s.consentVersion || '',
   s.deviceType || '',

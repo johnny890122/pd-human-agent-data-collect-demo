@@ -91,8 +91,8 @@ export interface Submission {
 /** One answer of the post-survey questionnaire (REQ-416) */
 export interface QuestionnaireAnswer {
   questionId: string;
-  /** true = the question's first option (同意 / 好 / 管制) */
-  answer: boolean;
+  /** the option text the participant chose (同意 / 不同意 / 好 / …) */
+  answer: string;
 }
 
 // UPDATED: SurveyResult

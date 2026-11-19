@@ -86,15 +86,15 @@ export const typeDefs = `#graphql
     updatedAt: String!
   }
 
-  """answer: true = the question's first option (同意 / 好 / 管制)"""
+  """answer: the option text the participant chose (同意 / 不同意 / 好 / …)"""
   type QuestionnaireAnswer {
     questionId: String!
-    answer: Boolean!
+    answer: String!
   }
 
   input QuestionnaireAnswerInput {
     questionId: String!
-    answer: Boolean!
+    answer: String!
   }
 
   """REQ-417 — consent given on the welcome page"""

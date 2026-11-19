@@ -3639,3 +3639,20 @@ Scripts that hard-coded `turnstile_verified=true` (`scripts/e2e/full-flow.mjs`, 
 - Checks: e2e — A's research-CSV row has the code **and** the email; `sim` D6 — the Email cell equals the stored email (replaces 「no email anywhere」).
 - Shipped together with Phase 57 (signed cookie); production e2e then runs through the real Turnstile widget.
 
+## Phase 59 — Q1–Q8 as option text again; ISO 8601 for every time column (REQ-416, BUG-017, REQ-362)
+
+Supersedes the Boolean answer of Phase 56. No data migration: the production database was emptied on 2026-11-19.
+
+### Questionnaire (REQ-416)
+- `Submission.questionnaire[].answer: String` (the option text); GraphQL `QuestionnaireAnswer(Input).answer: String!`; `types.ts` `answer: string`.
+- `questionnaireError`: one answer per question ID, each one of that question's `options` (as before Phase 56). `answerValue` / `answerLabel` are removed.
+- The outro sends `answers[q.id]` (the radio value = option text) unchanged. Research CSV Q1–Q8 = the stored text.
+
+### Time columns (BUG-017)
+- `resolvers.SurveyResult.answeredAt = (r) => iso(r.answeredAt)` — the per-answer Date becomes ISO 8601 for every query (participant and admin), like `createdAt` / `completedAt` / `consentedAt` in `toSubmissionGraph`. The research CSV's time columns are then all ISO: Answered At, Consented At, Submission Created At, Submission Completed At; the ledger's Completed At already was.
+
+### Tests
+- Unit: `questionnaireError` accepts the options, rejects off-list text and Booleans; SurveyOutro sends the option text.
+- Backend: stored answers are the text; off-list rejected; `SurveyResult.answeredAt` is ISO.
+- E2E: DB and CSV Q1–Q8 equal the clicked option text; every 「Answered At」 cell of A parses as ISO 8601 and equals the DB value. `sim` D2 / D6 compare the same.
+

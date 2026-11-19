@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { QUESTIONNAIRE, questionnaireError, answerValue, answerLabel } from '../questionnaire.js';
+import { QUESTIONNAIRE, questionnaireError } from '../questionnaire.js';
 import { deviceTypeOf } from '../device.js';
 
-const all = (value = true) => QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: value }));
+// REQ-416: answers are the option text; `pick` chooses the first or second option of every question
+const all = (pick = 0) => QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[pick] }));
 
 describe('questionnaire (REQ-416)', () => {
   it('has Q1–Q8 with two options each', () => {
@@ -11,24 +12,17 @@ describe('questionnaire (REQ-416)', () => {
     expect(QUESTIONNAIRE.find((q) => q.id === 'Q8')?.options).toEqual(['管制', '開放']);
   });
 
-  it('maps the first option to true and back (同意 / 好 / 管制 = true)', () => {
-    const [q1, , q3, , , , , q8] = QUESTIONNAIRE;
-    expect([answerValue(q1, '同意'), answerValue(q1, '不同意')]).toEqual([true, false]);
-    expect([answerValue(q3, '好'), answerValue(q3, '不好')]).toEqual([true, false]);
-    expect([answerValue(q8, '管制'), answerValue(q8, '開放')]).toEqual([true, false]);
-    expect(QUESTIONNAIRE.every((q) => q.options.every((o) => answerLabel(q, answerValue(q, o)) === o))).toBe(true);
+  it('accepts one option text per question', () => {
+    expect(questionnaireError(all(0))).toBeNull();
+    expect(questionnaireError(all(1))).toBeNull();
   });
 
-  it('accepts one Boolean answer per question', () => {
-    expect(questionnaireError(all(true))).toBeNull();
-    expect(questionnaireError(all(false))).toBeNull();
-  });
-
-  it('rejects missing, duplicate, unknown and non-Boolean answers', () => {
+  it('rejects missing, duplicate, unknown, off-list and Boolean answers', () => {
     expect(questionnaireError(all().slice(1))).toMatch(/missing Q1/);
-    expect(questionnaireError([...all(), { questionId: 'Q1', answer: true }])).toMatch(/duplicate/);
-    expect(questionnaireError([...all(), { questionId: 'Q9', answer: true }])).toMatch(/unknown question Q9/);
-    expect(questionnaireError(all().map((a) => (a.questionId === 'Q3' ? { ...a, answer: '好' } : a)))).toMatch(/Q3: answer must be true or false/);
+    expect(questionnaireError([...all(), { questionId: 'Q1', answer: '同意' }])).toMatch(/duplicate/);
+    expect(questionnaireError([...all(), { questionId: 'Q9', answer: '同意' }])).toMatch(/unknown question Q9/);
+    expect(questionnaireError(all().map((a) => (a.questionId === 'Q3' ? { ...a, answer: '同意' } : a)))).toMatch(/Q3: "同意" is not one of 好 \/ 不好/);
+    expect(questionnaireError(all().map((a) => (a.questionId === 'Q8' ? { ...a, answer: true } : a)))).toMatch(/Q8/);
     expect(questionnaireError(null)).toMatch(/list/);
   });
 });

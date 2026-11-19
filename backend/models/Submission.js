@@ -39,8 +39,8 @@ const submissionSchema = new mongoose.Schema(
     payoutNtd: { type: Number, required: false, default: null },
     // Post-survey questionnaire (REQ-416): political opinions — exposed to admins only
     questionnaire: {
-      // answer: true = the question's first option (同意 / 好 / 管制), REQ-416
-      type: [{ _id: false, questionId: { type: String, required: true }, answer: { type: Boolean, required: true } }],
+      // answer: the option text the participant chose (同意 / 不同意 / 好 / …), REQ-416
+      type: [{ _id: false, questionId: { type: String, required: true }, answer: { type: String, required: true } }],
       required: false,
       default: undefined,
     },

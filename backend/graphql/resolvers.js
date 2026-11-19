@@ -171,6 +171,11 @@ export const resolvers = {
 
   // REQ-416 / REQ-408.8 / REQ-417 / REQ-418: political opinions, code, email, consent and device —
   // admins only, wherever a Submission is returned, even via submission(id) or the completeSurvey result
+  // BUG-017: per-answer time as ISO 8601, like every other time field (GraphQL's String gave epoch ms)
+  SurveyResult: {
+    answeredAt: (result) => iso(result.answeredAt),
+  },
+
   Submission: Object.fromEntries(
     ['questionnaire', 'registrationCode', 'email', 'consentedAt', 'consentVersion', 'deviceType', 'userAgent']
       .map((field) => [field, (submission, _, context) => (context?.isAdmin ? submission[field] : null)]),

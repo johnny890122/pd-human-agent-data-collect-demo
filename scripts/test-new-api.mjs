@@ -232,7 +232,7 @@ async function testNewAPI() {
           submissionId: submission._id,
           registrationCode: 'LEGACY01',
           email: 'legacy@example.com',
-          questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: true })), // REQ-416: Boolean, true = first option
+          questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })), // REQ-416: option text
         }
       })
     });

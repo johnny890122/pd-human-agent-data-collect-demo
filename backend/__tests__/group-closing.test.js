@@ -53,7 +53,7 @@ async function participant(groupId, participantId, { finish = true, answer = tru
   const { sessionId, assignedScenarios } = await M.startMixedSession(null, { groupId, participantId }, ctx);
   const sub = await M.startSurvey(null, { sessionId, participantId, consent: { consentedAt: new Date().toISOString(), version: 'test' } }, ctx);
   if (answer) for (const s of assignedScenarios) await M.saveSurveyAnswer(null, { submissionId: sub._id, scenarioId: s._id, cooperationProbability: 0.5, responseTime: 4200 });
-  if (finish) await M.completeSurvey(null, { submissionId: sub._id, registrationCode: 'CODE', email: 'a@b.c', questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: true })) });
+  if (finish) await M.completeSurvey(null, { submissionId: sub._id, registrationCode: 'CODE', email: 'a@b.c', questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })) });
   return { submissionId: sub._id, scenarioIds: assignedScenarios.map((s) => s._id) };
 }
 

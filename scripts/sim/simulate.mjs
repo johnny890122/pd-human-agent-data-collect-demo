@@ -106,8 +106,8 @@ async function participant(n, groupId) {
   const { drawRealisedRound: draw } = await gql('mutation($id: ID!) { drawRealisedRound(submissionId: $id) { payoutNtd } }', { id: sub._id });
   truth.code = `SIM${String(n).padStart(4, '0')}`;
   truth.email = `${id}@example.com`;
-  // REQ-416: Boolean, true = the first option
-  truth.questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: rand() < 0.5 }));
+  // REQ-416: the option text
+  truth.questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[Math.floor(rand() * q.options.length)] }));
   await gql(
     'mutation($id: ID!, $code: String!, $email: String!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, registrationCode: $code, email: $email, questionnaire: $q) { _id } }',
     { id: sub._id, code: truth.code, email: truth.email, q: truth.questionnaire });
@@ -272,10 +272,11 @@ async function runChecks({ db, groupId, truths, full, csv, ledger }) {
       if (!row) { d6.push(`${s.participantId}/${r.scenarioId}: no row`); continue; }
       if (Number(row['Cooperation Probability']) !== r.cooperationProbability) d6.push(`${s.participantId}: p ${row['Cooperation Probability']} ≠ ${r.cooperationProbability}`);
       if (Number(row['Response Time (ms)']) !== r.responseTime || row['Response Time (ms)'] === '') d6.push(`${s.participantId}: RT '${row['Response Time (ms)']}' ≠ ${r.responseTime}`);
+      if (row['Answered At'] !== r.answeredAt?.toISOString()) d6.push(`${s.participantId}: Answered At '${row['Answered At']}' is not the ISO time ${r.answeredAt?.toISOString()} (BUG-017)`);
       if (row['Submission Completed'] !== String(Boolean(s.isCompleted))) d6.push(`${s.participantId}: completed flag`);
       if (s.isCompleted) {
         if (row['Registration Code'] !== s.registrationCode) d6.push(`${s.participantId}: code '${row['Registration Code']}'`);
-        for (const q of QUESTIONNAIRE) if (row[q.id] !== String(s.questionnaire?.find((a) => a.questionId === q.id)?.answer)) d6.push(`${s.participantId}: ${q.id}`);
+        for (const q of QUESTIONNAIRE) if (row[q.id] !== s.questionnaire?.find((a) => a.questionId === q.id)?.answer) d6.push(`${s.participantId}: ${q.id}`);
         for (const col of required) if (csv.header.includes(col) && row[col] === '') d6.push(`${s.participantId}: empty ${col}`);
       }
     }

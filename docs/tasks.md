@@ -3339,3 +3339,17 @@ saveSession(currentId, submission._id, path);
 **Implementation notes (2026-11-19)**:
 - **Local verification** (with Phase 57): `npm run test:e2e` PASS — PC 132/132, phone 132/132 (`test-results/e2e/20261119_110722/`); `npm run sim:data`: D0–D7 (incl. the new Email check) and A1–A2 pass, D8 fails as before (open Phase 55 finding, 6/162 short). Unit: 65 pass, the 3 known `new-data-model.test.js` failures.
 
+## Phase 59: Q1–Q8 as Option Text Again; ISO 8601 for Every Time Column (REQ-416, BUG-017, REQ-362)
+
+**Status**: 🚧 In progress (2026-11-19)
+
+- [x] **TASK-5901**: Requirements (REQ-416 storage/export, REQ-362 columns 15 and 18, BUG-017); design Phase 59
+- [x] **TASK-5902**: Model / GraphQL / types: `answer` is the option text; validation against the options; remove `answerValue` / `answerLabel` [REQ-416]
+- [x] **TASK-5903**: Outro sends the option text; CSV shows it [REQ-416]
+- [x] **TASK-5904**: `SurveyResult.answeredAt` resolver → ISO 8601 [BUG-017]
+- [x] **TASK-5905**: Unit, backend, e2e, sim and legacy scripts
+- [ ] **TASK-5906**: Local e2e + sim; deploy; production e2e + manual Cloudflare pass; regenerate both reports; clear the production database
+
+**Implementation notes (2026-11-19)**:
+- **Local verification**: `npm run test:e2e` PASS — PC 133/133, phone 133/133 (`test-results/e2e/20261119_120004/`): DB and CSV Q1–Q8 = the clicked option text; every 「Answered At」 of A is ISO 8601 and equals the DB time. `npm run sim:data`: D0–D7 (D6 now also checks 「Answered At」 = ISO DB time) and A1–A2 pass; D8 fails as before (open Phase 55 finding, 5/162 short). Unit: 65 pass, the 3 known `new-data-model.test.js` failures.
+

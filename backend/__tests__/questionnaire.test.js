@@ -15,8 +15,8 @@ import { QUESTIONNAIRE } from '../../utils/questionnaire.js';
 
 let mongo;
 const contact = { registrationCode: 'CODE1', email: 'a@example.com' };
-// true = first option (同意 / 好 / 管制); alternate so both values are exercised
-const answers = QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: i % 2 === 0 }));
+// REQ-416: the option text; alternate first / second option
+const answers = QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: q.options[i % 2] }));
 const consent = { consentedAt: '2026-11-18T10:00:00.000Z', version: 'welcome-test' };
 const PHONE_UA = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
 const participantCtx = { isTurnstileVerified: true, userAgent: PHONE_UA, mobileHint: '?1' };
@@ -41,7 +41,7 @@ const newSubmission = async () => String((await SubmissionModel.create({ session
 const newSession = () => SessionModel.create({ scenarioIds: ['s1'], focalNode: 'A', opponentNode: 'B', sampleSize: 5 });
 const complete = (submissionId, extra = {}) => resolvers.Mutation.completeSurvey(null, { submissionId, ...contact, questionnaire: answers, ...extra });
 
-describe('completeSurvey stores code, email and Boolean answers (REQ-403, REQ-416, BUG-015)', () => {
+describe('completeSurvey stores code, email and the answer text (REQ-403, REQ-416, BUG-015)', () => {
   it('saves them under their own names', async () => {
     const submissionId = await newSubmission();
     await complete(submissionId);
@@ -59,11 +59,11 @@ describe('completeSurvey stores code, email and Boolean answers (REQ-403, REQ-41
     expect((await SubmissionModel.findById(submissionId).lean()).isCompleted).toBe(false);
   });
 
-  it('rejects an incomplete, non-Boolean or missing questionnaire and completes nothing', async () => {
+  it('rejects an incomplete, off-list or missing questionnaire and completes nothing', async () => {
     const submissionId = await newSubmission();
     await expect(complete(submissionId, { questionnaire: answers.slice(1) })).rejects.toThrow(/INVALID_QUESTIONNAIRE: missing Q1/);
-    const text = answers.map((a) => (a.questionId === 'Q8' ? { ...a, answer: '管制' } : a));
-    await expect(complete(submissionId, { questionnaire: text })).rejects.toThrow(/INVALID_QUESTIONNAIRE: Q8/);
+    const offList = answers.map((a) => (a.questionId === 'Q8' ? { ...a, answer: '同意' } : a));
+    await expect(complete(submissionId, { questionnaire: offList })).rejects.toThrow(/INVALID_QUESTIONNAIRE: Q8/);
     await expect(complete(submissionId, { questionnaire: undefined })).rejects.toThrow(/INVALID_QUESTIONNAIRE/);
     expect((await SubmissionModel.findById(submissionId).lean()).isCompleted).toBe(false);
   });
@@ -76,7 +76,7 @@ describe('a completed submission is final (BUG-012, REQ-402.4)', () => {
     await complete(submissionId);
     const first = await SubmissionModel.findById(submissionId).lean();
 
-    const flipped = answers.map((a) => ({ ...a, answer: !a.answer }));
+    const flipped = answers.map((a) => ({ ...a, answer: QUESTIONNAIRE.find((q) => q.id === a.questionId).options.find((o) => o !== a.answer) }));
     await expect(complete(submissionId, { registrationCode: 'X', email: 'attacker@example.com', questionnaire: flipped }))
       .rejects.toThrow(/ALREADY_COMPLETED/);
 
@@ -135,5 +135,13 @@ describe('participant data is admin-only (REQ-408.8, REQ-416, REQ-417, REQ-418)'
     expect(Object.fromEntries(fields.map((f) => [f, resolvers.Submission[f](sub, {}, { isAdmin: true })]))).toEqual({
       ...contact, questionnaire: answers, consentedAt: consent.consentedAt, consentVersion: 'welcome-test', deviceType: 'mobile', userAgent: PHONE_UA,
     });
+  });
+});
+
+describe('answer times are ISO 8601 (BUG-017)', () => {
+  it('returns answeredAt as an ISO string through the SurveyResult resolver', async () => {
+    const answeredAt = new Date('2026-11-19T03:32:42.125Z');
+    expect(resolvers.SurveyResult.answeredAt({ answeredAt })).toBe('2026-11-19T03:32:42.125Z');
+    expect(resolvers.SurveyResult.answeredAt({})).toBeNull();
   });
 });

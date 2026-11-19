@@ -135,7 +135,7 @@ async function describeAccessCheck(label) {
   const { body } = await readJson(file);
   if (body.errors?.length) return '系統拒絕查詢（未授權），沒有回傳任何參與者資料。';
   const records = body.data?.recentSubmissions ?? [];
-  const emails = records.map((record) => record.demographics?.education).filter(Boolean);
+  const emails = records.map((record) => record.email).filter(Boolean);
   return `系統回傳 ${records.length} 筆參與者資料，其中包含 ${emails.length} 個 Email`
     + (emails.length ? `（${emails.map(redactEmails).join('、')}；本報告已遮蔽部分內容）` : '')
     + '。';

@@ -64,11 +64,15 @@ export interface Submission {
   sessionId: string;  // 引用 Session._id
   participantId?: string | null;
   results: SurveyResult[];
-  demographics?: {
-    age?: number;
-    gender?: string;
-    education?: string;
-  } | null;
+  /** REQ-403 — returned to admins only */
+  registrationCode?: string | null;
+  email?: string | null;
+  /** REQ-417 — returned to admins only */
+  consentedAt?: string | null;
+  consentVersion?: string | null;
+  /** REQ-418 — returned to admins only */
+  deviceType?: 'mobile' | 'desktop' | null;
+  userAgent?: string | null;
   isCompleted: boolean;
   completedAt?: string | null;
   isInvalid?: boolean;
@@ -87,7 +91,8 @@ export interface Submission {
 /** One answer of the post-survey questionnaire (REQ-416) */
 export interface QuestionnaireAnswer {
   questionId: string;
-  answer: string;
+  /** true = the question's first option (同意 / 好 / 管制) */
+  answer: boolean;
 }
 
 // UPDATED: SurveyResult

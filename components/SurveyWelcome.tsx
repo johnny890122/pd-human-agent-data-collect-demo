@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { saveConsent } from '../utils/consent';
 
 const SurveyWelcome: React.FC = () => {
   const navigate = useNavigate();
@@ -8,6 +9,8 @@ const SurveyWelcome: React.FC = () => {
   const groupId = searchParams.get('groupId');
   const mode = searchParams.get('mode');
   const [isChrome, setIsChrome] = useState<boolean>(true);
+  const [hasConsented, setHasConsented] = useState(false); // REQ-417
+  const canStart = isChrome && hasConsented;
 
   useEffect(() => {
     const ua = navigator.userAgent;
@@ -16,6 +19,8 @@ const SurveyWelcome: React.FC = () => {
   }, []);
 
   const handleStart = () => {
+    if (!canStart) return;
+    saveConsent(); // REQ-417: recorded with the submission when it is created
     // Mixed Mode: Preserve groupId + mode through intro
     if (groupId && mode === 'mixed') {
       navigate(`/survey/intro/0?groupId=${groupId}&mode=mixed`);
@@ -65,12 +70,24 @@ const SurveyWelcome: React.FC = () => {
             </p>
           </div>
 
-          <div className="pt-4 flex justify-center">
+          {/* REQ-417: explicit consent before the study starts */}
+          <label htmlFor="consent" className="flex items-center justify-center gap-3 text-lg text-gray-700 cursor-pointer select-none">
+            <input
+              id="consent"
+              type="checkbox"
+              checked={hasConsented}
+              onChange={(e) => setHasConsented(e.target.checked)}
+              className="w-5 h-5 accent-blue-600 cursor-pointer"
+            />
+            我已閱讀並同意參與本研究
+          </label>
+
+          <div className="pt-2 flex justify-center">
             <button
               onClick={handleStart}
-              disabled={!isChrome}
+              disabled={!canStart}
               className={`px-10 py-4 bg-blue-600 text-white rounded-xl font-bold shadow-lg transition-all duration-200 ${
-                isChrome
+                canStart
                   ? 'hover:bg-blue-700 hover:shadow-xl transform hover:-translate-y-1'
                   : 'opacity-50 cursor-not-allowed'
               }`}

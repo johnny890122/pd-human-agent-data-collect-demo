@@ -15,7 +15,7 @@ interface SurveyViewProps {
   setup: Session;
   onStartSurvey: () => Promise<string | undefined>;
   onSaveAnswer: (entryId: string, answer: SurveyResult) => Promise<boolean>;
-  onComplete: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire: QuestionnaireAnswer[]) => void;
+  onComplete: (entryId: string, results: SurveyResult[], contact: { registrationCode: string, email: string }, questionnaire: QuestionnaireAnswer[]) => void;
   onBack: () => void;
   initialEntryId?: string;
   isTurnstileVerified: boolean;
@@ -92,8 +92,6 @@ const SurveyView: React.FC<SurveyViewProps> = ({
   const [sliderValue, setSliderValue] = useState(50);
   const [results, setResults] = useState<SurveyResult[]>([]);
   const [hasInteracted, setHasInteracted] = useState(false);
-  const [demographics, setDemographics] = useState({ age: 25, gender: 'other', education: 'university' });
-  const [showDemographics, setShowDemographics] = useState(false);
   const [entryId, setEntryId] = useState<string | undefined>(initialEntryId);
   const [showTurnstileGate, setShowTurnstileGate] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -346,7 +344,6 @@ const SurveyView: React.FC<SurveyViewProps> = ({
 
     navigate(sessionId ? `/survey/intro/0?sessionId=${sessionId}` : '/survey/intro/0', { replace: true });
   }, [isPostIntroStep, isTurnstileVerified, navigate, sessionId]);
-  // const isDemographicsStep = location.pathname === '/survey/demographics';
 
   // ── Intro ──────────────────────────────────────────────────────────────────
   if (isIntroStep) {
@@ -422,61 +419,6 @@ const SurveyView: React.FC<SurveyViewProps> = ({
       />
     );
   }
-
-  // ── Demographics ──────────────────────────────────────────────────────────
-
-  // if (isDemographicsStep) {
-  //   return (
-  //     <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-8">
-  //       <div className="bg-white rounded-3xl shadow-2xl p-8 max-w-md w-full space-y-6">
-  //         <h2 className="text-2xl font-bold text-center">關於您</h2>
-  //         <p className="text-gray-500 text-sm text-center">請提供一些基本資料以協助我們的研究。</p>
-          
-  //         <div className="space-y-4">
-  //           <div>
-  //             <label className="block text-sm font-medium text-gray-700">年齡</label>
-  //             <input 
-  //               type="number" 
-  //               value={demographics.age} 
-  //               onChange={e => setDemographics({...demographics, age: parseInt(e.target.value)})}
-  //               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-  //             />
-  //           </div>
-  //           <div>
-  //             <label className="block text-sm font-medium text-gray-700">性別</label>
-  //             <select 
-  //               value={demographics.gender} 
-  //               onChange={e => setDemographics({...demographics, gender: e.target.value})}
-  //               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-  //             >
-  //               <option value="male">男</option>
-  //               <option value="female">女</option>
-  //               <option value="other">其他</option>
-  //               <option value="prefer_not_to_say">不願透露</option>
-  //             </select>
-  //           </div>
-  //           <div>
-  //             <label className="block text-sm font-medium text-gray-700">教育程度</label>
-  //             <input 
-  //               type="text" 
-  //               value={demographics.education} 
-  //               onChange={e => setDemographics({...demographics, education: e.target.value})}
-  //               className="mt-1 block w-full p-2 border border-gray-300 rounded-md"
-  //               placeholder="例如：大學"
-  //             />
-  //           </div>
-  //         </div>
-          
-  //         <button
-  //           onClick={() => onComplete(entryId ?? '', results, demographics)}
-  //           className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transition-colors"
-  //         >
-  //           送出並結束
-  //         </button>
-  //       </div>
-  //     </div>
-  //   );
-  // }
 
   // ── Scenarios ──────────────────────────────────────────────────────────────
 

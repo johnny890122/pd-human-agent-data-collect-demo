@@ -17,15 +17,15 @@ const submissionSchema = new mongoose.Schema(
       default: []
     },
     
-    demographics: {
-      type: {
-        age: { type: Number, required: false },
-        gender: { type: String, required: false },
-        education: { type: String, required: false }
-      },
-      required: false,
-      default: null
-    },
+    // Outro (REQ-403, BUG-015): registration code (step 1) and payment email (step 4)
+    registrationCode: { type: String, required: false, default: null },
+    email: { type: String, required: false, default: null },
+    // REQ-417: consent given on the welcome page (click time, label of the consent text)
+    consentedAt: { type: Date, required: false, default: null },
+    consentVersion: { type: String, required: false, default: null },
+    // REQ-418: the device that started the submission
+    deviceType: { type: String, enum: ['mobile', 'desktop', null], required: false, default: null },
+    userAgent: { type: String, required: false, default: null },
     
     isCompleted: { type: Boolean, required: true, default: false },
     completedAt: { type: Date, required: false, default: null },
@@ -39,7 +39,8 @@ const submissionSchema = new mongoose.Schema(
     payoutNtd: { type: Number, required: false, default: null },
     // Post-survey questionnaire (REQ-416): political opinions — exposed to admins only
     questionnaire: {
-      type: [{ _id: false, questionId: { type: String, required: true }, answer: { type: String, required: true } }],
+      // answer: true = the question's first option (同意 / 好 / 管制), REQ-416
+      type: [{ _id: false, questionId: { type: String, required: true }, answer: { type: Boolean, required: true } }],
       required: false,
       default: undefined,
     },

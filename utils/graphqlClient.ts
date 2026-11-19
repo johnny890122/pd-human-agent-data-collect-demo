@@ -1,4 +1,5 @@
 import { Session, Scenario, SessionGroup as SessionGroupType, Submission as SubmissionType, QuestionnaireAnswer } from '../types';
+import { readConsent } from './consent';
 
 const GRAPHQL_ENDPOINT = import.meta.env.VITE_GRAPHQL_ENDPOINT ?? '/graphql';
 
@@ -416,8 +417,8 @@ export async function deleteSessionGroup(groupId: string): Promise<boolean> {
 
 export async function startSurvey(sessionId: string, participantId?: string): Promise<SubmissionType> {
   const mutation = `
-    mutation StartSurvey($sessionId: ID!, $participantId: String) {
-      startSurvey(sessionId: $sessionId, participantId: $participantId) {
+    mutation StartSurvey($sessionId: ID!, $participantId: String, $consent: ConsentInput) {
+      startSurvey(sessionId: $sessionId, participantId: $participantId, consent: $consent) {
         _id
         sessionId
         participantId
@@ -436,6 +437,7 @@ export async function startSurvey(sessionId: string, participantId?: string): Pr
   const data = await runGraphQL<{ startSurvey: SubmissionType }>(mutation, {
     sessionId,
     participantId: participantId || null,
+    consent: readConsent(), // REQ-417: every caller sends the consent given on the welcome page
   });
   return data.startSurvey;
 }
@@ -476,27 +478,24 @@ export async function saveSurveyAnswer(
 
 export async function completeSurvey(
   submissionId: string,
-  demographics: { age?: number; gender?: string; education?: string },
+  registrationCode: string,
+  email: string,
   questionnaire: QuestionnaireAnswer[]
 ): Promise<SubmissionType> {
   const mutation = `
-    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]!) {
-      completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
+    mutation CompleteSurvey($submissionId: ID!, $registrationCode: String!, $email: String!, $questionnaire: [QuestionnaireAnswerInput!]!) {
+      completeSurvey(submissionId: $submissionId, registrationCode: $registrationCode, email: $email, questionnaire: $questionnaire) {
         _id
         isCompleted
         completedAt
-        demographics {
-          age
-          gender
-          education
-        }
       }
     }
   `;
 
   const data = await runGraphQL<{ completeSurvey: SubmissionType }>(mutation, {
     submissionId,
-    demographics,
+    registrationCode,
+    email,
     questionnaire,
   });
 
@@ -571,11 +570,12 @@ export async function fetchRecentSubmissions(): Promise<SubmissionType[]> {
           responseTime
           answeredAt
         }
-        demographics {
-          age
-          gender
-          education
-        }
+        registrationCode
+        email
+        consentedAt
+        consentVersion
+        deviceType
+        userAgent
         isCompleted
         completedAt
         isInvalid
@@ -603,11 +603,12 @@ export async function fetchSubmissionsByGroup(groupId: string): Promise<Submissi
           responseTime
           answeredAt
         }
-        demographics {
-          age
-          gender
-          education
-        }
+        registrationCode
+        email
+        consentedAt
+        consentVersion
+        deviceType
+        userAgent
         isCompleted
         completedAt
         isInvalid

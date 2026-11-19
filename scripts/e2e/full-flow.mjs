@@ -47,7 +47,9 @@ const GROUP_NAME = 'E2E full flow';
 const A = { code: 'E2E001', email: 'e2e-a@example.com', sliders: [70, 30, 90, 10, 50], answers: [0, 1, 0, 1, 1, 0, 1, 0] };
 const B = { sliders: [60, 40] };
 const C = { code: 'E2E003', email: 'e2e-c@example.com', sliders: [60, 40, 80, 25, 55], reanswer: 20, answers: [1, 1, 1, 1, 0, 0, 0, 0] };
-const expectedAnswers = (picks) => QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: q.options[picks[i]] }));
+// REQ-416: stored as a Boolean, true = the first option (picks[i] === 0)
+const expectedAnswers = (picks) => QUESTIONNAIRE.map((q, i) => ({ questionId: q.id, answer: picks[i] === 0 }));
+const CONSENT = { consentedAt: new Date().toISOString(), version: 'e2e-api' };
 const D = { participantId: 'e2e-device-2', email: 'e2e-a-phone@example.com' };
 // A browser context is one device; FingerprintJS hashes timezone and language among others
 const DEVICES = {
@@ -82,7 +84,7 @@ const EDGE_CASES = [
   ['EC-9', 'Every scenario reached its target', `Group completed (REQ-309); new visitor sees 「${FULL_MSG}」 on arrival, no session; API start refused (REQ-405.1)`],
   ['EC-10', 'Non-Chrome browser', '開始實驗 disabled with the Chrome notice (REQ-415)'],
   ['EC-11', 'Invite link to an unknown group', '「找不到此實驗」 on arrival, no 開始實驗, no session (REQ-405.2)'],
-  ['EC-12', 'Direct API misuse', 'Out-of-range answer, no Turnstile, no admin login, editing or re-completing a completed submission, completing without the questionnaire all rejected (REQ-402, REQ-100, REQ-408.8, REQ-402.4, REQ-416)'],
+  ['EC-12', 'Direct API misuse', 'Out-of-range answer, no Turnstile, no admin login, editing or re-completing a completed submission, completing without the questionnaire, starting without consent all rejected (REQ-402, REQ-100, REQ-408.8, REQ-402.4, REQ-416, REQ-417)'],
   ['EC-13', 'No participant completed yet', 'Export Payments disabled (REQ-408.7)'],
 ];
 
@@ -221,6 +223,12 @@ async function click(locator, timeout = 15_000) {
   await locator.click({ force: true });
 }
 const button = (page, name) => page.getByRole('button', { name }).first();
+
+/** Welcome page: tick the consent box (REQ-417), then 開始實驗. */
+async function startStudy(page) {
+  await page.getByLabel('我已閱讀並同意參與本研究').check();
+  await click(button(page, '開始實驗'));
+}
 
 // The graph legend also draws a sample "?" that never goes away, so stop once a click reveals nothing
 async function revealAll(page) {
@@ -390,7 +398,7 @@ async function expectTurnedAway(context, url, prefix, label) {
   if (arrivedGate) return { page, outcome: 'gate' };
   observe('Shown instead on arrival', `${pathOf(page)} — ${await firstLines(page)}`);
   if (!(await button(page, '開始實驗').isVisible())) return { page, outcome: 'no start button' };
-  await click(button(page, '開始實驗'));
+  await startStudy(page);
   await intro(page);
   const outcome = await enterSurvey(page);
   observe('After the full intro, 進入測驗 leads to', outcome);
@@ -426,15 +434,15 @@ async function apiParticipant(groupId, participantId, { code, email, probability
     'mutation($g: ID!, $p: String) { startMixedSession(groupId: $g, participantId: $p) { sessionId assignedScenarios { _id } } }',
     { g: groupId, p: participantId }, PARTICIPANT);
   const { startSurvey: sub } = await gql(
-    'mutation($s: ID!, $p: String) { startSurvey(sessionId: $s, participantId: $p) { _id } }', { s: s.sessionId, p: participantId }, PARTICIPANT);
+    'mutation($s: ID!, $p: String, $c: ConsentInput) { startSurvey(sessionId: $s, participantId: $p, consent: $c) { _id } }', { s: s.sessionId, p: participantId, c: CONSENT }, PARTICIPANT);
   for (const scenario of s.assignedScenarios) {
     await gql('mutation($id: ID!, $sc: ID!, $v: Float!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v, responseTime: 3000) { _id } }',
       { id: sub._id, sc: scenario._id, v: probability }, PARTICIPANT);
   }
   const { drawRealisedRound: draw } = await gql('mutation($id: ID!) { drawRealisedRound(submissionId: $id) { payoutNtd } }', { id: sub._id }, PARTICIPANT);
   const { completeSurvey: done } = await gql(
-    'mutation($id: ID!, $d: DemographicsInput!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, demographics: $d, questionnaire: $q) { isCompleted } }',
-    { id: sub._id, d: { age: 0, gender: code, education: email }, q: expectedAnswers(QUESTIONNAIRE.map(() => 0)) }, PARTICIPANT);
+    'mutation($id: ID!, $code: String!, $email: String!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, registrationCode: $code, email: $email, questionnaire: $q) { isCompleted } }',
+    { id: sub._id, code, email, q: expectedAnswers(QUESTIONNAIRE.map(() => 0)) }, PARTICIPANT);
   return { sessionId: s.sessionId, submissionId: sub._id, scenarios: s.assignedScenarios.length, payoutNtd: draw.payoutNtd, isCompleted: done.isCompleted };
 }
 
@@ -532,7 +540,8 @@ async function journey() {
     const context = await newContext(DEVICES.A);
     const page = await openPage(context, run.inviteUrl);
     await shot(page, 'welcome', 'Welcome page opened from the invite URL');
-    await click(button(page, '開始實驗'));
+    check('開始實驗 disabled until the consent box is ticked (REQ-417)', true, await button(page, '開始實驗').isDisabled());
+    await startStudy(page);
     ec('EC-1');
     await intro(page, { record: true, wrongQuizFirst: true });
     ec(null);
@@ -626,7 +635,7 @@ async function journey() {
   await step('participantB', '3. Participant B starts but stops after 2 scenarios', async () => {
     const context = await newContext(DEVICES.B);
     const page = await openPage(context, run.inviteUrl);
-    await click(button(page, '開始實驗'));
+    await startStudy(page);
     await intro(page);
     const outcome = await enterSurvey(page);
     if (outcome !== 'scenarios') throw new Error(`進入測驗 failed: ${outcome}`);
@@ -652,15 +661,21 @@ async function journey() {
       (sub?.results ?? []).map((r) => r.cooperationProbability).join(', '));
     check('Response time recorded for every answer, in ms (REQ-402.5)', true,
       (sub?.results ?? []).length === A.sliders.length && sub.results.every((r) => Number.isInteger(r.responseTime) && r.responseTime > 0));
-    check('Registration code stored (demographics.gender)', A.code, sub?.demographics?.gender);
-    check('Email stored (demographics.education)', A.email, sub?.demographics?.education);
-    check('Questionnaire Q1–Q8 stored as answered (REQ-416)', JSON.stringify(expectedAnswers(A.answers)), JSON.stringify(sub?.questionnaire));
+    check('Registration code stored (registrationCode, BUG-015)', A.code, sub?.registrationCode);
+    check('Email stored (email, BUG-015)', A.email, sub?.email);
+    check('No demographics field any more (BUG-015)', undefined, sub?.demographics);
+    check('Questionnaire Q1–Q8 stored as Booleans, true = first option (REQ-416)', JSON.stringify(expectedAnswers(A.answers)), JSON.stringify(sub?.questionnaire));
+    check('Consent recorded: time and text version (REQ-417)', true,
+      sub?.consentedAt instanceof Date && sub.consentedAt <= sub.createdAt && /^welcome-/.test(sub?.consentVersion ?? ''));
+    check(`Device type recorded: ${MOBILE ? 'mobile' : 'desktop'} (REQ-418)`, MOBILE ? 'mobile' : 'desktop', sub?.deviceType);
+    check('User agent recorded (REQ-418)', true, /Chrome\//.test(sub?.userAgent ?? ''));
     const q = 'query($id: ID!) { submission(id: $id) { questionnaire { questionId answer } } }';
     check('Questionnaire hidden from submission(id) without an admin login', null, (await gql(q, { id: run.submissionIdA })).submission?.questionnaire);
     check('Questionnaire readable with an admin login', 8, (await gql(q, { id: run.submissionIdA }, { token: run.adminToken })).submission?.questionnaire?.length);
-    const d = 'query($id: ID!) { submission(id: $id) { demographics { gender education } } }';
-    check('Code and email hidden from submission(id) without an admin login (REQ-408.8)', null, (await gql(d, { id: run.submissionIdA })).submission?.demographics);
-    check('Email readable with an admin login', A.email, (await gql(d, { id: run.submissionIdA }, { token: run.adminToken })).submission?.demographics?.education);
+    const d = 'query($id: ID!) { submission(id: $id) { registrationCode email consentedAt consentVersion deviceType userAgent } }';
+    check('Code, email, consent and device hidden from submission(id) without an admin login (REQ-408.8, REQ-417, REQ-418)', 'null,null,null,null,null,null',
+      Object.values((await gql(d, { id: run.submissionIdA })).submission ?? {}).map(String).join(','));
+    check('Email readable with an admin login', A.email, (await gql(d, { id: run.submissionIdA }, { token: run.adminToken })).submission?.email);
 
     const r = sub?.realisedRoundIndex;
     run.draw = { round: r, my: sub?.myDecisions?.[r], opp: sub?.opponentDecisions?.[r], realisedPoints: sub?.realisedPoints, payoutNtd: sub?.payoutNtd };
@@ -686,7 +701,7 @@ async function journey() {
     const sessionsBefore = (await sessionsOf(run.groupId)).length;
     const submissionsBefore = await col(SubmissionModel).countDocuments({});
     const tab1 = await openPage(deviceC, run.inviteUrl);
-    await click(button(tab1, '開始實驗'));
+    await startStudy(tab1);
     await intro(tab1, { stopAt: 4 });
     await shot(tab1, 'c-leaves-intro', 'C leaves on intro step 4 and closes the tab (EC-3)');
     await tab1.close();
@@ -696,7 +711,7 @@ async function journey() {
     ec('EC-4');
     const tab2 = await openPage(deviceC, run.inviteUrl);
     observe('Coming back after leaving the intro opens', `${pathOf(tab2)} — the intro starts over (intro progress is not saved)`);
-    await click(button(tab2, '開始實驗'));
+    await startStudy(tab2);
     await intro(tab2);
     const outcome = await enterSurvey(tab2);
     if (outcome !== 'scenarios') throw new Error(`進入測驗 failed: ${outcome}`);
@@ -777,7 +792,7 @@ async function journey() {
     check('No new session for C', 1, (await sessionsOf(run.groupId)).filter((s) => s.metadata?.participantId === run.participantIdC).length);
     check('No new submission for C', 1, await col(SubmissionModel).countDocuments({ participantId: run.participantIdC }));
     check('Payout unchanged', before?.payoutNtd, after?.payoutNtd);
-    check('Registration code unchanged', C.code, after?.demographics?.gender);
+    check('Registration code unchanged', C.code, after?.registrationCode);
     check('Answers unchanged', JSON.stringify(before?.results?.map((r) => r.cooperationProbability)), JSON.stringify(after?.results?.map((r) => r.cooperationProbability)));
     await page.close();
   }, { needs: ['participantC'] });
@@ -822,6 +837,8 @@ async function journey() {
       const row = adminPage.locator('tr', { hasText: D.participantId }).first();
       await click(row.locator('button[title="Mark as invalid"]'));
       await click(button(adminPage, 'Mark Invalid'));
+      // The dialog closes only after the list reloads (slower on production); until then it covers Export Payments
+      await button(adminPage, 'Mark Invalid').waitFor({ state: 'hidden', timeout: 30_000 });
       await adminPage.waitForTimeout(500);
       await settle(adminPage);
       check('Admin marked the duplicate invalid (DB)', true, (await col(SubmissionModel).findOne({ participantId: D.participantId }))?.isInvalid);
@@ -844,8 +861,12 @@ async function journey() {
     const [header = [], ...rows] = parseCsv((await fs.readFile(path.join(OUT_DIR, 'submissions.csv'), 'utf8')).replace(/^\uFEFF/, '')).filter((r) => r.some(Boolean));
     check('Submissions CSV has columns Q1–Q8', true, QUESTIONNAIRE.every((x) => header.includes(x.id)));
     const rowA = rows.find((r) => r[header.indexOf('Submission ID')] === run.submissionIdA);
-    check('A\'s CSV row has the questionnaire answers', expectedAnswers(A.answers).map((x) => x.answer).join(','),
+    check('A\'s CSV row has the questionnaire answers as true / false (REQ-416)', expectedAnswers(A.answers).map((x) => String(x.answer)).join(','),
       rowA && QUESTIONNAIRE.map((x) => rowA[header.indexOf(x.id)]).join(','));
+    check('Submissions CSV has the consent and device columns (REQ-417, REQ-418)', true,
+      ['Consented At', 'Consent Version', 'Device Type', 'User Agent'].every((h) => header.includes(h)));
+    check('A\'s CSV row: device type and consent filled', `${MOBILE ? 'mobile' : 'desktop'},true`,
+      rowA && `${rowA[header.indexOf('Device Type')]},${Boolean(rowA[header.indexOf('Consented At')])}`);
     check('Submissions CSV: Registration Code column, no Age/Gender/Education (REQ-362)', 'true,false',
       [header.includes('Registration Code'), ['Age', 'Gender', 'Education'].some((h) => header.includes(h))].join(','));
     check('A\'s CSV row has the code and no email', `${A.code},false`, rowA && `${rowA[header.indexOf('Registration Code')]},${rowA.some((c) => c.includes('@'))}`);
@@ -908,7 +929,7 @@ async function journey() {
     check('Answer 1.5 rejected (REQ-402)', 'cooperationProbability must be between 0 and 1', outOfRange.error);
     const noTurnstile = await gqlRaw('mutation($g: ID!) { startMixedSession(groupId: $g, participantId: "e2e-bot") { sessionId } }', { g: run.groupId });
     check('Starting without Turnstile rejected (REQ-100)', true, /Turnstile verification required/.test(noTurnstile.error ?? ''));
-    const noAdmin = await gqlRaw('query($g: ID!) { submissionsByGroup(groupId: $g) { _id demographics { education } } }', { g: run.groupId });
+    const noAdmin = await gqlRaw('query($g: ID!) { submissionsByGroup(groupId: $g) { _id email } }', { g: run.groupId });
     check('Participant emails without admin login rejected (REQ-408.8)', 'Unauthorized', noAdmin.error);
     if (run.d) {
       const reanswer = await gqlRaw('mutation($id: ID!, $sc: ID!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: 0.9, responseTime: 3000) { _id } }',
@@ -916,16 +937,23 @@ async function journey() {
       check('Changing an answer of a completed submission rejected (REQ-402.4)', true, /ANSWER_LOCKED/.test(reanswer.error ?? ''));
     }
     // BUG-012: a completed submission cannot be completed again (would redirect the payment email)
-    const complete = 'mutation($id: ID!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, demographics: { age: 0, gender: "X", education: "attacker@example.com" }, questionnaire: $q) { _id } }';
+    const complete = 'mutation($id: ID!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, registrationCode: "X", email: "attacker@example.com", questionnaire: $q) { _id } }';
     const before = await col(SubmissionModel).findOne({ sessionId: run.sessionIdA });
     const again = await gqlRaw(complete, { id: run.submissionIdA, q: expectedAnswers(QUESTIONNAIRE.map(() => 1)) }, PARTICIPANT);
     check('Completing a completed submission rejected (REQ-402.4, BUG-012)', true, /ALREADY_COMPLETED/.test(again.error ?? ''));
     const after = await col(SubmissionModel).findOne({ sessionId: run.sessionIdA });
-    check('A\'s email, answers and completedAt unchanged', JSON.stringify([before?.demographics?.education, before?.questionnaire, before?.completedAt]),
-      JSON.stringify([after?.demographics?.education, after?.questionnaire, after?.completedAt]));
-    const noAnswers = await gqlRaw('mutation($id: ID!) { completeSurvey(submissionId: $id, demographics: { age: 0, gender: "X", education: "x@example.com" }) { _id } }',
+    check('A\'s email, answers and completedAt unchanged', JSON.stringify([before?.email, before?.questionnaire, before?.completedAt]),
+      JSON.stringify([after?.email, after?.questionnaire, after?.completedAt]));
+    const noAnswers = await gqlRaw('mutation($id: ID!) { completeSurvey(submissionId: $id, registrationCode: "X", email: "x@example.com") { _id } }',
       { id: run.submissionIdA }, PARTICIPANT);
     check('Completing without the questionnaire rejected (REQ-416)', true, Boolean(noAnswers.error));
+    const pid = 'e2e-no-consent';
+    const { startMixedSession: ns } = await gql('mutation($g: ID!, $p: String) { startMixedSession(groupId: $g, participantId: $p) { sessionId } }', { g: run.groupId, p: pid }, PARTICIPANT)
+      .catch(() => ({ startMixedSession: null }));
+    if (ns) {
+      const noConsent = await gqlRaw('mutation($s: ID!, $p: String) { startSurvey(sessionId: $s, participantId: $p) { _id } }', { s: ns.sessionId, p: pid }, PARTICIPANT);
+      check('Starting a submission without consent rejected (REQ-417)', true, /CONSENT_REQUIRED/.test(noConsent.error ?? ''));
+    }
   }, { needs: ['participantA'] });
 
   await deviceC.close();

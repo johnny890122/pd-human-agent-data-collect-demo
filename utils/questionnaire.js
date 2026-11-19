@@ -13,18 +13,21 @@ export const QUESTIONNAIRE = [
   { id: 'Q8', text: '台灣目前大約有超過59萬人的中國大陸及東南亞籍外籍配偶，其中大陸、港澳配偶占64.67%。請問您認為政府未來應該管制，還是開放大陸、港澳配偶移民來台灣？', options: ['管制', '開放'] },
 ];
 
+// REQ-416: an answer is stored as a Boolean — true = the question's first option (同意 / 好 / 管制)
+export const answerValue = (question, optionText) => optionText === question.options[0];
+export const answerLabel = (question, value) => question.options[value ? 0 : 1];
+
 /**
- * null when `answers` ([{ questionId, answer }]) has exactly one valid answer per question,
+ * null when `answers` ([{ questionId, answer: Boolean }]) has exactly one answer per question,
  * otherwise a message saying what is wrong.
  */
 export function questionnaireError(answers) {
   if (!Array.isArray(answers)) return 'answers must be a list';
   const seen = new Set();
   for (const { questionId, answer } of answers) {
-    const question = QUESTIONNAIRE.find((q) => q.id === questionId);
-    if (!question) return `unknown question ${questionId}`;
+    if (!QUESTIONNAIRE.some((q) => q.id === questionId)) return `unknown question ${questionId}`;
     if (seen.has(questionId)) return `duplicate answer for ${questionId}`;
-    if (!question.options.includes(answer)) return `${questionId}: "${answer}" is not one of ${question.options.join(' / ')}`;
+    if (typeof answer !== 'boolean') return `${questionId}: answer must be true or false`;
     seen.add(questionId);
   }
   const missing = QUESTIONNAIRE.filter((q) => !seen.has(q.id)).map((q) => q.id);

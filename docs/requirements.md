@@ -46,6 +46,8 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-16 | **BUG FIX + DECISIONS** Full Mixed group closes (BUG-010, REQ-309, REQ-405.1); confirmed answers are final (REQ-402.4); unknown invite link explained on arrival (REQ-405.2) | The group is marked completed once every scenario reaches its target and new visitors are turned away on arrival; participants already in progress may finish. A confirmed scenario answer can no longer be changed, by Back or through the API (resolves Open Questions #12, #13). An invite link to a group that does not exist shows 「找不到此實驗」 on the welcome page instead of failing after the whole intro (resolves Open Question #11). |
 | 2026-11-16 | **PROCESS** One e2e report for PC and phone (NFR-8.3) | The full e2e journey and edge cases run on a PC and on an emulated phone, and one combined report shows both results for every case and the PC and phone screenshots side by side. |
 | 2026-11-17 | **PROCESS** Simulated pilot data check (NFR-9) | `npm run sim:data` fills a local study with simulated participants of known behaviour (personas), exports the research CSV and the payment ledger from the admin page, and checks every value against what was sent, so data problems are found before real participants are recruited. |
+| 2026-11-18 | **DATA CAPTURE** Consent checkbox and consent record (REQ-417); device type and browser recorded (REQ-418) | From the data review's 「not recorded」 list. The welcome page gets 「我已閱讀並同意參與本研究」; the submission stores when the participant consented and to which text version, and the device type (mobile / desktop) and user agent of the device that started it. |
+| 2026-11-18 | **SCHEMA FIX** Registration code and email get their own fields (BUG-015); questionnaire answers stored as booleans (REQ-416) | `Submission.demographics` (`age` / `gender` / `education`) held the registration code in `gender`, the email in `education` and a number parsed from the code in `age`. It is replaced by `Submission.registrationCode` and `Submission.email`; `completeSurvey(submissionId, registrationCode, email, questionnaire)`. Each Q1–Q8 answer is now `answer: Boolean` (true = the first option: 同意 / 好 / 管制); the research CSV shows `true` / `false`. No data migration: the production database was empty. |
 | 2026-11-17 | **BUG FIX** Session kept in the URL after a quick first answer (BUG-014, REQ-404) | Found by the first production e2e run: a refresh after a fast first answer left the participant on 「載入中...」. |
 | 2026-11-17 | **DATA CAPTURE** Response time recorded (REQ-402.5); a failed answer save keeps the participant on the scenario (REQ-402.6, BUG-013); research CSV columns relabelled and email removed (REQ-362) | From the production data review: `responseTime` existed in the schema and the CSV but was never sent, so the column was always empty. A failed `saveSurveyAnswer` used to move the participant on and lose that answer. The research CSV labelled the registration code 「Gender」 and the email 「Education」 and put the email next to the Q1–Q8 opinions; it now has 「Registration Code」, no Age and no Email (the email stays in the payment ledger, joined by Submission ID). |
 | 2026-11-17 | **DATA SAFETY** Questionnaire data-capture review (BUG-011, BUG-012; REQ-402.4, REQ-403.2, REQ-408.8, REQ-416) | A failed final save no longer shows the done page or wipes the answers; it shows an error and keeps everything for a retry (BUG-011). A completed submission cannot be completed again (BUG-012). `completeSurvey` now requires all eight answers. The registration code and email are admin-only like the answers. Unsent answers are kept per tab (sessionStorage), not left on the device. |
@@ -266,11 +268,11 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - Progress fraction: `N / M` where N = number of answered scenarios (`submission.results.length`) and M = total scenarios (`session.scenarios.length` or derived from `session.scenarioIds.length`)
     - Progress percentage: `(N / M) × 100%` displayed as a visual progress bar
     - Current stage indicator:
-      - **"答題中 (N/M)"** — when `isCompleted = false` and `demographics = null`
-      - **"填寫人口統計"** — when `isCompleted = false` and `demographics !== null` (user finished all questions but not submitted final demographics)
+      - **"答題中 (N/M)"** — when `isCompleted = false` and not every scenario is answered
+      - **"Outro"** — when `isCompleted = false` and every scenario is answered (the participant is on the debrief / questionnaire / email pages). *2026-11-18 (BUG-015):* was 「填寫人口統計」/ Demographics, keyed on the removed `demographics` field.
       - **"已完成 ✓"** — when `isCompleted = true`
     - The progress display MUST be visible in the expanded row below each session entry, alongside the existing submission detail table (ID, Status, Start Time, End Time)
-  - *Technical note:* No backend changes required. All data is already available in the `Submission` model (`results[]`, `demographics`, `isCompleted`) and can be correlated with the session's total scenario count.
+  - *Technical note:* No backend changes required. All data is already available in the `Submission` model (`results[]`, `isCompleted`) and can be correlated with the session's total scenario count.
 
 - **REQ-342 — Visual progress bar for incomplete submissions.** 📋 **NEW 2026-05-06** Incomplete submissions MUST display a visual progress indicator to help admins quickly assess how far each participant progressed.
   - *Acceptance:*
@@ -351,8 +353,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     13. **Cooperation Probability** — `SurveyResult.cooperationProbability` (0.0 to 1.0)
     14. **Response Time (ms)** — `SurveyResult.responseTime` (REQ-402.5)
     15. **Answered At** — `SurveyResult.answeredAt` (ISO timestamp)
-    16. **Registration Code** — `Submission.demographics.gender` (where the outro stores the code, REQ-408.5; same value repeated for all rows of one submission)
-    17. **Q1 … Q8** — `Submission.questionnaire` answer text (REQ-416)
+    16. **Registration Code** — `Submission.registrationCode` (same value repeated for all rows of one submission)
+    17. **Q1 … Q8** — `Submission.questionnaire` answer as `true` / `false` (true = first option, REQ-416); empty when not answered
     18. **Submission Completed** — `Submission.isCompleted` (true/false)
     19. **Valid** — `!Submission.isInvalid` (true/false)
     20. **Submission Created At** — `Submission.createdAt` (ISO timestamp)
@@ -464,7 +466,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 - **REQ-402.6 — A failed answer save keeps the participant on the scenario.** 📋 **NEW 2026-11-17** (BUG-013) If `saveSurveyAnswer` fails, the participant MUST stay on the same scenario with their slider value and see 「儲存失敗，請再按一次。」; only a successful save moves on to the next scenario or the outro.
 
-- **REQ-403 — Demographics + completion.** ✅ **BUG FIXED 2026-05-04** On the final step the participant submits `{ age, gender, education }`. The system marks the `Submission.isCompleted = true` and shows the outro screen.
+- **REQ-403 — Completion.** ✅ **BUG FIXED 2026-05-04** On the final step the participant submits the registration code (outro step 1), the questionnaire (step 3) and the email (step 4) with `completeSurvey`. The system stores them as `Submission.registrationCode`, `Submission.questionnaire` and `Submission.email`, marks `Submission.isCompleted = true` and shows the done page. *2026-11-18 (BUG-015):* previously sent as `demographics: { age, gender, education }`; no demographics are collected.
+  - The server rejects an empty registration code and an email that is not `x@y.z` (`INVALID_CONTACT`), before any write.
   - *Acceptance:* `completeSurvey` returns the updated submission. On success, the local survey-session cache for that session is cleared. In Mixed Mode, this triggers a check for group completion status (REQ-309). **Bug Fix**: SurveyOutro now properly calls `completeSurvey` mutation when user submits email and code.
    
 - **REQ-403.1 — Registration code survives a refresh.** ✅ **IMPLEMENTED 2026-11-15** (BUG-009) The registration code entered on outro step 1 MUST be kept until `completeSurvey` succeeds, across page refreshes on outro steps 2 and 3, and MUST NOT be replaced by a placeholder.
@@ -527,9 +530,9 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **REQ-408.7 — Payment ledger export.** The group detail view MUST load every submission of the group through a new admin query `submissionsByGroup(groupId: ID!)` (replacing the `recentSubmissions(limit: 100)` feed, which silently dropped older participants — BUG-007) and MUST offer an「Export Payments」button that produces a CSV with one row per completed, valid submission.
   - *CSV columns:* Submission ID, Participant ID, Registration Code, Email, Realised Round (1-based), Points, Participation Fee (NTD), Point Payout (NTD), Total Payout (NTD), Completed At.
   - *Acceptance:* UTF-8 with BOM; filename `{group_name}_payments_{YYYYMMDD_HHmmss}.csv`. Completed submissions without a persisted draw are listed with empty payout fields and reported in a warning toast. The research CSV (REQ-362) is unchanged.
-  - *Note:* The registration code and email are stored in `demographics.gender` and `demographics.education` (SurveyOutro reuses the demographics payload). The ledger maps them to explicit column names.
+  - *Note:* The registration code and email are stored in `Submission.registrationCode` and `Submission.email` (2026-11-18, BUG-015; before that in `demographics.gender` / `demographics.education`).
 
-- **REQ-408.8 — Participant contact data requires admin authentication.** `recentSubmissions` and `submissionsByGroup` return participant email and MUST reject requests without a valid admin JWT (`context.isAdmin`). Participant-facing operations (`session`, `submission(id)`, `startSurvey`, `saveSurveyAnswer`, `drawRealisedRound`, `completeSurvey`) are unchanged. *2026-11-17:* the `demographics` field (which holds the registration code and email, REQ-408.5) returns `null` without an admin login wherever a Submission is returned, including `submission(id)` and the `completeSurvey` result — the same rule as the questionnaire answers (REQ-416). No participant page reads it.
+- **REQ-408.8 — Participant contact data requires admin authentication.** `recentSubmissions` and `submissionsByGroup` return participant email and MUST reject requests without a valid admin JWT (`context.isAdmin`). Participant-facing operations (`session`, `submission(id)`, `startSurvey`, `saveSurveyAnswer`, `drawRealisedRound`, `completeSurvey`) are unchanged. *2026-11-17:* the registration code and email (`registrationCode`, `email` since 2026-11-18; `demographics` before) return `null` without an admin login wherever a Submission is returned, including `submission(id)` and the `completeSurvey` result — the same rule as the questionnaire answers (REQ-416). No participant page reads it.
   - *Acceptance:* An unauthenticated `recentSubmissions` query returns the error `Unauthorized`; the admin UI, which sends `Authorization: Bearer <token>`, keeps working. Admin mutations remain unguarded and are tracked as BUG-006.
 
 - **REQ-408.9 — Actual payout on the group page.** 📋 **NEW 2026-11-16** The group detail page MUST show an「Actual Payout」card with the total NT$ owed so far.
@@ -576,6 +579,15 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 ### REQ-415 — Chrome-Only Browser Enforcement
 
+- **REQ-417 — Consent is given and recorded.** 📋 **NEW 2026-11-18** The welcome page MUST show a checkbox 「我已閱讀並同意參與本研究」 below the study text; 開始實驗 stays disabled until it is ticked (and, as before, in a non-Chrome browser).
+  - Ticking it and clicking 開始實驗 records the consent in the browser tab (`sessionStorage`): the click time and `CONSENT_VERSION`, a label of the consent text the participant saw (changed whenever that text changes).
+  - `startSurvey` sends it; the server stores `Submission.consentedAt` (Date) and `Submission.consentVersion` when it creates the submission, and refuses to create one without them (`CONSENT_REQUIRED`). Resuming an existing submission does not need it again.
+  - Admin-only (like REQ-408.8); exported in the research CSV as 「Consented At」 and 「Consent Version」.
+  - *Note:* adds participant-facing text — check with the IRB whether an amendment is needed. The welcome footer still says 「不收集個資」 although the study collects an email (REQ-408) and the user agent (REQ-418); its wording should be reviewed.
+
+- **REQ-418 — Device type and browser are recorded.** 📋 **NEW 2026-11-18** When the server creates a submission it stores, from that request: `Submission.userAgent` (the browser's `User-Agent` header, which names the browser, version and OS) and `Submission.deviceType` = `mobile` if Chrome's `Sec-CH-UA-Mobile` header is `?1` or the user agent contains Mobi / Android / iPhone / iPad, otherwise `desktop`.
+  - Recorded once, at creation (a participant on another device gets another submission, REQ-311). Admin-only; exported in the research CSV as 「Device Type」 and 「User Agent」.
+
 - **REQ-416 — Post-survey questionnaire (Q1–Q8).** 📋 **NEW 2026-11-17** After the debrief and before the email step, the participant MUST answer eight single-choice attitude questions on their own page.
   - *Placement:* the outro becomes 1 registration code → 2 debrief → **3 questionnaire** → 4 email → 5 done (`/survey/outro/1..5`).
   - *Questions (verbatim, in this order; two options each, single choice):*
@@ -594,9 +606,9 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   - *Layout (2026-11-17):* the page uses the same design as the 理解測試 quiz (intro step 6): wide card, large title with the indigo underline bar, amber instruction panel with a white inner panel, bold numbered question rows. On screens ≥ 640px each question's options sit to the right of its text, on the same row; on a phone they sit below it.
   - *Required:* 下一步 stays disabled until all eight are answered; the page shows 「已回答 n / 8」. A participant who reaches the email step without all eight answers (e.g. a direct URL) is sent back to step 3 on 送出.
   - *Refresh:* answers are kept in the browser tab per submission (`sessionStorage`) and restored after a refresh until the survey is submitted. *2026-11-17:* not `localStorage`, so the political opinions of a participant who leaves without submitting do not stay on a shared device after the tab is closed; a participant who closes the tab and returns answers the eight questions again.
-  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]` (answer = the option text; the wording is fixed for the study). *2026-11-17:* `completeSurvey` requires the questionnaire — a completion without all eight valid answers is rejected and nothing is saved. The server rejects missing, unknown and duplicate question IDs and answers that are not one of that question's options.
+  - *Storage:* the answers are sent with `completeSurvey` and saved as `Submission.questionnaire` = `[{ questionId, answer }]`. *2026-11-18:* `answer` is a Boolean — `true` = the question's first option (同意 / 好 / 管制), `false` = the second (不同意 / 不好 / 開放); the mapping comes from the option order in `utils/questionnaire.js`. (Was the option text.) *2026-11-17:* `completeSurvey` requires the questionnaire — a completion without all eight valid answers is rejected and nothing is saved. The server rejects missing, unknown and duplicate question IDs and answers that are not a Boolean.
   - *Privacy:* the answers are political opinions. They MUST be readable only with an admin login: the `questionnaire` field returns null for anyone else, including through the public `submission(id)` query.
-  - *Export:* the submissions CSV (Export CSV) gets columns Q1–Q8 with the answer text.
+  - *Export:* the submissions CSV (Export CSV) gets columns Q1–Q8 with `true` / `false` (2026-11-18; was the answer text).
   - *Wording:* as supplied, with two corrections confirmed 2026-11-17: 「曆史」 → 「歷史」 in Q2, and every question ends with a full-width 「？」. Page title 「問卷」 and intro line approved. A new instrument (political attitudes) likely needs IRB approval before deployment.
 
 - **REQ-415 — Chrome browser required for participants.** The survey welcome page (`SurveyWelcome.tsx`) MUST detect the participant's browser on page load. If the browser is not Google Chrome (or a Chromium-based browser that identifies as Chrome, such as Brave), the page MUST display a prominent blocking warning and prevent the participant from proceeding.
@@ -764,6 +776,12 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 - **Root Cause**: `SurveyView.navigateWithSession` used the `sessionId` / `groupId` read at render time. 進入測驗 creates the session and puts `?sessionId=` in the URL while the click handler from the older render is still running; that handler then navigated to `/survey/scenarios/0?groupId=…&mode=mixed`, and the app needed a full restore round trip (fingerprint + 2 requests) to put the session back. A confirm in that window navigated from the broken URL and lost both parameters.
 - **Fix (2026-11-17, REQ-404)**: `navigateWithSession` and the resume path saved by `handleNext` read `window.location.search` when they run. The e2e checks that the first scenario URL already carries the session.
 
+**BUG-015**: Registration code and email stored under demographic field names
+
+- **Symptom**: The database stored the registration code in `demographics.gender`, the email in `demographics.education`, and `demographics.age` = a number parsed from the code (usually 0). Anyone reading the database or an old export would take them for demographics. Found in the 2026-11-17 data review.
+- **Root Cause**: The outro reused the `completeSurvey(demographics)` payload of an earlier demographics form that is no longer shown.
+- **Fix (2026-11-18, REQ-403)**: `Submission.registrationCode` and `Submission.email` replace `demographics`; the GraphQL `Demographics` / `DemographicsInput` types are removed; `completeSurvey(submissionId, registrationCode, email, questionnaire)`.
+
 ---
 
 ## Known Issues (Fixed)
@@ -781,6 +799,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | BUG-012 | `completeSurvey` on a completed submission overwrote its answers and email and double-counted it | 2026-11-17 | ✅ Fixed (REQ-402.4) |
 | BUG-013 | A failed answer save moved the participant on and lost that answer | 2026-11-17 | ✅ Fixed (REQ-402.6) |
 | BUG-014 | A quick first answer dropped `?sessionId=` from the URL; a later refresh hung on 「載入中...」 (production only) | 2026-11-17 | ✅ Fixed (REQ-404) |
+| BUG-015 | Registration code and email stored as `demographics.gender` / `demographics.education` | 2026-11-18 | ✅ Fixed (REQ-403) |
 | BUG-007 | Group detail view and research CSV only see the 100 most recent submissions across all sessions | 2026-10-01 | ✅ Fixed (REQ-408.7) |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.

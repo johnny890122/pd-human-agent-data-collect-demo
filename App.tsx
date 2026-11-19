@@ -409,7 +409,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire: QuestionnaireAnswer[]) => {
+  const handleSurveyComplete = async (submissionId: string, _results: SurveyResult[], contact: { registrationCode: string, email: string }, questionnaire: QuestionnaireAnswer[]) => {
     setIsSubmitting(true);
     console.log('Survey Completed');
 
@@ -419,7 +419,7 @@ const App: React.FC = () => {
       // Unified survey flow
       console.log('[NEW API] Completing survey with unified API');
       try {
-        await completeSurvey(submissionId, demographics, questionnaire);
+        await completeSurvey(submissionId, contact.registrationCode, contact.email, questionnaire);
       } catch (error) {
         // An earlier 送出 was saved but its response was lost (REQ-403.2): that is success
         if (!(error instanceof Error && error.message.includes('ALREADY_COMPLETED'))) throw error;
@@ -591,10 +591,6 @@ const App: React.FC = () => {
               onTurnstileVerified={() => setIsTurnstileVerified(true)}
             />
           }
-        />
-        <Route 
-          path="/survey/demographics" 
-          element={<NotFound />} 
         />
         <Route path="*" element={<NotFound />} />
       </Routes>

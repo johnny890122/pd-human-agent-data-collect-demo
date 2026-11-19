@@ -61,7 +61,16 @@ export const typeDefs = `#graphql
     sessionId: ID!
     participantId: String
     results: [SurveyResult!]!
-    demographics: Demographics
+    """REQ-403 — admin only"""
+    registrationCode: String
+    """REQ-403 — admin only"""
+    email: String
+    """REQ-417 — admin only"""
+    consentedAt: String
+    consentVersion: String
+    """REQ-418 — admin only: 'mobile' | 'desktop'"""
+    deviceType: String
+    userAgent: String
     isCompleted: Boolean!
     completedAt: String
     isInvalid: Boolean!
@@ -77,14 +86,21 @@ export const typeDefs = `#graphql
     updatedAt: String!
   }
 
+  """answer: true = the question's first option (同意 / 好 / 管制)"""
   type QuestionnaireAnswer {
     questionId: String!
-    answer: String!
+    answer: Boolean!
   }
 
   input QuestionnaireAnswerInput {
     questionId: String!
-    answer: String!
+    answer: Boolean!
+  }
+
+  """REQ-417 — consent given on the welcome page"""
+  input ConsentInput {
+    consentedAt: String!
+    version: String!
   }
 
   type DebriefResult {
@@ -101,18 +117,6 @@ export const typeDefs = `#graphql
     cooperationProbability: Float!
     responseTime: Int
     answeredAt: String
-  }
-
-  type Demographics {
-    age: Int
-    gender: String
-    education: String
-  }
-
-  input DemographicsInput {
-    age: Int
-    gender: String
-    education: String
   }
 
   input SurveyAnswerInput {
@@ -221,9 +225,9 @@ export const typeDefs = `#graphql
     startMixedSession(groupId: ID!, participantId: String): MixedSessionResult!
     
     # Unified survey flow
-    startSurvey(sessionId: ID!, participantId: String): Submission!
+    startSurvey(sessionId: ID!, participantId: String, consent: ConsentInput): Submission!
     saveSurveyAnswer(submissionId: ID!, scenarioId: ID!, cooperationProbability: Float!, responseTime: Int!): Submission!
-    completeSurvey(submissionId: ID!, demographics: DemographicsInput!, questionnaire: [QuestionnaireAnswerInput!]!): Submission!
+    completeSurvey(submissionId: ID!, registrationCode: String!, email: String!, questionnaire: [QuestionnaireAnswerInput!]!): Submission!
     
     # Realised round draw (backend-authoritative random selection for payment)
     drawRealisedRound(submissionId: ID!): DebriefResult!

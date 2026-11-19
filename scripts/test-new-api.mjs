@@ -116,8 +116,8 @@ async function testNewAPI() {
       headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
       body: JSON.stringify({
         query: `
-          mutation StartSurvey($sessionId: ID!) {
-            startSurvey(sessionId: $sessionId) {
+          mutation StartSurvey($sessionId: ID!, $consent: ConsentInput) {
+            startSurvey(sessionId: $sessionId, consent: $consent) {
               _id
               sessionId
               results {
@@ -128,7 +128,7 @@ async function testNewAPI() {
             }
           }
         `,
-        variables: { sessionId: session._id }
+        variables: { sessionId: session._id, consent: { consentedAt: new Date().toISOString(), version: 'legacy-script' } /* REQ-417 */ }
       })
     });
 
@@ -217,27 +217,20 @@ async function testNewAPI() {
       headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
       body: JSON.stringify({
         query: `
-          mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]!) {
-            completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
+          mutation CompleteSurvey($submissionId: ID!, $registrationCode: String!, $email: String!, $questionnaire: [QuestionnaireAnswerInput!]!) {
+            completeSurvey(submissionId: $submissionId, registrationCode: $registrationCode, email: $email, questionnaire: $questionnaire) {
               _id
               isCompleted
               completedAt
-              demographics {
-                age
-                gender
-                education
-              }
+              registrationCode
             }
           }
         `,
         variables: {
           submissionId: submission._id,
-          demographics: {
-            age: 25,
-            gender: 'other',
-            education: 'university'
-          },
-          questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })), // REQ-416: required
+          registrationCode: 'LEGACY01',
+          email: 'legacy@example.com',
+          questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: true })), // REQ-416: Boolean, true = first option
         }
       })
     });
@@ -265,7 +258,7 @@ async function testNewAPI() {
     console.log(`   results count: ${finalSubmission.results.length} (expected: ${scenarios.length})`);
     console.log(`   all scenarioIds are UUIDs: ${finalSubmission.results.every(r => r.scenarioId.match(/^[0-9a-f]{8}-/))}`);
     console.log(`   isCompleted: ${finalSubmission.isCompleted}`);
-    console.log(`   has demographics: ${!!finalSubmission.demographics}`);
+    console.log(`   has registration code / email: ${!!finalSubmission.registrationCode} / ${!!finalSubmission.email}`);
 
     // Check session
     const finalSession = await SessionModel.findById(session._id).lean();

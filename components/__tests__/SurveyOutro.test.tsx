@@ -123,7 +123,7 @@ describe('SurveyOutro registration code (REQ-403.1, BUG-009)', () => {
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
 
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
-    expect(onComplete.mock.calls[0][2]).toMatchObject({ gender: 'E2E001', education: 'a@example.com' });
+    expect(onComplete.mock.calls[0][2]).toEqual({ registrationCode: 'E2E001', email: 'a@example.com' }); // BUG-015
     await vi.waitFor(() => expect(store.has('survey_code_submission-1')).toBe(false));
   });
 
@@ -197,7 +197,8 @@ describe('SurveyOutro questionnaire (REQ-416)', () => {
     fireEvent.click(screen.getByRole('button', { name: '送出' }));
 
     await vi.waitFor(() => expect(onComplete).toHaveBeenCalled());
-    expect(onComplete.mock.calls[0][3]).toEqual(QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[1] })));
+    // REQ-416: sent as Booleans — the second option (不同意 / 不好 / 開放) is false
+    expect(onComplete.mock.calls[0][3]).toEqual(QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: false })));
     await vi.waitFor(() => expect(session.has('survey_questionnaire_submission-1')).toBe(false));
   });
 

@@ -8,9 +8,20 @@ import { getEdgeDisplayName, getFocalGroupLabel, getPartnerGroupLabel } from '..
 import { pointPayoutNtd, MAX_TOTAL_NTD } from '../utils/payment.js';
 import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 
-// REQ-416: one CSV cell per question, in Q1–Q8 order (blank if not answered)
-const questionnaireCells = (s: Submission) =>
-  QUESTIONNAIRE.map((q) => s.questionnaire?.find((a) => a.questionId === q.id)?.answer ?? '');
+// Research CSV, per-participant cells (REQ-362): registration code, Q1–Q8 as true / false (REQ-416; blank if
+// not answered), consent (REQ-417) and device (REQ-418). No email here — it is only in the payment ledger.
+const PARTICIPANT_HEADERS = ['Registration Code', ...QUESTIONNAIRE.map((q) => q.id), 'Consented At', 'Consent Version', 'Device Type', 'User Agent'];
+const participantCells = (s: Submission) => [
+  s.registrationCode || '',
+  ...QUESTIONNAIRE.map((q) => {
+    const answer = s.questionnaire?.find((a) => a.questionId === q.id)?.answer;
+    return answer === undefined ? '' : String(answer);
+  }),
+  s.consentedAt || '',
+  s.consentVersion || '',
+  s.deviceType || '',
+  s.userAgent || '',
+];
 import ConfirmationModal from './ConfirmationModal';
 
 // CSV helpers shared by the research export and the payment ledger
@@ -44,7 +55,7 @@ function downloadCsv(filename: string, headers: string[], rows: string[][]) {
 
 // Helper function to determine submission stage and progress
 interface StageInfo {
-  stage: 'completed' | 'demographics' | 'answering';
+  stage: 'completed' | 'outro' | 'answering';
   label: string;
   color: 'green' | 'amber' | 'red';
   progress?: number;  // 0-1
@@ -80,13 +91,12 @@ function getSubmissionStage(
   // Cap at 100% in case of data inconsistency
   const progress = Math.min(answeredCount / totalScenarios, 1);
   const hasAllAnswers = answeredCount >= totalScenarios;
-  const hasDemographics = submission.demographics !== null && submission.demographics !== undefined;
 
-  // Demographics stage: finished all questions but not submitted final completion
-  if (hasDemographics || hasAllAnswers) {
+  // Outro stage: every scenario answered, debrief / questionnaire / email not submitted yet (REQ-341)
+  if (hasAllAnswers) {
     return {
-      stage: 'demographics',
-      label: 'Demographics',
+      stage: 'outro',
+      label: 'Outro',
       color: 'amber',
       progress
     };
@@ -272,7 +282,7 @@ const GroupDetailView: React.FC = () => {
    *
    * Format: Row-per-answer (long format) with 22 columns
    * - Each row = one participant's response to one scenario
-   * - Includes full scenario configuration, demographics, timestamps
+   * - Includes full scenario configuration, registration code, Q1–Q8, consent, device, timestamps
    * - Handles empty submissions and deleted scenarios
    *
    * Columns (22 total):
@@ -334,8 +344,7 @@ const GroupDetailView: React.FC = () => {
             '', // Cooperation Probability
             '', // Response Time
             '', // Answered At
-            submission.demographics?.gender || '', // Registration Code (REQ-362); no email here
-            ...questionnaireCells(submission),
+            ...participantCells(submission),
             submission.isCompleted ? 'true' : 'false',
             !submission.isInvalid ? 'true' : 'false',
             submission.createdAt || '',
@@ -367,8 +376,7 @@ const GroupDetailView: React.FC = () => {
               result.cooperationProbability?.toString() || '',
               result.responseTime?.toString() || '',
               result.answeredAt || '',
-              submission.demographics?.gender || '', // Registration Code (REQ-362); no email here
-              ...questionnaireCells(submission),
+              ...participantCells(submission),
               submission.isCompleted ? 'true' : 'false',
               !submission.isInvalid ? 'true' : 'false',
               submission.createdAt || '',
@@ -394,8 +402,7 @@ const GroupDetailView: React.FC = () => {
             result.cooperationProbability?.toString() || '',
             result.responseTime?.toString() || '',
             result.answeredAt || '',
-            submission.demographics?.gender || '', // Registration Code (REQ-362); no email here
-            ...questionnaireCells(submission),
+            ...participantCells(submission),
             submission.isCompleted ? 'true' : 'false',
             !submission.isInvalid ? 'true' : 'false',
             submission.createdAt || '',
@@ -421,8 +428,7 @@ const GroupDetailView: React.FC = () => {
         'Cooperation Probability',
         'Response Time (ms)',
         'Answered At',
-        'Registration Code', // demographics.gender; the email is only in the payment ledger (REQ-362)
-        ...QUESTIONNAIRE.map((q) => q.id), // REQ-416 answers (admin export only)
+        ...PARTICIPANT_HEADERS,
         'Submission Completed',
         'Valid',
         'Submission Created At',
@@ -457,8 +463,8 @@ const GroupDetailView: React.FC = () => {
       return [
         s._id,
         s.participantId || '',
-        s.demographics?.gender || '',    // SurveyOutro stores the registration code here
-        s.demographics?.education || '', // ...and the email here
+        s.registrationCode || '',
+        s.email || '',
         s.realisedRoundIndex != null ? String(s.realisedRoundIndex + 1) : '',
         hasPayout ? String(s.realisedPoints) : '',
         hasPayout ? String(s.payoutNtd! - pointPayout!) : '',

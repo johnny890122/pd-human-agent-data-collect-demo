@@ -3566,3 +3566,43 @@ One script, `scripts/sim/simulate.mjs` (`npm run sim:data` = `vite build && node
 
 ### Output
 `test-results/sim/<timestamp>/report.md`, `research.csv`, `payments.csv`, `ground-truth.json`, `server.log`; one console line per check; `process.exitCode = 1` on any failed check.
+
+## Phase 56 — Clear names for code and email, boolean answers, consent, device (BUG-015, REQ-403, REQ-416, REQ-417, REQ-418)
+
+No data migration: the production database was emptied on 2026-11-17 and the fields below replace the old ones outright.
+
+### Data — `Submission`
+| Field | Type | Set by | Replaces |
+|---|---|---|---|
+| `registrationCode` | String | `completeSurvey` | `demographics.gender` |
+| `email` | String | `completeSurvey` | `demographics.education` |
+| `questionnaire[].answer` | Boolean (true = first option) | `completeSurvey` | option text |
+| `consentedAt` | Date | `startSurvey` (create only) | — |
+| `consentVersion` | String | `startSurvey` (create only) | — |
+| `deviceType` | `'mobile' \| 'desktop'` | `startSurvey` (create only, from headers) | — |
+| `userAgent` | String | `startSurvey` (create only, from headers) | — |
+`demographics` (age / gender / education) is removed from the model, GraphQL (`Demographics`, `DemographicsInput`) and the client.
+
+### GraphQL
+- `startSurvey(sessionId, participantId, consent: ConsentInput)` with `input ConsentInput { consentedAt: String!, version: String! }`. Creating a submission without a valid `consent` (parsable date, non-empty version) → `CONSENT_REQUIRED`; returning an existing submission ignores it.
+- `completeSurvey(submissionId, registrationCode: String!, email: String!, questionnaire: [QuestionnaireAnswerInput!]!)`; `registrationCode` trimmed non-empty and `email` matching `^[^\s@]+@[^\s@]+\.[^\s@]+$`, else `INVALID_CONTACT` before any write. `QuestionnaireAnswer(Input).answer: Boolean!`.
+- `Submission` fields `registrationCode`, `email`, `questionnaire`, `consentedAt`, `consentVersion`, `deviceType`, `userAgent` resolve to `null` without `context.isAdmin` (one field-resolver map).
+- Apollo context adds `userAgent` (`User-Agent` header) and `mobileHint` (`Sec-CH-UA-Mobile`); `deviceTypeOf(userAgent, mobileHint)` lives in `utils/device.js` (shared with tests).
+
+### Questionnaire (`utils/questionnaire.js`)
+- `questionnaireError` accepts exactly one Boolean `answer` per question ID. `answerValue(question, optionText)` → `optionText === question.options[0]`; `answerLabel(question, bool)` → the option text (for display). The outro keeps option text in its state / sessionStorage (radio values) and converts with `answerValue` when sending.
+
+### Consent (`utils/consent.ts`, `SurveyWelcome.tsx`)
+- `CONSENT_VERSION = 'welcome-2026-11-18'`, `saveConsent()` → `sessionStorage['survey_consent'] = { consentedAt: new Date().toISOString(), version }`, `readConsent()`.
+- Welcome page: checkbox (`id="consent"`, label 「我已閱讀並同意參與本研究」) above 開始實驗; button disabled unless Chrome and ticked; `handleStart` calls `saveConsent()` first.
+- `graphqlClient.startSurvey` sends `consent: readConsent()` — every caller in `App` is covered.
+
+### Admin (`GroupDetailView.tsx`)
+- Research CSV: 「Registration Code」 from `registrationCode`; Q1–Q8 = `String(answer)` (`true` / `false`); new columns 「Consented At」, 「Consent Version」, 「Device Type」, 「User Agent」 after Q8. Ledger: 「Registration Code」 / 「Email」 from the new fields.
+- Progress stage `demographics` → `outro` (label 「Outro」): every scenario answered, not yet completed.
+
+### Tests
+- Unit: `questionnaireError` with Booleans; `answerValue` / `answerLabel`; `deviceTypeOf`; SurveyOutro sends `{ registrationCode, email }` and Boolean answers.
+- Backend: `completeSurvey` stores the new fields, rejects bad contact data; `startSurvey` stores consent + device, rejects a new submission without consent, resumes without it.
+- E2E: tick the consent box (開始實驗 disabled before); DB has `registrationCode`, `email`, Boolean answers, `consentedAt`, `consentVersion`, `deviceType` (`desktop` on PC, `mobile` on the phone run), `userAgent`; CSV columns and values; privacy of the new fields.
+

@@ -89,7 +89,8 @@ async function participant(n, groupId) {
     if (/GROUP_FULL/.test(error.message)) return null;
     throw error;
   }
-  const { startSurvey: sub } = await gql('mutation($s: ID!, $p: String) { startSurvey(sessionId: $s, participantId: $p) { _id } }', { s: s.sessionId, p: id });
+  const consent = { consentedAt: new Date().toISOString(), version: 'sim' }; // REQ-417
+  const { startSurvey: sub } = await gql('mutation($s: ID!, $p: String, $c: ConsentInput) { startSurvey(sessionId: $s, participantId: $p, consent: $c) { _id } }', { s: s.sessionId, p: id, c: consent });
   const truth = { participantId: id, persona: persona.name, sessionId: s.sessionId, submissionId: sub._id, assigned: s.assignedScenarios.map((x) => x._id), answers: [], completed: false };
   const stopAfter = persona.dropout ? 1 + Math.floor(rand() * Math.max(1, s.assignedScenarios.length - 1)) : Infinity;
   const save = 'mutation($id: ID!, $sc: ID!, $v: Float!, $t: Int!) { saveSurveyAnswer(submissionId: $id, scenarioId: $sc, cooperationProbability: $v, responseTime: $t) { _id } }';
@@ -104,10 +105,11 @@ async function participant(n, groupId) {
   const { drawRealisedRound: draw } = await gql('mutation($id: ID!) { drawRealisedRound(submissionId: $id) { payoutNtd } }', { id: sub._id });
   truth.code = `SIM${String(n).padStart(4, '0')}`;
   truth.email = `${id}@example.com`;
-  truth.questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[Math.floor(rand() * q.options.length)] }));
+  // REQ-416: Boolean, true = the first option
+  truth.questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: rand() < 0.5 }));
   await gql(
-    'mutation($id: ID!, $d: DemographicsInput!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, demographics: $d, questionnaire: $q) { _id } }',
-    { id: sub._id, d: { age: 0, gender: truth.code, education: truth.email }, q: truth.questionnaire });
+    'mutation($id: ID!, $code: String!, $email: String!, $q: [QuestionnaireAnswerInput!]!) { completeSurvey(submissionId: $id, registrationCode: $code, email: $email, questionnaire: $q) { _id } }',
+    { id: sub._id, code: truth.code, email: truth.email, q: truth.questionnaire });
   truth.completed = true;
   truth.shownPayoutNtd = draw.payoutNtd;
   return truth;
@@ -236,11 +238,12 @@ async function runChecks({ db, groupId, truths, full, csv, ledger }) {
     const s = subById.get(t.submissionId);
     const bad = [];
     if (!s?.isCompleted) bad.push(`${t.participantId}: not completed`);
-    if (s?.demographics?.gender !== t.code || s?.demographics?.education !== t.email) bad.push(`${t.participantId}: code/email`);
+    if (s?.registrationCode !== t.code || s?.email !== t.email) bad.push(`${t.participantId}: code/email`);
+    if (!s?.consentedAt || s?.consentVersion !== 'sim' || !s?.deviceType) bad.push(`${t.participantId}: consent/device`);
     if (JSON.stringify(s?.questionnaire?.map(({ questionId, answer }) => ({ questionId, answer }))) !== JSON.stringify(t.questionnaire)) bad.push(`${t.participantId}: Q1–Q8`);
     return bad;
   });
-  check('D4', 'Stored Q1–Q8, registration code and email equal what was sent', 'none', firstBad(d4));
+  check('D4', 'Stored Q1–Q8, registration code, email, consent and device equal what was sent', 'none', firstBad(d4));
 
   const d5 = completedTruths.flatMap((t) => {
     const s = subById.get(t.submissionId);
@@ -260,7 +263,7 @@ async function runChecks({ db, groupId, truths, full, csv, ledger }) {
   const expectedRows = subs.reduce((n, s) => n + Math.max(1, s.results.length), 0);
   check('D6', 'Research CSV: one row per stored answer (+1 per submission without answers)', expectedRows, csv.rows.filter((r) => subById.has(r['Submission ID'])).length);
   const d6 = [];
-  const required = ['Session ID', 'Participant ID', 'Scenario ID', 'Scenario Index', 'Edge States (JSON)', 'Cooperation Probability', 'Response Time (ms)', 'Answered At', 'Registration Code', ...QUESTIONNAIRE.map((q) => q.id), 'Submission Completed At'];
+  const required = ['Session ID', 'Participant ID', 'Scenario ID', 'Scenario Index', 'Edge States (JSON)', 'Cooperation Probability', 'Response Time (ms)', 'Answered At', 'Registration Code', ...QUESTIONNAIRE.map((q) => q.id), 'Consented At', 'Consent Version', 'Device Type', 'Submission Completed At'];
   for (const col of required) if (!csv.header.includes(col)) d6.push(`missing column ${col}`);
   for (const s of subs) {
     for (const r of s.results) {
@@ -270,8 +273,8 @@ async function runChecks({ db, groupId, truths, full, csv, ledger }) {
       if (Number(row['Response Time (ms)']) !== r.responseTime || row['Response Time (ms)'] === '') d6.push(`${s.participantId}: RT '${row['Response Time (ms)']}' ≠ ${r.responseTime}`);
       if (row['Submission Completed'] !== String(Boolean(s.isCompleted))) d6.push(`${s.participantId}: completed flag`);
       if (s.isCompleted) {
-        if (row['Registration Code'] !== s.demographics?.gender) d6.push(`${s.participantId}: code '${row['Registration Code']}'`);
-        for (const q of QUESTIONNAIRE) if (row[q.id] !== s.questionnaire?.find((a) => a.questionId === q.id)?.answer) d6.push(`${s.participantId}: ${q.id}`);
+        if (row['Registration Code'] !== s.registrationCode) d6.push(`${s.participantId}: code '${row['Registration Code']}'`);
+        for (const q of QUESTIONNAIRE) if (row[q.id] !== String(s.questionnaire?.find((a) => a.questionId === q.id)?.answer)) d6.push(`${s.participantId}: ${q.id}`);
         for (const col of required) if (csv.header.includes(col) && row[col] === '') d6.push(`${s.participantId}: empty ${col}`);
       }
     }

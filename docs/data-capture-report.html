@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Data capture report — production check 2026-11-17</title>
+<style>
+  body { font: 13px/1.5 -apple-system, "Segoe UI", "PingFang TC", "Noto Sans TC", sans-serif; color: #1f2937; max-width: 980px; margin: 24px auto; padding: 0 16px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #e5e7eb; }
+  .muted { color: #6b7280; }
+  .verdict { background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
+  .warn { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0 4px; font-size: 12px; }
+  th, td { border: 1px solid #e5e7eb; padding: 5px 7px; text-align: left; vertical-align: top; }
+  th { background: #f9fafb; font-weight: 600; }
+  code { font: 11.5px ui-monospace, Menlo, monospace; background: #f3f4f6; padding: 0 3px; border-radius: 3px; }
+  .ok { color: #047857; font-weight: 600; }
+  .no { color: #b45309; font-weight: 600; }
+  ol li, ul li { margin: 3px 0; }
+  @media print { body { margin: 0; } h2 { break-after: avoid; } tr { break-inside: avoid; } }
+</style>
+</head>
+<body>
+
+<h1>Data capture report — production check</h1>
+<div class="muted">pd-human-agent-survey (Heroku release v41, commit <code>cce1ae2</code>) · checked 2026-11-17 · for the research team</div>
+
+<div class="verdict">
+  <b>Verdict: every data item the study needs is captured, stored and exported, on PC and on phone.</b>
+  An end-to-end run on the production site (PC and phone, 122/122 checks each, all 13 edge cases passing) walked
+  participants through the whole study; their records were then read straight from the production database and from both admin exports.
+  The production database was emptied afterwards (2026-11-17 11:36 UTC), so the study starts from zero.
+</div>
+
+<h2>1. What one completed participant leaves behind</h2>
+<p>Values are participant A of the production run (a test participant). One record per participant (a <i>submission</i>), linked to their personal session and the scenarios they saw.</p>
+<table>
+  <tr><th style="width:20%">Data</th><th style="width:25%">Stored as</th><th style="width:25%">Production value (A)</th><th>Research CSV</th><th>Payment ledger</th></tr>
+  <tr><td>Participant ID (device fingerprint)</td><td><code>participantId</code></td><td><code>fp-3820eab4…</code></td><td class="ok">Participant ID</td><td class="ok">Participant ID</td></tr>
+  <tr><td>Registration code</td><td><code>demographics.gender</code> ¹</td><td>E2E001</td><td class="ok">Registration Code</td><td class="ok">Registration Code</td></tr>
+  <tr><td>Email (for payment)</td><td><code>demographics.education</code> ¹</td><td>e2e-a@example.com</td><td class="no">not included ²</td><td class="ok">Email</td></tr>
+  <tr><td>Scenarios shown (network, edge states, focal / partner node)</td><td><code>scenarios</code> collection, referenced by ID</td><td>e.g. edge DPP4→DPP3 = give, KMT1 vs DPP4</td><td class="ok">Scenario ID, Index, Focal/Opponent Node, Active Edges, Edge Count, Edge States</td><td>—</td></tr>
+  <tr><td>Answer per scenario (0–100% give)</td><td><code>results[].cooperationProbability</code></td><td>0.7, 0.3, 0.9, 0.1, 0.5</td><td class="ok">Cooperation Probability</td><td>—</td></tr>
+  <tr><td>Response time per scenario <b>(new)</b></td><td><code>results[].responseTime</code> (ms)</td><td>13629 ³, 1256, 1232, 1235, 1249</td><td class="ok">Response Time (ms)</td><td>—</td></tr>
+  <tr><td>Time of each answer</td><td><code>results[].answeredAt</code></td><td>2026-11-17 11:32:48 UTC …</td><td class="ok">Answered At ⁴</td><td>—</td></tr>
+  <tr><td>Questionnaire Q1–Q8</td><td><code>questionnaire</code> (option text)</td><td>同意, 不同意, 好, 不同意, 不同意, 同意, 不同意, 管制</td><td class="ok">Q1 … Q8</td><td>—</td></tr>
+  <tr><td>Start and completion time</td><td><code>createdAt</code>, <code>completedAt</code></td><td>11:32:46 → 11:33:16 UTC</td><td class="ok">Submission Created / Completed At</td><td class="ok">Completed At</td></tr>
+  <tr><td>Completed / valid flags</td><td><code>isCompleted</code>, <code>isInvalid</code></td><td>true / false</td><td class="ok">Submission Completed, Valid</td><td>only completed + valid rows</td></tr>
+  <tr><td>Payment draw: chosen round, points, payout</td><td><code>realisedRoundIndex</code>, <code>realisedPoints</code>, <code>payoutNtd</code></td><td>round 3, 2 points, NT$200</td><td>—</td><td class="ok">Realised Round, Points, Fee, Point Payout, Total Payout</td></tr>
+  <tr><td>Per-round draw details (partner probability, both decisions)</td><td><code>opponentProbs</code>, <code>myDecisions</code>, <code>opponentDecisions</code></td><td>5 values each</td><td colspan="2">database only (decided 2026-11-17)</td></tr>
+</table>
+<div class="muted">
+  ¹ The outro reuses the old demographics fields; the exports give them their real names.
+  ² Kept out on purpose so the political-opinion answers are not stored next to an email; join the two files on <b>Submission ID</b> when needed.
+  ³ Includes a deliberately failed save and the retry (the test simulates a network error on the first answer).
+  ⁴ See §4.
+</div>
+
+<h2>2. How the data is protected (verified on production)</h2>
+<table>
+  <tr><th style="width:38%">Risk</th><th>Safeguard and production result</th></tr>
+  <tr><td>Network error while saving an answer</td><td>The participant stays on the scenario with 「儲存失敗，請再按一次。」 and the retry saves it; nothing is skipped (BUG-013 fixed). <span class="ok">pass</span></td></tr>
+  <tr><td>Network error on the final 送出</td><td>Stays on the email step with 「提交失敗，請稍後再試」; code, email and Q1–Q8 are kept for the retry (BUG-011 fixed). <span class="ok">pass</span></td></tr>
+  <tr><td>Refreshing the page mid-study</td><td>Resumes on the same page with the same session; refreshing the debrief keeps the same payout. The session now survives a fast first answer (BUG-014, found by this production check and fixed). <span class="ok">pass</span></td></tr>
+  <tr><td>Changing an answer afterwards (Back button or API)</td><td>Rejected; the first confirmed answer stays. <span class="ok">pass</span></td></tr>
+  <tr><td>Completing a submission twice / swapping the email afterwards</td><td>Rejected; email, answers and completion time unchanged (BUG-012 fixed). <span class="ok">pass</span></td></tr>
+  <tr><td>Incomplete or invalid questionnaire</td><td>The server rejects the completion unless all eight answers are valid options. <span class="ok">pass</span></td></tr>
+  <tr><td>Payout shown ≠ payout paid</td><td>Debrief, debrief after reload, email page, database and payment ledger all show the same amount. <span class="ok">pass</span></td></tr>
+  <tr><td>Group over-filled</td><td>Once every scenario has its responses, new visitors see 「無法參與實驗」 and no session is created. <span class="ok">pass</span></td></tr>
+</table>
+
+<h2>3. Who can read what</h2>
+<ul>
+  <li>Email, registration code and Q1–Q8 answers are returned <b>only with an admin login</b>; anyone else gets nothing, including through the participant API. <span class="ok">verified</span></li>
+  <li>Both exports are admin-only. The research CSV contains no email (checked: no “@” anywhere in the file).</li>
+  <li>Unsent questionnaire answers live only in the participant's browser tab and disappear when it is closed.</li>
+</ul>
+
+<h2>4. Know before you analyse</h2>
+<ol>
+  <li><b>Response time</b> = milliseconds from the scenario appearing to the confirm click that saved the answer, including revealing the edges and moving the slider. A page refresh restarts the clock for that scenario. Answers in the production run were made by a test robot (~1.2 s); real participants will be much slower.</li>
+  <li><b>Presentation order</b>: participants see their five scenarios in the order of the answers array (also given by <i>Answered At</i>), not in the order the session lists them.</li>
+  <li><b>Answered At</b> in the research CSV is a raw epoch-milliseconds number (e.g. <code>1794915168150</code>), unlike the other time columns, which are ISO dates. It is exact; convert with <code>as.POSIXct(x/1000, origin="1970-01-01")</code> or <code>pd.to_datetime(x, unit="ms")</code>.</li>
+  <li><b>Partner decisions are random draws.</b> The production log shows <code>matched=0/5</code> for every participant: no real partner answer is used (BUG-008, left as is by decision).</li>
+  <li><b>Same person, two devices</b>: a second device with an already-used registration code is accepted and paid (EC-8). Check the payment ledger for repeated registration codes and mark duplicates invalid before paying.</li>
+  <li>Participants who stop part-way keep their saved answers (<i>Submission Completed = false</i>) and are in the research CSV but not in the payment ledger.</li>
+</ol>
+
+<h2>5. Not recorded</h2>
+<p class="muted">Not needed for the current analysis plan; say so if any of these is.</p>
+<ul>
+  <li>Intro quiz attempts (wrong answers before the correct one), and which edges were revealed in what order.</li>
+  <li>Device type / browser (only the fingerprint ID).</li>
+  <li>Consent: the app keeps no consent record of its own.</li>
+</ul>
+
+<div class="warn">
+  <b>Open before launch</b>
+  <ul style="margin:4px 0 0">
+    <li><b>Bot check can be bypassed.</b> The “passed Turnstile” cookie is not signed, so a script can skip the bot check by setting it (this is also how the automated production test got through, so the real Cloudflare check itself was not tested). Fix: sign the cookie on the server.</li>
+    <li><b>Database backups</b> were not checked. Confirm backups are enabled on the MongoDB cluster before real data arrives.</li>
+  </ul>
+</div>
+
+<h2>Evidence</h2>
+<ul class="muted">
+  <li>Production e2e report (PC + phone): <code>test-results/e2e/20261117_192852/report.pdf</code>, with the exported <code>submissions.csv</code> and <code>payments.csv</code> under <code>phone/</code>.</li>
+  <li>Requirements: REQ-362 (research CSV), REQ-402.4–402.6, REQ-403.2, REQ-408 (payment), REQ-416 (questionnaire); BUG-011–014 in <code>docs/requirements.md</code>.</li>
+</ul>
+
+</body>
+</html>

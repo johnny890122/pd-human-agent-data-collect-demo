@@ -86,8 +86,8 @@ async function testManualMode() {
   console.log('-'.repeat(60));
   
   const startMutation = `
-    mutation StartSurvey($sessionId: ID!) {
-      startSurvey(sessionId: $sessionId) {
+    mutation StartSurvey($sessionId: ID!, $consent: ConsentInput) {
+      startSurvey(sessionId: $sessionId, consent: $consent) {
         _id
         sessionId
         isCompleted
@@ -99,7 +99,7 @@ async function testManualMode() {
     }
   `;
   
-  const startResult = await runGraphQL(startMutation, { sessionId });
+  const startResult = await runGraphQL(startMutation, { sessionId, consent: { consentedAt: new Date().toISOString(), version: 'legacy-script' } /* REQ-417 */ });
   const submission = startResult.startSurvey;
   const submissionId = submission._id;
   
@@ -146,33 +146,26 @@ async function testManualMode() {
     console.log(`   - Total results saved: ${saveResult.saveSurveyAnswer.results.length}`);
   }
 
-  // Step 4: Complete survey with demographics
+  // Step 4: Complete survey with registration code, email and questionnaire
   console.log('\n📝 Step 4: Complete Survey');
   console.log('-'.repeat(60));
   
   const completeMutation = `
-    mutation CompleteSurvey($submissionId: ID!, $demographics: DemographicsInput!, $questionnaire: [QuestionnaireAnswerInput!]!) {
-      completeSurvey(submissionId: $submissionId, demographics: $demographics, questionnaire: $questionnaire) {
+    mutation CompleteSurvey($submissionId: ID!, $registrationCode: String!, $email: String!, $questionnaire: [QuestionnaireAnswerInput!]!) {
+      completeSurvey(submissionId: $submissionId, registrationCode: $registrationCode, email: $email, questionnaire: $questionnaire) {
         _id
         isCompleted
         completedAt
-        demographics {
-          age
-          gender
-          education
-        }
+        registrationCode
       }
     }
   `;
   
   const completeResult = await runGraphQL(completeMutation, {
     submissionId,
-    demographics: {
-      age: 25,
-      gender: 'male',
-      education: 'bachelor',
-    },
-    questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: q.options[0] })), // REQ-416: required
+    registrationCode: 'LEGACY01',
+    email: 'legacy@example.com',
+    questionnaire: QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: true })), // REQ-416: Boolean, true = first option
   });
   
   const completedSubmission = completeResult.completeSurvey;
@@ -181,7 +174,7 @@ async function testManualMode() {
   console.log(`   - Submission ID: ${completedSubmission._id}`);
   console.log(`   - Completed: ${completedSubmission.isCompleted}`);
   console.log(`   - Completed at: ${completedSubmission.completedAt}`);
-  console.log(`   - Demographics:`, completedSubmission.demographics, '(null without an admin login, REQ-408.8)');
+  console.log(`   - Registration code:`, completedSubmission.registrationCode, '(null without an admin login, REQ-408.8)');
 
   // Step 5: Verify session updated
   console.log('\n📝 Step 5: Verify Session Updated');
@@ -219,7 +212,7 @@ async function testManualMode() {
   console.log(`   - ✅ Created session with ${scenariosCreated} scenarios`);
   console.log(`   - ✅ Started survey (submission created)`);
   console.log(`   - ✅ Saved ${session.scenarios.length} scenario answers`);
-  console.log(`   - ✅ Completed survey with demographics`);
+  console.log(`   - ✅ Completed survey with registration code, email and questionnaire`);
   console.log(`   - ✅ Session submission count updated: ${updatedSession.submissionCount}`);
   console.log(`   - ✅ Scenario response counts updated`);
   console.log(`\n🎉 All NEW APIs working correctly!\n`);

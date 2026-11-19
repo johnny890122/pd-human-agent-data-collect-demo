@@ -3254,7 +3254,7 @@ saveSession(currentId, submission._id, path);
 
 ## Phase 54: Response Time, Safe Answer Saves, Research CSV Columns (REQ-402.5, REQ-402.6, BUG-013, REQ-362)
 
-**Status**: 🚧 In progress (2026-11-17) — from the production data review; partner pairing (BUG-008) and exporting the per-round draw were reviewed and left as is
+**Status**: ✅ Complete (2026-11-17) — from the production data review; partner pairing (BUG-008) and exporting the per-round draw were reviewed and left as is
 
 - [x] **TASK-5401**: Requirements REQ-402.5, REQ-402.6, BUG-013, REQ-362 columns; design Phase 54
 - [x] **TASK-5402**: `saveSurveyAnswer` requires and stores `responseTime` [REQ-402.5]
@@ -3263,11 +3263,14 @@ saveSession(currentId, submission._id, path);
 - [x] **TASK-5405**: Research CSV: Registration Code instead of Age/Gender/Education; no email [REQ-362]
 - [x] **TASK-5406**: Backend + unit tests; e2e checks; legacy scripts send `responseTime`
 - [x] **TASK-5408**: BUG-014 — `navigateWithSession` / `handleNext` read the live URL; e2e checks the first scenario URL carries the session. Remote-run options in the e2e: `E2E_BASE_URL`, `E2E_MONGODB_URI`, `E2E_ADMIN_PASSWORD`, `E2E_WIPE_DB`; `E2E_LATENCY_MS` and `E2E_PRESET_TURNSTILE` for local reproduction
-- [ ] **TASK-5407**: Local `npm run test:e2e`; after the user redeploys, production run + data report
+- [x] **TASK-5407**: Local `npm run test:e2e`; after the user redeploys, production run + data report
 
 **Implementation notes (2026-11-17)**:
 - **First production run** (v40, `test-results/e2e/20261117_185107/`): every step passed except participant A's debrief reload on both devices — BUG-014. Everything A-dependent (DB check, ledger, EC-12) did not run. Turnstile is bypassed in the test browsers (unsigned cookie), so the real Cloudflare check is not covered.
 - **Local verification**: `npm run test:e2e` PASS — PC 122/122, phone 122/122 (`test-results/e2e/20261117_191308/`); also PASS with `E2E_LATENCY_MS=400` (+ `E2E_PRESET_TURNSTILE=1`). Unit: 60 pass, the 3 known `new-data-model.test.js` failures.
+- **Production run on v41** (`cce1ae2`): PASS — PC 122/122, phone 122/122, EC-1…EC-13 all pass (`test-results/e2e/20261117_192852/`). The first v41 attempt broke only because the e2e clicked Export Payments while the slower 「Mark Invalid」 dialog was still closing (exports work on production when checked by hand); the e2e now waits for the dialog to close.
+- **Data report**: `docs/data-capture-report.html` / `.pdf` — per-item storage, production values, exports, safeguards, analysis notes. New finding recorded there: the research CSV's 「Answered At」 is epoch milliseconds, not ISO (exact, but unlike the other time columns).
+- **Production database cleared** 2026-11-17 11:36 UTC (only e2e test data; collections and indexes kept).
 
 ## Phase 55: Simulated Pilot Data Check (NFR-9)
 
@@ -3285,3 +3288,23 @@ saveSession(currentId, submission._id, path);
 - **Finding — D8 fails**: the group closes when `responseCount ≥ target`, but `responseCount` also counts answers from participants who never complete. 5–21 of 162 scenarios end with fewer than 2 completed answers (depends on the run).
 - **Finding — oversampling grows with concurrency**: 8 at a time → 51 participants, 165 answers above target; 1 at a time → 40 participants, 62 above target. Many participants who start at the same moment are given the same least-answered scenarios, because `responseCount` only rises when answers are saved. Real participants are in progress for minutes, not milliseconds, so the overlap in a live recruitment will be larger. This affects the REQ-314 cost estimate.
 - Both findings need a decision (count only completed answers? reserve scenarios at assignment?) before real recruitment.
+
+## Phase 56: Clear Names for Code and Email, Boolean Answers, Consent, Device (BUG-015, REQ-403, REQ-416, REQ-417, REQ-418)
+
+**Status**: 🚧 In progress (2026-11-18)
+
+- [x] **TASK-5601**: Requirements (BUG-015, REQ-403, REQ-416 storage/export, REQ-417, REQ-418, REQ-341/362/408 notes); design Phase 56
+- [x] **TASK-5602**: Model + GraphQL: `registrationCode`, `email`, Boolean `answer`, consent + device fields; `demographics` removed; admin-only resolvers [BUG-015, REQ-416, REQ-417, REQ-418]
+- [x] **TASK-5603**: `completeSurvey` contact validation; `startSurvey` consent requirement + device capture (`utils/device.js`) [REQ-403, REQ-417, REQ-418]
+- [x] **TASK-5604**: `utils/questionnaire.js` Boolean validation + `answerValue` / `answerLabel` [REQ-416]
+- [x] **TASK-5605**: Welcome consent checkbox + `utils/consent.ts`; client `startSurvey` sends consent [REQ-417]
+- [x] **TASK-5606**: Outro / App / client send `registrationCode`, `email`, Boolean answers [BUG-015, REQ-416]
+- [x] **TASK-5607**: Admin CSV + ledger columns; progress stage 「Outro」 [REQ-362, REQ-341]
+- [x] **TASK-5608**: Unit + backend tests; e2e; `scripts/sim`, `scripts/irb-shots`, legacy scripts
+- [ ] **TASK-5609**: Local e2e; after redeploy: production e2e, update `docs/data-capture-report`, clear the production database
+
+**Implementation notes (2026-11-18)**:
+- **Decisions**: Boolean `true` = the first option (同意 / 好 / 管制) for every question; research CSV shows `true` / `false`. Consent = explicit checkbox on the welcome page (participant-facing text added — check with the IRB). Phase numbered 56 because Phase 55 / TASK-55xx is the simulated pilot data check.
+- **Local verification**: `npm run test:e2e` PASS — PC 130/130, phone 130/130 (`test-results/e2e/20261118_181432/`): consent box gates 開始實驗; DB has `registrationCode`, `email`, Boolean answers, consent, `deviceType` (desktop on PC, mobile on the phone run), `userAgent`; no `demographics`; all hidden without admin; CSV `true` / `false` and the new columns; a submission without consent is refused. Unit: 65 pass, the 3 known `new-data-model.test.js` failures. `npm run sim:data`: D1–D7, A1–A2 pass; D8 fails as before (open Phase 55 finding, 9/162 short this run).
+- **Also removed**: dead `/survey/demographics` route and the commented-out demographics form in `SurveyView`; `fix-incomplete-submission.mjs` no longer writes a placeholder `unknown` code.
+

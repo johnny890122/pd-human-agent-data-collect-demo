@@ -101,6 +101,9 @@ async function startServer() {
         res,
         isTurnstileVerified: isTurnstileVerifiedFromRequest(req),
         isAdmin,
+        // REQ-418: recorded on the submission when it is created
+        userAgent: req.headers['user-agent'] ?? null,
+        mobileHint: req.headers['sec-ch-ua-mobile'] ?? null,
       };
     },
   }));

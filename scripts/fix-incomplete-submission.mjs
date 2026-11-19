@@ -17,7 +17,8 @@ const submissionSchema = new mongoose.Schema({
   sessionId: String,
   participantId: String,
   results: Array,
-  demographics: Object,
+  registrationCode: String,
+  email: String,
   isCompleted: Boolean,
   completedAt: Date,
   createdAt: Date,
@@ -95,7 +96,7 @@ async function fixSubmission(submissionId, dryRun = false) {
   console.log(`Session ID: ${submission.sessionId}`);
   console.log(`Current status: ${submission.isCompleted ? 'Completed' : 'Incomplete'}`);
   console.log(`Results: ${actualCount}/${expectedCount || '?'}`);
-  console.log(`Has demographics: ${submission.demographics ? 'Yes' : 'No'}`);
+  console.log(`Has registration code / email: ${submission.registrationCode ? 'Yes' : 'No'} / ${submission.email ? 'Yes' : 'No'}`);
   console.log(`Needs fix: ${needsFix ? 'YES ✓' : 'NO'}`);
   
   if (!needsFix) {
@@ -115,7 +116,7 @@ async function fixSubmission(submissionId, dryRun = false) {
       $set: {
         isCompleted: true,
         completedAt: new Date(),
-        demographics: submission.demographics || { age: 0, gender: 'unknown', education: 'unknown' }
+        // No placeholder code/email: an invented code can't be matched to a participant (BUG-009, BUG-015)
       },
     },
     { new: true }

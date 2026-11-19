@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Submission, SurveyResult, QuestionnaireAnswer } from '../types';
 import { DebriefResult, drawRealisedRound, fetchSubmission } from '../utils/graphqlClient';
 import { PAYMENT_METHOD_TEXT, PAYMENT_TIMELINE_TEXT, POINT_TO_NTD, payoffPoints, pointPayoutNtd } from '../utils/payment.js';
-import { QUESTIONNAIRE } from '../utils/questionnaire.js';
+import { QUESTIONNAIRE, answerValue } from '../utils/questionnaire.js';
 
 // The persisted debrief, if this submission already has a complete one (including its payout)
 function persistedDebrief(sub: Submission | null): DebriefResult | null {
@@ -72,7 +72,7 @@ function writeStoredAnswers(entryId: string | undefined, answers: Answers | null
 export interface SurveyOutroProps {
   results: SurveyResult[];
   onBack: () => void;
-  onComplete?: (entryId: string, results: SurveyResult[], demographics: { age: number, gender: string, education: string }, questionnaire: QuestionnaireAnswer[]) => void;
+  onComplete?: (entryId: string, results: SurveyResult[], contact: { registrationCode: string, email: string }, questionnaire: QuestionnaireAnswer[]) => void;
   entryId?: string;
   /** Which of the 5 debrief sub-pages to render (1: code confirm, 2: debrief, 3: questionnaire, 4: email, 5: done). Sourced from the URL so refreshing stays on the same page. */
   currentStep: number;
@@ -169,15 +169,11 @@ const SurveyOutro: React.FC<SurveyOutroProps> = ({ results: resultsProp, onBack:
     setIsSubmitting(true);
 
     try {
-      const demographics = {
-        age: parseInt(codeValue) || 0,
-        gender: codeValue,
-        education: trimmedEmail
-      };
-
-      const questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: answers[q.id] }));
+      const contact = { registrationCode: codeValue.trim(), email: trimmedEmail };
+      // REQ-416: stored as a Boolean, true = the first option (同意 / 好 / 管制)
+      const questionnaire = QUESTIONNAIRE.map((q) => ({ questionId: q.id, answer: answerValue(q, answers[q.id]) }));
       if (onComplete && entryId) {
-        await onComplete(entryId, results, demographics, questionnaire);
+        await onComplete(entryId, results, contact, questionnaire);
         writeStoredCode(entryId, null);
         writeStoredAnswers(entryId, null);
       }

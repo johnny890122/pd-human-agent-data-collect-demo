@@ -234,7 +234,7 @@ async function captureShot(browser, shot, viewportName, { outDir, adminToken, la
 
 async function captureEvidenceE1(outDir) {
   const request = {
-    query: '{ recentSubmissions(limit: 20) { _id isCompleted demographics { gender education } } }',
+    query: '{ recentSubmissions(limit: 20) { _id isCompleted registrationCode email } }',
   };
   const response = await fetch(`${BASE_URL}/graphql`, {
     method: 'POST',

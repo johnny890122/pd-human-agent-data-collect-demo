@@ -490,11 +490,8 @@ describe('Unified Survey Flow', () => {
     });
 
     // 完成調查
-    submission.demographics = {
-      age: 25,
-      gender: 'male',
-      education: 'bachelor',
-    };
+    submission.registrationCode = 'CODE1';
+    submission.email = 'a@example.com';
     submission.isCompleted = true;
     submission.completedAt = new Date();
     await submission.save();
@@ -505,7 +502,7 @@ describe('Unified Survey Flow', () => {
     // 驗證
     const updatedSubmission = await SubmissionModel.findById(submission._id);
     expect(updatedSubmission.isCompleted).toBe(true);
-    expect(updatedSubmission.demographics.age).toBe(25);
+    expect(updatedSubmission.registrationCode).toBe('CODE1');
 
     const updatedSession = await SessionModel.findById(session._id);
     expect(updatedSession.submissionCount).toBe(1);

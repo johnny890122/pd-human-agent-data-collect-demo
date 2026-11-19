@@ -97,7 +97,6 @@ function buildDocuments() {
       sessionId: FIXTURE.sessionId,
       participantId: '測試參與者A',
       results: results([0.7, 0.3, 0.9]),
-      demographics: null,
       isCompleted: false,
       completedAt: null,
       isInvalid: false,
@@ -113,8 +112,8 @@ function buildDocuments() {
       sessionId: FIXTURE.doneSessionId,
       participantId: '測試參與者B',
       results: results([0.8, 0.6, 0.2]),
-      // SurveyOutro stores the registration code in gender and the email in education
-      demographics: { age: 0, gender: 'A1B2C3', education: 'participant@example.com' },
+      registrationCode: 'A1B2C3',
+      email: 'participant@example.com',
       isCompleted: true,
       completedAt: COMPLETED_TIME,
       isInvalid: false,

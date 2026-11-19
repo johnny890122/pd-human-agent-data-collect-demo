@@ -10,6 +10,10 @@ import { generateDesignMatrix } from '../../utils/mathBackend.js';
 import { balancedSelect } from '../../utils/scenarioSelection.js';
 import { payoffPoints, totalPayoutNtd } from '../../utils/payment.js';
 import { questionnaireError } from '../../utils/questionnaire.js';
+import { deviceTypeOf } from '../../utils/device.js';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const iso = (d) => (d instanceof Date ? d.toISOString() : d ?? null);
 
 function requireDb() {
   if (!isDbConfigured()) {
@@ -137,7 +141,12 @@ function toSubmissionGraph(doc) {
     sessionId: doc.sessionId,
     participantId: doc.participantId || null,
     results: doc.results || [],
-    demographics: doc.demographics || null,
+    registrationCode: doc.registrationCode ?? null,
+    email: doc.email ?? null,
+    consentedAt: iso(doc.consentedAt),
+    consentVersion: doc.consentVersion ?? null,
+    deviceType: doc.deviceType ?? null,
+    userAgent: doc.userAgent ?? null,
     isCompleted: doc.isCompleted === true,
     completedAt: doc.completedAt ? (doc.completedAt instanceof Date ? doc.completedAt.toISOString() : doc.completedAt) : null,
     isInvalid: doc.isInvalid === true,
@@ -160,12 +169,12 @@ function toSubmissionGraph(doc) {
 export const resolvers = {
   JSON: GraphQLJSON,
 
-  // REQ-416 / REQ-408.8: political opinions and the code + email (in demographics) — admins only,
-  // wherever a Submission is returned, even via submission(id) or the completeSurvey result
-  Submission: {
-    questionnaire: (submission, _, context) => (context?.isAdmin ? submission.questionnaire : null),
-    demographics: (submission, _, context) => (context?.isAdmin ? submission.demographics : null),
-  },
+  // REQ-416 / REQ-408.8 / REQ-417 / REQ-418: political opinions, code, email, consent and device —
+  // admins only, wherever a Submission is returned, even via submission(id) or the completeSurvey result
+  Submission: Object.fromEntries(
+    ['questionnaire', 'registrationCode', 'email', 'consentedAt', 'consentVersion', 'deviceType', 'userAgent']
+      .map((field) => [field, (submission, _, context) => (context?.isAdmin ? submission[field] : null)]),
+  ),
 
   Query: {
     health: () => 'ok',
@@ -610,7 +619,7 @@ export const resolvers = {
     // Unified Survey Flow (REFACTORED)
     // ========================================================================
     
-    startSurvey: async (_, { sessionId, participantId }, context) => {
+    startSurvey: async (_, { sessionId, participantId, consent }, context) => {
       if (!context?.isTurnstileVerified) {
         throw new Error('Turnstile verification required before starting survey.');
       }
@@ -642,12 +651,22 @@ export const resolvers = {
         }
       }
 
+      // REQ-417: no new submission without the consent given on the welcome page
+      const consentedAt = new Date(consent?.consentedAt ?? NaN);
+      if (Number.isNaN(consentedAt.getTime()) || !consent?.version?.trim()) {
+        throw new Error('CONSENT_REQUIRED: consent from the welcome page is missing');
+      }
+
       // 建立 submission（記錄 participantId 供後續重複偵測使用）
       const doc = await SubmissionModel.create({
         sessionId,
         participantId: participantId || null,
         results: [],
-        demographics: null,
+        consentedAt,
+        consentVersion: consent.version.trim(),
+        // REQ-418: the device that starts the submission
+        userAgent: context?.userAgent || null,
+        deviceType: deviceTypeOf(context?.userAgent, context?.mobileHint),
         isCompleted: false,
       });
 
@@ -697,7 +716,12 @@ export const resolvers = {
       return toSubmissionGraph(submission);
     },
     
-    completeSurvey: async (_, { submissionId, demographics, questionnaire }) => {
+    completeSurvey: async (_, { submissionId, registrationCode, email, questionnaire }) => {
+      // REQ-403: the code matches the payment to the registered participant; the email is where it is paid
+      const code = registrationCode?.trim();
+      const mail = email?.trim();
+      if (!code || !EMAIL_RE.test(mail ?? '')) throw new Error('INVALID_CONTACT: registration code and a valid email are required');
+
       // REQ-416: all eight answers are required; validate them before any write
       const problem = questionnaireError(questionnaire);
       if (problem) throw new Error(`INVALID_QUESTIONNAIRE: ${problem}`);
@@ -711,7 +735,8 @@ export const resolvers = {
         { _id: submissionId, isCompleted: { $ne: true } },
         {
           $set: {
-            demographics,
+            registrationCode: code,
+            email: mail,
             questionnaire: questionnaire.map(({ questionId, answer }) => ({ questionId, answer })),
             isCompleted: true,
             completedAt: new Date(),

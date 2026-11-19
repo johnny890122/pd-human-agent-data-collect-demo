@@ -3606,3 +3606,35 @@ No data migration: the production database was emptied on 2026-11-17 and the fie
 - Backend: `completeSurvey` stores the new fields, rejects bad contact data; `startSurvey` stores consent + device, rejects a new submission without consent, resumes without it.
 - E2E: tick the consent box (開始實驗 disabled before); DB has `registrationCode`, `email`, Boolean answers, `consentedAt`, `consentVersion`, `deviceType` (`desktop` on PC, `mobile` on the phone run), `userAgent`; CSV columns and values; privacy of the new fields.
 
+
+## Phase 57 — Signed bot-check cookie (BUG-016, REQ-102.1, NFR-3)
+
+### Problem
+`setTurnstileVerifiedCookie` wrote `turnstile_verified=true`; `isTurnstileVerifiedFromRequest` accepted any request carrying that string. All three consumers (`GET /api/turnstile/status`, the Apollo context's `isTurnstileVerified` → `startSurvey` / `startMixedSession` guards) route through that one function, so it is the single fix point.
+
+### Server (`server.js`)
+- `TURNSTILE_SIGNING_SECRET = process.env.JWT_SECRET`; if `NODE_ENV === 'production'` and it is unset, throw at startup. Outside production, fall back to a dev-only constant (local runs and tests need no env).
+- **Issue** (`setTurnstileVerifiedCookie`, called only after a successful `/api/turnstile/verify`): value = `jwt.sign({ tv: 1 }, secret, { expiresIn: '2h' })`. Cookie options unchanged (`httpOnly`, `sameSite=lax`, `secure` in prod, `maxAge` 2 h, `path=/`).
+- **Check** (`isTurnstileVerifiedFromRequest`): `jwt.verify(cookie, secret)` (HS256 default, so `alg: none` is rejected) and `payload.tv === 1`; any throw (missing, malformed, bad signature, expired) → `false`.
+- The `tv` claim keeps a leaked admin JWT (signed with the same secret, `{ role: 'admin' }`) from passing as a bot-check cookie, and vice versa (admin check requires `role === 'admin'`).
+- Admin login's `'fallback_secret'` is replaced by the same secret constant, so production can no longer sign admin tokens with a public string.
+
+### Interaction
+```
+Browser ──token──▶ POST /api/turnstile/verify ──▶ Cloudflare siteverify (prod) / test secret (dev)
+        ◀── Set-Cookie: turnstile_verified=<JWT, exp 2h>
+Browser ──cookie──▶ /graphql startSurvey ──▶ jwt.verify ok? → proceed : "Turnstile verification required…"
+```
+
+### Test scripts
+Scripts that hard-coded `turnstile_verified=true` (`scripts/e2e/full-flow.mjs`, `scripts/sim/simulate.mjs`, `scripts/irb-shots/capture.mjs`, `scripts/test-new-api.mjs`, `scripts/test-manual-mode-e2e.mjs`, `scripts/test-manual-mode-no-turnstile.mjs`) instead call `POST /api/turnstile/verify` with any token against a local (test-secret) server and reuse the returned `Set-Cookie`. Browser contexts get it via `context.addCookies` with that value.
+- **Production e2e (`E2E_BASE_URL`)**: the dev test secret is not available, so a forged cookie no longer works. The run must pass the real Turnstile widget in Chrome (headed if headless is challenged). This exercises the real Cloudflare check for the first time.
+- **EC-12** adds: `Cookie: turnstile_verified=true` → `/api/turnstile/status` `verified: false` and `startSurvey` rejected.
+
+## Phase 58 — Email in the research CSV, welcome footer wording (REQ-362, REQ-417)
+
+- `GroupDetailView`: `PARTICIPANT_HEADERS` = Registration Code, **Email**, Q1–Q8, Consented At, Consent Version, Device Type, User Agent; `participantCells` adds `s.email || ''` after the code. The payment ledger is unchanged.
+- `SurveyWelcome` footer text: 「本研究使用瀏覽器指紋技術防止重複提交」. `CONSENT_VERSION` is unchanged — it labels the consent text (study text + checkbox), not the footer.
+- Checks: e2e — A's research-CSV row has the code **and** the email; `sim` D6 — the Email cell equals the stored email (replaces 「no email anywhere」).
+- Shipped together with Phase 57 (signed cookie); production e2e then runs through the real Turnstile widget.
+

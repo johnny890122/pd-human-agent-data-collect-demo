@@ -3301,10 +3301,41 @@ saveSession(currentId, submission._id, path);
 - [x] **TASK-5606**: Outro / App / client send `registrationCode`, `email`, Boolean answers [BUG-015, REQ-416]
 - [x] **TASK-5607**: Admin CSV + ledger columns; progress stage 「Outro」 [REQ-362, REQ-341]
 - [x] **TASK-5608**: Unit + backend tests; e2e; `scripts/sim`, `scripts/irb-shots`, legacy scripts
-- [ ] **TASK-5609**: Local e2e; after redeploy: production e2e, update `docs/data-capture-report`, clear the production database
+- [x] **TASK-5609**: Local e2e; after redeploy: production e2e, update `docs/data-capture-report`, clear the production database — v42 (`e5a5a8d`): PC 130/130, phone 130/130, EC-1…EC-13 pass (`test-results/e2e/20261119_103241/`, run from a worktree at the deployed commit); data report regenerated; database cleared 2026-11-19 02:41 UTC
 
 **Implementation notes (2026-11-18)**:
 - **Decisions**: Boolean `true` = the first option (同意 / 好 / 管制) for every question; research CSV shows `true` / `false`. Consent = explicit checkbox on the welcome page (participant-facing text added — check with the IRB). Phase numbered 56 because Phase 55 / TASK-55xx is the simulated pilot data check.
 - **Local verification**: `npm run test:e2e` PASS — PC 130/130, phone 130/130 (`test-results/e2e/20261118_181432/`): consent box gates 開始實驗; DB has `registrationCode`, `email`, Boolean answers, consent, `deviceType` (desktop on PC, mobile on the phone run), `userAgent`; no `demographics`; all hidden without admin; CSV `true` / `false` and the new columns; a submission without consent is refused. Unit: 65 pass, the 3 known `new-data-model.test.js` failures. `npm run sim:data`: D1–D7, A1–A2 pass; D8 fails as before (open Phase 55 finding, 9/162 short this run).
 - **Also removed**: dead `/survey/demographics` route and the commented-out demographics form in `SurveyView`; `fix-incomplete-submission.mjs` no longer writes a placeholder `unknown` code.
+
+
+## Phase 57: Signed Bot-Check Cookie (BUG-016, REQ-102.1, NFR-3)
+
+**Status**: 🚧 In progress (2026-11-19)
+
+- [x] **TASK-5701**: Requirements (BUG-016, REQ-102.1, NFR-3, EC-12); design Phase 57
+- [x] **TASK-5702**: `server.js`: sign the cookie with `JWT_SECRET` (2 h expiry, `tv` claim), verify on read; fail startup in production without `JWT_SECRET`; drop `'fallback_secret'` from admin login [REQ-102.1, NFR-3]
+- [x] **TASK-5703**: Test scripts get a real cookie from `POST /api/turnstile/verify` instead of `turnstile_verified=true` (e2e, sim, irb-shots, legacy scripts)
+- [x] **TASK-5704**: EC-12: forged `turnstile_verified=true` is rejected by `/api/turnstile/status` and `startSurvey` [REQ-102.1]
+- [ ] **TASK-5705**: Local `npm run test:e2e` + `npm run sim:data`; after redeploy, production e2e through the real Turnstile widget
+
+**Implementation notes (2026-11-19)**:
+- **Server**: cookie value = `jwt.sign({ tv: 1 }, JWT_SECRET, { expiresIn: '2h' })`; read with `jwt.verify` + `tv === 1`. Production throws at startup without `JWT_SECRET` (Heroku `pd-human-agent-survey` has a 64-char secret set, so no config change). Admin login uses the same constant instead of `'fallback_secret'`.
+- **Checked by hand** against a local server: `turnstile_verified=true` → `verified: false`; cookie from `/api/turnstile/verify` → `true`; tampered, expired and admin-JWT-as-cookie → `false`; `NODE_ENV=production` without `JWT_SECRET` → refuses to start.
+- **Scripts**: new `scripts/turnstile-cookie.mjs` (`turnstileCookieValue(baseUrl)`) used by sim, irb-shots and the three legacy API scripts. The e2e reuses the cookie the server issued to the first browser that passed the Turnstile modal for its API-only participants. `E2E_PRESET_TURNSTILE` removed.
+- **Remote e2e** (`E2E_BASE_URL`): no stub, the real widget loads and its token is checked by Cloudflare; waits up to 2 min for `cf-turnstile-response`. If headless Chrome is challenged, rerun with `E2E_HEADED=1` and tick the box.
+- **Local verification**: `npm run test:e2e` PASS — PC 132/132, phone 132/132 (`test-results/e2e/20261119_102516/`), incl. the two new EC-12 forged-cookie checks. `npm run sim:data`: D0–D7, A1–A2 pass; D8 fails as before (open Phase 55 finding, 6/162 short). Unit: 65 pass, the 3 known `new-data-model.test.js` failures.
+
+## Phase 58: Email in the Research CSV, Welcome Footer Wording (REQ-362, REQ-417)
+
+**Status**: 🚧 In progress (2026-11-19)
+
+- [x] **TASK-5801**: Requirements (REQ-362 columns incl. Email, consent and device; REQ-417 footer; NFR-9 D6); design Phase 58
+- [x] **TASK-5802**: Research CSV 「Email」 column [REQ-362]
+- [x] **TASK-5803**: Welcome footer 「本研究使用瀏覽器指紋技術防止重複提交」 [REQ-417]
+- [x] **TASK-5804**: e2e + sim checks for the Email column
+- [ ] **TASK-5805**: Local e2e + sim; commit and push `main` (GitHub → Heroku auto-deploy, with Phase 57); production e2e through the real Turnstile widget; regenerate the data report; clear the production database
+
+**Implementation notes (2026-11-19)**:
+- **Local verification** (with Phase 57): `npm run test:e2e` PASS — PC 132/132, phone 132/132 (`test-results/e2e/20261119_110722/`); `npm run sim:data`: D0–D7 (incl. the new Email check) and A1–A2 pass, D8 fails as before (open Phase 55 finding, 6/162 short). Unit: 65 pass, the 3 known `new-data-model.test.js` failures.
 

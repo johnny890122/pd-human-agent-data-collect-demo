@@ -6,6 +6,7 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import { turnstileCookieValue } from './turnstile-cookie.mjs';
 import { ScenarioModel } from '../backend/models/Scenario.js';
 import { SessionModel } from '../backend/models/Session.js';
 import { SubmissionModel } from '../backend/models/Submission.js';
@@ -14,6 +15,7 @@ import { QUESTIONNAIRE } from '../utils/questionnaire.js';
 dotenv.config();
 
 const GRAPHQL_ENDPOINT = process.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:3001/graphql';
+const TURNSTILE_COOKIE = `turnstile_verified=${await turnstileCookieValue(new URL(GRAPHQL_ENDPOINT).origin)}`; // REQ-102.1
 
 const TEST_CONFIG = {
   activeEdgeIds: ['KMT1-DPP3', 'DPP3-KMT1'],
@@ -34,7 +36,7 @@ async function testNewAPI() {
     
     const response = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
+      headers: { 'Content-Type': 'application/json', Cookie: TURNSTILE_COOKIE },
       body: JSON.stringify({
         query: `
           mutation CreateManualSession($input: SessionInput!) {
@@ -113,7 +115,7 @@ async function testNewAPI() {
     
     const startResponse = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
+      headers: { 'Content-Type': 'application/json', Cookie: TURNSTILE_COOKIE },
       body: JSON.stringify({
         query: `
           mutation StartSurvey($sessionId: ID!, $consent: ConsentInput) {
@@ -155,7 +157,7 @@ async function testNewAPI() {
       
       const saveResponse = await fetch(GRAPHQL_ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
+        headers: { 'Content-Type': 'application/json', Cookie: TURNSTILE_COOKIE },
         body: JSON.stringify({
           query: `
             mutation SaveSurveyAnswer($submissionId: ID!, $scenarioId: ID!, $cooperationProbability: Float!, $responseTime: Int!) {
@@ -214,7 +216,7 @@ async function testNewAPI() {
     
     const completeResponse = await fetch(GRAPHQL_ENDPOINT, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Cookie: 'turnstile_verified=true' } /* REQ-100 test cookie, as the e2e */,
+      headers: { 'Content-Type': 'application/json', Cookie: TURNSTILE_COOKIE },
       body: JSON.stringify({
         query: `
           mutation CompleteSurvey($submissionId: ID!, $registrationCode: String!, $email: String!, $questionnaire: [QuestionnaireAnswerInput!]!) {

@@ -14,6 +14,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { chromium } from 'playwright-core';
 import { QUESTIONNAIRE } from '../../utils/questionnaire.js';
+import { turnstileCookieValue } from '../turnstile-cookie.mjs';
 import { payoffPoints, totalPayoutNtd, MIN_TOTAL_NTD, MAX_TOTAL_NTD } from '../../utils/payment.js';
 import { SessionGroupModel } from '../../backend/models/SessionGroup.js';
 import { SessionModel } from '../../backend/models/Session.js';
@@ -66,7 +67,7 @@ const DECK = PERSONAS.flatMap((p) => Array(p.of20).fill(p));
 const personaOf = (n) => DECK[(n * 7) % DECK.length];
 
 // ── API ──────────────────────────────────────────────────────────────────────
-const PARTICIPANT = { Cookie: 'turnstile_verified=true' }; // REQ-100, accepted in development
+const PARTICIPANT = { Cookie: '' }; // REQ-102.1: signed cookie, set once the server is up
 async function gql(query, variables = {}, headers = PARTICIPANT) {
   const response = await fetch(`${BASE_URL}/graphql`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ query, variables }),
@@ -263,7 +264,7 @@ async function runChecks({ db, groupId, truths, full, csv, ledger }) {
   const expectedRows = subs.reduce((n, s) => n + Math.max(1, s.results.length), 0);
   check('D6', 'Research CSV: one row per stored answer (+1 per submission without answers)', expectedRows, csv.rows.filter((r) => subById.has(r['Submission ID'])).length);
   const d6 = [];
-  const required = ['Session ID', 'Participant ID', 'Scenario ID', 'Scenario Index', 'Edge States (JSON)', 'Cooperation Probability', 'Response Time (ms)', 'Answered At', 'Registration Code', ...QUESTIONNAIRE.map((q) => q.id), 'Consented At', 'Consent Version', 'Device Type', 'Submission Completed At'];
+  const required = ['Session ID', 'Participant ID', 'Scenario ID', 'Scenario Index', 'Edge States (JSON)', 'Cooperation Probability', 'Response Time (ms)', 'Answered At', 'Registration Code', 'Email', ...QUESTIONNAIRE.map((q) => q.id), 'Consented At', 'Consent Version', 'Device Type', 'Submission Completed At'];
   for (const col of required) if (!csv.header.includes(col)) d6.push(`missing column ${col}`);
   for (const s of subs) {
     for (const r of s.results) {
@@ -280,8 +281,9 @@ async function runChecks({ db, groupId, truths, full, csv, ledger }) {
     }
   }
   check('D6', 'Research CSV cells match the DB; required columns filled for completed submissions', 'none', firstBad(d6));
-  const leaked = completedTruths.filter((t) => csv.raw.includes(t.email)).map((t) => t.email);
-  check('D6', 'No email anywhere in the research CSV (REQ-362)', 'none', firstBad(leaked));
+  // REQ-362 (2026-11-19): the research CSV carries the email next to the registration code
+  const wrongEmail = completedTruths.filter((t) => (rowsBySub.get(t.submissionId) ?? []).some((row) => row['Email'] !== t.email)).map((t) => t.participantId);
+  check('D6', 'Research CSV Email column equals the email sent (REQ-362)', 'none', firstBad(wrongEmail));
 
   // D7 — payment ledger
   const payable = subs.filter((s) => s.isCompleted && !s.isInvalid);
@@ -374,6 +376,7 @@ async function main() {
       if (i > 120) throw new Error('Server did not start');
       await new Promise((r) => setTimeout(r, 250));
     }
+    PARTICIPANT.Cookie = `turnstile_verified=${await turnstileCookieValue(BASE_URL)}`;
     const { token } = await (await fetch(`${BASE_URL}/api/admin/login`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: ADMIN_PASSWORD }),
     })).json();

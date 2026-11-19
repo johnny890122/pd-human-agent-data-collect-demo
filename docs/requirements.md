@@ -48,6 +48,8 @@ This document is the single source of truth for the functional and non-functiona
 | 2026-11-17 | **PROCESS** Simulated pilot data check (NFR-9) | `npm run sim:data` fills a local study with simulated participants of known behaviour (personas), exports the research CSV and the payment ledger from the admin page, and checks every value against what was sent, so data problems are found before real participants are recruited. |
 | 2026-11-18 | **DATA CAPTURE** Consent checkbox and consent record (REQ-417); device type and browser recorded (REQ-418) | From the data review's 「not recorded」 list. The welcome page gets 「我已閱讀並同意參與本研究」; the submission stores when the participant consented and to which text version, and the device type (mobile / desktop) and user agent of the device that started it. |
 | 2026-11-18 | **SCHEMA FIX** Registration code and email get their own fields (BUG-015); questionnaire answers stored as booleans (REQ-416) | `Submission.demographics` (`age` / `gender` / `education`) held the registration code in `gender`, the email in `education` and a number parsed from the code in `age`. It is replaced by `Submission.registrationCode` and `Submission.email`; `completeSurvey(submissionId, registrationCode, email, questionnaire)`. Each Q1–Q8 answer is now `answer: Boolean` (true = the first option: 同意 / 好 / 管制); the research CSV shows `true` / `false`. No data migration: the production database was empty. |
+| 2026-11-19 | **DATA EXPORT** Email added to the research CSV (REQ-362); welcome footer reworded (REQ-417) | By the research team's decision the research CSV gets an 「Email」 column after 「Registration Code」 (reverses the 2026-11-17 choice to keep it only in the payment ledger). The welcome footer drops 「，不收集個資」, which was untrue now that an email and the user agent are collected. |
+| 2026-11-19 | **SECURITY** Bot-check cookie is signed (BUG-016, REQ-102, NFR-3) | The `turnstile_verified` cookie held the plain value `true`, so any script could skip Turnstile by setting it (the production e2e did exactly this, so the real Cloudflare check was never exercised). The cookie now holds a server-signed token that expires after 2 h; a forged or expired cookie counts as not verified. The server refuses to start in production without `JWT_SECRET`. Test scripts obtain a real cookie from `POST /api/turnstile/verify`. |
 | 2026-11-17 | **BUG FIX** Session kept in the URL after a quick first answer (BUG-014, REQ-404) | Found by the first production e2e run: a refresh after a fast first answer left the participant on 「載入中...」. |
 | 2026-11-17 | **DATA CAPTURE** Response time recorded (REQ-402.5); a failed answer save keeps the participant on the scenario (REQ-402.6, BUG-013); research CSV columns relabelled and email removed (REQ-362) | From the production data review: `responseTime` existed in the schema and the CSV but was never sent, so the column was always empty. A failed `saveSurveyAnswer` used to move the participant on and lose that answer. The research CSV labelled the registration code 「Gender」 and the email 「Education」 and put the email next to the Q1–Q8 opinions; it now has 「Registration Code」, no Age and no Email (the email stays in the payment ledger, joined by Submission ID). |
 | 2026-11-17 | **DATA SAFETY** Questionnaire data-capture review (BUG-011, BUG-012; REQ-402.4, REQ-403.2, REQ-408.8, REQ-416) | A failed final save no longer shows the done page or wipes the answers; it shows an error and keeps everything for a retry (BUG-011). A completed submission cannot be completed again (BUG-012). `completeSurvey` now requires all eight answers. The registration code and email are admin-only like the answers. Unsent answers are kept per tab (sessionStorage), not left on the device. |
@@ -116,6 +118,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   
 - **REQ-102 — Cloudflare Turnstile gate.** Participants MUST pass Turnstile before any survey GraphQL mutation that creates or updates a submission. Verification is recorded as the `turnstile_verified` HTTP-only cookie (max age 2 h).
   - *Acceptance:* `startSurvey` resolver throws `Turnstile verification required before starting survey.` when the request lacks the cookie. In `NODE_ENV !== 'production'`, the test secret `1x0000000000000000000000000000000AA` short-circuits the Cloudflare round-trip.
+  - **REQ-102.1 — The cookie cannot be forged.** 📋 **NEW 2026-11-19** (BUG-016) Only the server can create a valid `turnstile_verified` cookie, and only after a successful `POST /api/turnstile/verify`. Its value is a token signed with `JWT_SECRET` that expires 2 h after verification, independent of the browser's cookie expiry. A cookie that is missing, hand-written (e.g. `turnstile_verified=true`), tampered with, signed with another secret or expired is treated as not verified.
+    - *Acceptance:* `GET /api/turnstile/status` with `Cookie: turnstile_verified=true` returns `verified: false`, and `startSurvey` with that cookie is rejected; the cookie returned by `POST /api/turnstile/verify` gives `verified: true`. In production the server does not start if `JWT_SECRET` is unset. Verified by EC-12 (NFR-8.1).
 
 ### REQ-200 — Single-Session Setup (`/admin/setup`)
 
@@ -354,12 +358,15 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     14. **Response Time (ms)** — `SurveyResult.responseTime` (REQ-402.5)
     15. **Answered At** — `SurveyResult.answeredAt` (ISO timestamp)
     16. **Registration Code** — `Submission.registrationCode` (same value repeated for all rows of one submission)
-    17. **Q1 … Q8** — `Submission.questionnaire` answer as `true` / `false` (true = first option, REQ-416); empty when not answered
-    18. **Submission Completed** — `Submission.isCompleted` (true/false)
-    19. **Valid** — `!Submission.isInvalid` (true/false)
-    20. **Submission Created At** — `Submission.createdAt` (ISO timestamp)
-    21. **Submission Completed At** — `Submission.completedAt` (ISO timestamp, may be null)
-  - *2026-11-17:* the former Age (a number parsed from the code), Gender (actually the code) and Education (actually the email) columns are replaced by 「Registration Code」. The email is NOT in the research CSV, so the political opinions (Q1–Q8) are not stored next to an email; the payment ledger (REQ-408.7) has the email, joined by Submission ID.
+    17. **Email** — `Submission.email` (2026-11-19)
+    18. **Q1 … Q8** — `Submission.questionnaire` answer as `true` / `false` (true = first option, REQ-416); empty when not answered
+    19. **Consented At**, **Consent Version** — `Submission.consentedAt` (ISO timestamp), `Submission.consentVersion` (REQ-417)
+    20. **Device Type**, **User Agent** — `Submission.deviceType`, `Submission.userAgent` (REQ-418)
+    21. **Submission Completed** — `Submission.isCompleted` (true/false)
+    22. **Valid** — `!Submission.isInvalid` (true/false)
+    23. **Submission Created At** — `Submission.createdAt` (ISO timestamp)
+    24. **Submission Completed At** — `Submission.completedAt` (ISO timestamp, may be null)
+  - *2026-11-17:* the former Age (a number parsed from the code), Gender (actually the code) and Education (actually the email) columns are replaced by 「Registration Code」. The email is NOT in the research CSV, so the political opinions (Q1–Q8) are not stored next to an email; the payment ledger (REQ-408.7) has the email, joined by Submission ID. *2026-11-19: reversed by the research team — the research CSV has an 「Email」 column (17). The file is then identifying (email next to Q1–Q8) and must be stored and shared like the payment ledger.*
   - *Acceptance:*
     - Column headers MUST be in English for cross-tool compatibility (R, Python, SQL imports expect ASCII headers).
     - Each row represents **one answer to one scenario** (not one submission). A submission with 20 scenarios generates 20 rows.
@@ -583,7 +590,8 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
   - Ticking it and clicking 開始實驗 records the consent in the browser tab (`sessionStorage`): the click time and `CONSENT_VERSION`, a label of the consent text the participant saw (changed whenever that text changes).
   - `startSurvey` sends it; the server stores `Submission.consentedAt` (Date) and `Submission.consentVersion` when it creates the submission, and refuses to create one without them (`CONSENT_REQUIRED`). Resuming an existing submission does not need it again.
   - Admin-only (like REQ-408.8); exported in the research CSV as 「Consented At」 and 「Consent Version」.
-  - *Note:* adds participant-facing text — check with the IRB whether an amendment is needed. The welcome footer still says 「不收集個資」 although the study collects an email (REQ-408) and the user agent (REQ-418); its wording should be reviewed.
+  - *Note:* adds participant-facing text — check with the IRB whether an amendment is needed.
+  - *Footer (2026-11-19):* the welcome footer reads 「本研究使用瀏覽器指紋技術防止重複提交」 (was 「本研究使用瀏覽器指紋技術防止重複提交，不收集個資。」, untrue now that an email (REQ-408) and the user agent (REQ-418) are collected).
 
 - **REQ-418 — Device type and browser are recorded.** 📋 **NEW 2026-11-18** When the server creates a submission it stores, from that request: `Submission.userAgent` (the browser's `User-Agent` header, which names the browser, version and OS) and `Submission.deviceType` = `mobile` if Chrome's `Sec-CH-UA-Mobile` header is `?1` or the user agent contains Mobi / Android / iPhone / iPad, otherwise `desktop`.
   - Recorded once, at creation (a participant on another device gets another submission, REQ-311). Admin-only; exported in the research CSV as 「Device Type」 and 「User Agent」.
@@ -634,7 +642,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 
 - **NFR-1 — Performance:** Batch creation MUST handle up to 1000 combinations in a single `insertMany` call (currently capped via `validateBatchParams`). Submission count aggregation runs per-query via `countDocuments` rather than denormalized — acceptable for hundreds of sessions, may need indexing review at scale.
 - **NFR-2 — Resilience:** Frontend MUST surface backend failures in a non-blocking banner (`backendNotice`) rather than crashing. Survey progress survives full-page reload (REQ-404).
-- **NFR-3 — Security:** Admin password and Turnstile secret are read from environment only. Turnstile cookie is `httpOnly`, `sameSite=lax`, and `secure` in production. The `clearDatabase` mutation is hard-blocked outside production via env check.
+- **NFR-3 — Security:** Admin password and Turnstile secret are read from environment only. Turnstile cookie is `httpOnly`, `sameSite=lax`, `secure` in production, and holds a server-signed, expiring token (REQ-102.1). `JWT_SECRET` is required in production; the server refuses to start without it. The `clearDatabase` mutation is hard-blocked outside production via env check.
 - **NFR-4 — Deployment:** Single-Procfile deploy (`web: npm start`) on Heroku-class platforms, Node 20.x. Static assets served from `dist/` after `vite build`.
 - **NFR-5 — Compatibility:** SPA must handle deep links (server falls back to `index.html` for any non-`/graphql` route).
 - **NFR-6 — Body size:** GraphQL endpoint accepts JSON payloads (standard size limits after RRWeb removal).
@@ -661,7 +669,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     | EC-9 | Every scenario of the group reached its target | Group marked completed (REQ-309); a new visitor sees 「無法參與實驗」 on arrival and gets no session; `startMixedSession` refuses (REQ-405.1) |
     | EC-10 | Non-Chrome browser | 開始實驗 disabled with the Chrome notice (REQ-415) |
     | EC-11 | Invite link with an unknown group | 「找不到此實驗」 on arrival, no 開始實驗, no session (REQ-405.2) |
-    | EC-12 | Direct API misuse | Probability outside [0, 1] rejected (REQ-402); starting without Turnstile rejected (REQ-100); participant data without admin login rejected (REQ-408.8); changing an answer of a completed submission, or completing it again, rejected (REQ-402.4, BUG-012); completing without the questionnaire rejected (REQ-416) |
+    | EC-12 | Direct API misuse | Probability outside [0, 1] rejected (REQ-402); starting without Turnstile, or with a hand-written `turnstile_verified=true` cookie, rejected (REQ-100, REQ-102.1); participant data without admin login rejected (REQ-408.8); changing an answer of a completed submission, or completing it again, rejected (REQ-402.4, BUG-012); completing without the questionnaire rejected (REQ-416) |
     | EC-13 | No participant has completed yet | Export Payments disabled (REQ-408.7) |
   - *Roadmap (NFR-8.2, added 2026-11-15):* the report MUST open with a roadmap that shows every test case on the participant journey at a glance: one row per stage (admin setup → invite link → intro → scenarios → outro & debrief → coming back → payment ledger → direct API), the happy-path result for that stage, and each edge case as a chip coloured by its result (pass / fail / observed / not run). Each chip links to the step that ran it. A case added to the catalogue but not placed on the roadmap fails the run.
   - *PC + phone (NFR-8.3, added 2026-11-16):* `npm run test:e2e` runs the journey and every edge case twice — on a PC (1440×900) and with every participant on a phone (390×844, touch, mobile Chrome user agent; the admin stays on desktop) — and writes **one** report, `test-results/e2e/<timestamp>/report.html` + `report.pdf`, that compares the two: the roadmap and edge-case table show a PC and a phone result for every case, every check shows both results, and each participant screenshot is shown next to its phone counterpart (admin pages are desktop-only, so they are shown once, PC only). The run passes only if both pass. `npm run test:e2e:pc` / `npm run test:e2e:mobile` run one device on its own.
@@ -684,7 +692,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
     - D3 — `Scenario.responseCount` equals the number of stored answers to that scenario (a retry is not counted twice).
     - D4 — The stored Q1–Q8 answers, registration code and email equal what was sent.
     - D5 — Every payout follows the payment rule (REQ-408): the realised round's points from the stored decisions × NT$100 + fee, within the min–max range.
-    - D6 — The research CSV exported from the group page (REQ-362) has one row per stored answer (plus one row per submission without answers), every cell matches the database, required columns are never empty for a completed submission, and no email appears anywhere in the file.
+    - D6 — The research CSV exported from the group page (REQ-362) has one row per stored answer (plus one row per submission without answers), every cell matches the database, required columns are never empty for a completed submission, and the 「Email」 column equals the stored email (2026-11-19; before that: no email anywhere in the file).
     - D7 — The payment ledger (REQ-408.7) has exactly one row per completed, valid submission, no drop-outs, and its total equals the sum of the stored payouts.
     - D8 — Once recruitment stops, the group is completed (REQ-309) and every scenario has at least its target number of answers from completed submissions.
   - *Analysis checks (each fails the run):*
@@ -800,6 +808,7 @@ The system is implemented as a React/Vite SPA backed by a Node/Express GraphQL A
 | BUG-013 | A failed answer save moved the participant on and lost that answer | 2026-11-17 | ✅ Fixed (REQ-402.6) |
 | BUG-014 | A quick first answer dropped `?sessionId=` from the URL; a later refresh hung on 「載入中...」 (production only) | 2026-11-17 | ✅ Fixed (REQ-404) |
 | BUG-015 | Registration code and email stored as `demographics.gender` / `demographics.education` | 2026-11-18 | ✅ Fixed (REQ-403) |
+| BUG-016 | The bot-check cookie was the plain value `true`; any script could set it and skip Turnstile | 2026-11-19 | ✅ Fixed (REQ-102.1) |
 | BUG-007 | Group detail view and research CSV only see the 100 most recent submissions across all sessions | 2026-10-01 | ✅ Fixed (REQ-408.7) |
 
 **BUG-001**: [`NetworkGraph.tsx`](../components/NetworkGraph.tsx) had multiple locations where `activeEdges` could be undefined, causing crashes. Fixed by adding defensive checks: `scenario?.activeEdgeIds || setup?.activeEdgeIds || []`.

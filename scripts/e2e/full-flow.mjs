@@ -35,8 +35,9 @@ const ADMIN_PASSWORD = REMOTE ? process.env.E2E_ADMIN_PASSWORD : 'e2e-admin';
 const TAILWIND_CDN = /^https:\/\/cdn\.tailwindcss\.com\//;
 // Shared with the IRB capture, so both tools use one pinned Tailwind build
 const TAILWIND_CACHE = path.join(ROOT, 'docs/irb/screenshots/.cache/tailwindcss-cdn.js');
-// The Cloudflare widget can't be solved headless: the stub hands back a token at once, and the
-// real /api/turnstile/verify (which accepts any token in development) sets the cookie
+// Local runs: the Cloudflare widget can't be solved headless, so the stub hands back a token at once
+// and the real /api/turnstile/verify (which accepts any token in development) sets the signed cookie.
+// Remote runs (E2E_BASE_URL) load the real widget: the server checks the token with Cloudflare.
 const TURNSTILE_STUB = `window.turnstile = {
   render(el, opts) { setTimeout(() => { opts.callback('e2e-token'); window.__e2eTurnstileToken = true; }, 50); return 'e2e-widget'; },
   reset() {}, remove() {},
@@ -84,7 +85,7 @@ const EDGE_CASES = [
   ['EC-9', 'Every scenario reached its target', `Group completed (REQ-309); new visitor sees 「${FULL_MSG}」 on arrival, no session; API start refused (REQ-405.1)`],
   ['EC-10', 'Non-Chrome browser', '開始實驗 disabled with the Chrome notice (REQ-415)'],
   ['EC-11', 'Invite link to an unknown group', '「找不到此實驗」 on arrival, no 開始實驗, no session (REQ-405.2)'],
-  ['EC-12', 'Direct API misuse', 'Out-of-range answer, no Turnstile, no admin login, editing or re-completing a completed submission, completing without the questionnaire, starting without consent all rejected (REQ-402, REQ-100, REQ-408.8, REQ-402.4, REQ-416, REQ-417)'],
+  ['EC-12', 'Direct API misuse', 'Out-of-range answer, no or forged Turnstile cookie, no admin login, editing or re-completing a completed submission, completing without the questionnaire, starting without consent all rejected (REQ-402, REQ-100, REQ-102.1, REQ-408.8, REQ-402.4, REQ-416, REQ-417)'],
   ['EC-13', 'No participant completed yet', 'Export Payments disabled (REQ-408.7)'],
 ];
 
@@ -183,15 +184,8 @@ async function newContext(device = DEVICES.A, { desktop = false } = {}) {
   const phone = MOBILE && !desktop ? PHONE : {};
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, acceptDownloads: true, ...phone, ...device });
   await context.route(TAILWIND_CDN, (route) => route.fulfill({ contentType: 'application/javascript', body: tailwind }));
-  await context.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }));
+  if (!REMOTE) await context.route('https://challenges.cloudflare.com/**', (route) => route.fulfill({ contentType: 'application/javascript', body: TURNSTILE_STUB }));
   if (LATENCY_MS) await context.route('**/graphql', async (route) => { await new Promise((r) => setTimeout(r, LATENCY_MS)); await route.fallback(); });
-  if (REMOTE || process.env.E2E_PRESET_TURNSTILE) {
-    // ponytail: the real server checks the stub's token with Cloudflare, so a remote run answers the
-    // verify call itself and sets the cookie the server trusts. Works only while that cookie is
-    // unsigned (server.js isTurnstileVerifiedFromRequest) — the real Turnstile check is NOT tested.
-    await context.route(`${BASE_URL}/api/turnstile/verify`, (route) => route.fulfill({ contentType: 'application/json', body: '{"success":true}' }));
-    await context.addCookies([{ name: 'turnstile_verified', value: 'true', url: BASE_URL }]);
-  }
   return context;
 }
 
@@ -311,7 +305,10 @@ async function intro(page, { record = false, stopAt = null, wrongQuizFirst = fal
 
 /** Click 進入測驗 in the Turnstile modal. Returns 'scenarios', or the modal's error text. */
 async function enterSurvey(page) {
-  await page.waitForFunction(() => window.__e2eTurnstileToken === true); // clicking earlier is a no-op
+  // Clicking earlier is a no-op. The real widget (remote) fills cf-turnstile-response; if Cloudflare
+  // asks for a click, run with E2E_HEADED=1 and tick the box within 2 minutes.
+  await page.waitForFunction(() => window.__e2eTurnstileToken === true
+    || Boolean(document.querySelector('[name="cf-turnstile-response"]')?.value), null, { timeout: REMOTE ? 120_000 : 30_000 });
   await page.waitForTimeout(100);
   await click(button(page, '進入測驗'));
   const error = page.locator('.text-red-600.font-medium').first();
@@ -320,6 +317,11 @@ async function enterSurvey(page) {
     error.waitFor({ timeout: 30_000 }).then(() => 'error', () => null),
   ]);
   if (outcome === 'error') return `error: ${await error.innerText()}`;
+  if (outcome === 'scenarios' && !PARTICIPANT.cookie) {
+    // REQ-102.1: API-only participants reuse the signed cookie the server issued to this browser
+    const cookie = (await page.context().cookies(BASE_URL)).find((c) => c.name === 'turnstile_verified');
+    if (cookie) PARTICIPANT.cookie = `turnstile_verified=${cookie.value}`;
+  }
   return outcome ?? 'nothing happened within 30 s';
 }
 
@@ -426,7 +428,8 @@ async function gql(query, variables, auth) {
   if (error) throw new Error(error);
   return data;
 }
-const PARTICIPANT = { cookie: 'turnstile_verified=true' };
+// Filled by enterSurvey from the first browser that passes Turnstile (REQ-102.1)
+const PARTICIPANT = { cookie: '' };
 
 /** A participant driven through the API only (another device, or a filler). */
 async function apiParticipant(groupId, participantId, { code, email, probability = 0.5 }) {
@@ -869,7 +872,7 @@ async function journey() {
       rowA && `${rowA[header.indexOf('Device Type')]},${Boolean(rowA[header.indexOf('Consented At')])}`);
     check('Submissions CSV: Registration Code column, no Age/Gender/Education (REQ-362)', 'true,false',
       [header.includes('Registration Code'), ['Age', 'Gender', 'Education'].some((h) => header.includes(h))].join(','));
-    check('A\'s CSV row has the code and no email', `${A.code},false`, rowA && `${rowA[header.indexOf('Registration Code')]},${rowA.some((c) => c.includes('@'))}`);
+    check('A\'s CSV row has the registration code and the email (REQ-362, 2026-11-19)', `${A.code},${A.email}`, rowA && `${rowA[header.indexOf('Registration Code')]},${rowA[header.indexOf('Email')]}`);
     check('A\'s CSV rows carry the response time (REQ-402.5)', true,
       rows.filter((r) => r[header.indexOf('Submission ID')] === run.submissionIdA).every((r) => Number(r[header.indexOf('Response Time (ms)')]) > 0));
   }, { needs: ['participantA', 'database'] });
@@ -929,6 +932,12 @@ async function journey() {
     check('Answer 1.5 rejected (REQ-402)', 'cooperationProbability must be between 0 and 1', outOfRange.error);
     const noTurnstile = await gqlRaw('mutation($g: ID!) { startMixedSession(groupId: $g, participantId: "e2e-bot") { sessionId } }', { g: run.groupId });
     check('Starting without Turnstile rejected (REQ-100)', true, /Turnstile verification required/.test(noTurnstile.error ?? ''));
+    // BUG-016: a hand-written cookie used to pass the bot check
+    const FORGED = { cookie: 'turnstile_verified=true' };
+    const forgedStatus = await (await fetch(`${BASE_URL}/api/turnstile/status`, { headers: FORGED })).json();
+    check('Forged turnstile_verified=true cookie not verified (REQ-102.1)', false, forgedStatus.verified);
+    const forged = await gqlRaw('mutation($g: ID!) { startMixedSession(groupId: $g, participantId: "e2e-forger") { sessionId } }', { g: run.groupId }, FORGED);
+    check('Starting with a forged Turnstile cookie rejected (REQ-102.1)', true, /Turnstile verification required/.test(forged.error ?? ''));
     const noAdmin = await gqlRaw('query($g: ID!) { submissionsByGroup(groupId: $g) { _id email } }', { g: run.groupId });
     check('Participant emails without admin login rejected (REQ-408.8)', 'Unauthorized', noAdmin.error);
     if (run.d) {
@@ -1132,7 +1141,7 @@ async function main() {
 
   let result;
   try {
-    browser = await chromium.launch({ channel: 'chrome', headless: true });
+    browser = await chromium.launch({ channel: 'chrome', headless: !process.env.E2E_HEADED });
     await waitForServer(`${BASE_URL}/api/turnstile/status`);
     tailwind = await loadTailwindRuntime();
     await journey();

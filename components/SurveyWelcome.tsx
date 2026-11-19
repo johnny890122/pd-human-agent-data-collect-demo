@@ -99,7 +99,7 @@ const SurveyWelcome: React.FC = () => {
           {/* Privacy Notice - Subtle footer */}
           <div className="pt-6 pb-2 text-xs text-gray-400 leading-relaxed border-t border-gray-100">
             <p className="mb-1">
-              本研究使用瀏覽器指紋技術防止重複提交，不收集個資。
+              本研究使用瀏覽器指紋技術防止重複提交
             </p>
           </div>
         </div>

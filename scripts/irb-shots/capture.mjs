@@ -13,6 +13,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { chromium } from 'playwright-core';
 import { FIXTURE, seedFixture } from './fixture.mjs';
 import { APP_SOURCE_PATHS, BASELINE_COMMIT, PACKET_ONLY, SHOTS, VIEWPORTS } from './shots.mjs';
+import { turnstileCookieValue } from '../turnstile-cookie.mjs';
+
+// Issued by the server under test (REQ-102.1); works for the old app source too, whose cookie is plain
+let turnstileCookie;
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PORT = Number(process.env.IRB_SHOTS_PORT || 3100);
@@ -181,7 +185,7 @@ async function captureShot(browser, shot, viewportName, { outDir, adminToken, la
   try {
     await context.route(TAILWIND_CDN, (route) =>
       route.fulfill({ status: 200, contentType: 'application/javascript', body: tailwindRuntime }));
-    await context.addCookies([{ name: 'turnstile_verified', value: 'true', url: BASE_URL }]);
+    await context.addCookies([{ name: 'turnstile_verified', value: turnstileCookie, url: BASE_URL }]);
     const isSurvey = shot.route.startsWith('/survey');
     const search = isSurvey ? `?sessionId=${FIXTURE.sessionId}` : '';
     await context.addInitScript(pageInitScript, {
@@ -279,6 +283,7 @@ async function main() {
   const failures = [];
   try {
     await waitForServer(`${BASE_URL}/api/turnstile/status`);
+    turnstileCookie = await turnstileCookieValue(BASE_URL); // REQ-102.1
     const login = await fetch(`${BASE_URL}/api/admin/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

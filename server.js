@@ -19,6 +19,13 @@ const port = process.env.PORT || 3001;
 const TURNSTILE_COOKIE_NAME = 'turnstile_verified';
 const TURNSTILE_COOKIE_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
+// REQ-102.1 / NFR-3: signs the bot-check cookie and admin tokens. A public fallback
+// would make both forgeable, so production refuses to start without a real secret.
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in production.');
+}
+const JWT_SECRET = process.env.JWT_SECRET || 'dev_only_secret';
+
 const apolloServer = new ApolloServer({
   typeDefs,
   resolvers,
@@ -43,7 +50,8 @@ function parseCookieHeader(cookieHeader = '') {
 
 function setTurnstileVerifiedCookie(res) {
   const isProduction = process.env.NODE_ENV === 'production';
-  res.cookie(TURNSTILE_COOKIE_NAME, 'true', {
+  const token = jwt.sign({ tv: 1 }, JWT_SECRET, { expiresIn: '2h' });
+  res.cookie(TURNSTILE_COOKIE_NAME, token, {
     httpOnly: true,
     sameSite: 'lax',
     secure: isProduction,
@@ -54,7 +62,12 @@ function setTurnstileVerifiedCookie(res) {
 
 function isTurnstileVerifiedFromRequest(req) {
   const cookies = parseCookieHeader(req.headers?.cookie ?? '');
-  return cookies[TURNSTILE_COOKIE_NAME] === 'true';
+  try {
+    // Signature + expiry checked server-side; `tv` keeps an admin JWT from passing as this cookie.
+    return jwt.verify(cookies[TURNSTILE_COOKIE_NAME] ?? '', JWT_SECRET).tv === 1;
+  } catch {
+    return false;
+  }
 }
 
 async function startServer() {
@@ -88,7 +101,7 @@ async function startServer() {
       if (authHeader.startsWith('Bearer ')) {
         const token = authHeader.split(' ')[1];
         try {
-          const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
+          const decoded = jwt.verify(token, JWT_SECRET);
           if (decoded.role === 'admin') {
             isAdmin = true;
           }
@@ -130,7 +143,7 @@ async function startServer() {
     }
 
     if (submittedPassword === configuredPassword) {
-      const token = jwt.sign({ role: 'admin' }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '24h' });
+      const token = jwt.sign({ role: 'admin' }, JWT_SECRET, { expiresIn: '24h' });
       return res.json({ success: true, token });
     }
 

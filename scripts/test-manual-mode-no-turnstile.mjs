@@ -6,17 +6,18 @@
  */
 
 import dotenv from 'dotenv';
+import { turnstileCookieValue } from './turnstile-cookie.mjs';
 dotenv.config();
 
 const GRAPHQL_ENDPOINT = process.env.VITE_GRAPHQL_ENDPOINT || 'http://localhost:3001/graphql';
+const TURNSTILE_COOKIE = `turnstile_verified=${await turnstileCookieValue(new URL(GRAPHQL_ENDPOINT).origin)}`; // REQ-102.1
 
 async function runGraphQL(query, variables = {}) {
   const response = await fetch(GRAPHQL_ENDPOINT, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
-      // Add Turnstile cookie for testing (simulates verified user)
-      'Cookie': 'turnstile_verified=true',
+      'Cookie': TURNSTILE_COOKIE,
     },
     body: JSON.stringify({ query, variables }),
   });
